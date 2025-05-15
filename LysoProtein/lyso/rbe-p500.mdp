@@ -1,0 +1,54 @@
+; title		= PKM4 MD 
+; Run parameters
+integrator	= md		; leap-frog integrator
+nsteps		= 50000000	; 2 * 50000 = 100000 ps, 100 ns
+dt		= 0.002		; 2 fs
+; Output control
+nstfout         = 0
+nstxout		= 0     	; save coordinates every 10 ps
+nstvout		= 0     	; save velocities every 10 ps
+nstxtcout	= 5000	 	; xtc compressed trajectory output every 1 ps
+;xtc-grps        = OW
+nstenergy	= 1000		; save energies every 10 ps
+nstlog		= 5000		; update log file every 20 ps
+; Bond parameters
+continuation	= yes		; Restarting after NPT 
+constraint_algorithm = lincs	; holonomic constraints 
+constraints	= h-bonds	; all bonds (even heavy atom-H bonds) constrained
+lincs_iter	= 1		; accuracy of LINCS
+lincs_order	= 4		; also related to accuracy
+lincs_warnangle = 40            ; maximum angle that a bond can rotate before LINCS will complain
+; Neighborsearching
+ns_type		= grid		; search neighboring grid cells
+nstlist		= 20		; 10 fs
+rlist = 1.2
+vdwtype = Cut-off
+rvdw-switch = 1.0
+rvdw = 1.2
+vdw-modifier = Force-switch
+cutoff-scheme = Verlet
+; Electrostatics
+coulombtype = ewald
+rcoulomb = 1.2
+pme_order	= 4		; cubic interpolation
+fourierspacing	= 0.12		; grid spacing for FFT
+ewald_rtol              = 1e-4
+userint1 = 500  ;  number of P
+userreal1 = 4.2 ;  value of alpha
+; Temperature coupling is on
+tcoupl		= nose-hoover	; modified Berendsen thermostat
+tc-grps		= Protein Non-Protein	; two coupling groups - more accurate
+tau_t		= 1.0	1.0 		; time constant, in ps
+ref_t		= 300 	300		; reference temperature, one for each group, in K
+; Pressure coupling is on
+;pcoupl		= Parrinello-Rahman	; Pressure coupling on in NPT
+;pcoupltype	= isotropic	; uniform scaling of box vectors
+;tau_p		= 3		; time constant, in ps
+;ref_p		= 1.0		; reference pressure, in bar
+compressibility = 4.5e-5	; isothermal compressibility of water, bar^-1
+; Periodic boundary conditions
+pbc		= xyz		; 3-D PBC
+; Dispersion correction
+DispCorr	= EnerPres	; account for cut-off vdW scheme
+; Velocity generation
+gen_vel		= no		; Velocity generation is off 

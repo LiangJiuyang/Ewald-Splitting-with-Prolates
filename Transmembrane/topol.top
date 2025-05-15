@@ -1,0 +1,99 @@
+;
+;	File 'protein.top' was generated
+;	By user: stansfeld (9921)
+;	On host: sonic
+;	At date: Sun Nov 23 07:26:14 2014
+;
+;	This is a standalone topology file
+;
+;	It was generated using program:
+;	pdb2gmx - VERSION 4.6.2
+;
+;	Command line was:
+;	/sbcb/packages/opt/Linux_x86_64//gromacs/4.6.2/bin/pdb2gmx -f protein_box.pdb -o p2g.pdb -p protein.top -ff gromos53a6 -water spc 
+;
+;	Force field data was read from:
+;	/sbcb/packages/opt/Linux_x86_64//gromacs/4.6.2/bin/../share/gromacs/top
+;
+;	Note:
+;	This might be a non-standard force field location. When you use this topology, the
+;	force field must either be present in the current directory, or the location
+;	specified in the GMXLIB path variable or with the 'include' mdp file option.
+;
+
+; Include forcefield parameters
+#include "gromos53a6.ff/forcefield.itp"
+#include "itp/gromos-lipids.itp"
+#include "itp/lipid-gmx53a6.itp"
+
+
+; Include chain topologies
+#include "protein_Protein_chain_A.itp"
+#include "protein_Protein_chain_B.itp"
+#include "protein_Protein_chain_C.itp"
+#include "protein_Protein_chain_D.itp"
+#include "protein_Protein_chain_E.itp"
+#include "protein_Protein_chain_F.itp"
+#include "protein_Protein_chain_G.itp"
+#include "protein_Protein_chain_H.itp"
+#include "protein_Protein_chain_I.itp"
+#include "protein_Protein_chain_J.itp"
+#include "protein_Protein_chain_K.itp"
+#include "protein_Protein_chain_L.itp"
+#include "protein_Protein_chain_M.itp"
+#include "protein_Protein_chain_N.itp"
+#include "protein_Protein_chain_O.itp"
+#include "protein_Protein_chain_P.itp"
+#include "protein_Protein_chain_Q.itp"
+#include "protein_Protein_chain_R.itp"
+#include "protein_Protein_chain_S.itp"
+#include "protein_Protein_chain_T.itp"
+#include "protein_Protein_chain_U.itp"
+#include "protein_Protein_chain_V.itp"
+
+; Include water topology
+#include "gromos53a6.ff/spc.itp"
+
+#ifdef POSRES_WATER
+; Position restraint for each water oxygen
+[ position_restraints ]
+;  i funct       fcx        fcy        fcz
+   1    1       1000       1000       1000
+#endif
+
+; Include topology for ions
+#include "gromos53a6.ff/ions.itp"
+
+[ system ]
+; Name
+Good ROcking Metal Altar for Chronical Sinners
+
+[ molecules ]
+; Compound        #mols
+Protein_chain_A     1
+Protein_chain_B     1
+Protein_chain_C     1
+Protein_chain_D     1
+Protein_chain_E     1
+Protein_chain_F     1
+Protein_chain_G     1
+Protein_chain_H     1
+Protein_chain_I     1
+Protein_chain_J     1
+Protein_chain_K     1
+Protein_chain_L     1
+Protein_chain_M     1
+Protein_chain_N     1
+Protein_chain_O     1
+Protein_chain_P     1
+Protein_chain_Q     1
+Protein_chain_R     1
+Protein_chain_S     1
+Protein_chain_T     1
+Protein_chain_U     1
+Protein_chain_V     1
+
+DPPC 1050
+SOL 237771
+NA 833
+CL 832

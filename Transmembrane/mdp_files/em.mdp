@@ -1,0 +1,6 @@
+cpp                      = /lib/cpp
+integrator               = steep
+emstep                   = 0.001
+emtol                    = 100
+nsteps                   = 50000
+define                   = -DFLEX_SPC

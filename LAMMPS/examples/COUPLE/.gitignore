@@ -1,0 +1,8 @@
+*.o
+*.d
+*.a
+*~
+liblammps.mod
+simpleC
+simpleCC
+simpleF

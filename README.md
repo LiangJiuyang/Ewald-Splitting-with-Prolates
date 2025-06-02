@@ -13,7 +13,14 @@ The ESP method code modifications main contributors:
 
 The GROMACS repository is available in [Libin's GitHub profile](https://github.com/lu1and10/Ewald-Splitting-with-Prolates).
 
+## GROMACS Dataset
 The folders "[LysoProtein/](./LysoProtein/)", "[Transmembrane/](./Transmembrane/)", and "[Li-ion-Electrolyte/](./Li-ion-Electrolyte/)" contain the GROMACS input files for the lysozyme protein, the transmembrane bovine bc1 complex, and Li-ion aqueous electrolytes, respectively. The transmembrane input files were downloaded from [MemProt MD](https://memprotmd.bioch.ox.ac.uk/_ref/mpstruc/transmembrane-proteins-alpha-helical/_sim/1sqq_default_dppc/Chain.D/) and have been slightly modified in terms of the .mdp and README files to ensure compatibility with the current version of GROMACS. 
+
+## LAMMPS Dataset
+To be completed ASAP.
+
+# Quick Start
+To be completed ASAP.
 
 More data files and detailed descriptions will be available shortly. If you have any questions, please do not hesitate to contact me via email at jliang@flatironinstitute.org.
 

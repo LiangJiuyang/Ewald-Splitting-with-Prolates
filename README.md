@@ -45,7 +45,7 @@ For specifying the number of Fourier grids and spreading points, you can use:
 ```
 kspace_modify mesh 100 100 100 order 4  # Mesh size along each axis and spreading order
 ```
-Currently, my code supports orders ranging from 2 to 8 and spreading/splitting accuracy between 10^-7 and 10^-1.
+Currently, my code supports orders ranging from 2 to 8 and spreading/splitting accuracy between 1e-7 and 1e-1.
 ## Use ESP method in GROMACS
 To be completed ASAP.
 # "Optimal" Parameter Sets

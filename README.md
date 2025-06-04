@@ -17,7 +17,7 @@ The GROMACS repository is available in [Libin's GitHub profile](https://github.c
 The folders "[LysoProtein/](./LysoProtein/)", "[Transmembrane/](./Transmembrane/)", and "[Li-ion-Electrolyte/](./Li-ion-Electrolyte/)" contain the GROMACS input files for the lysozyme protein, the transmembrane bovine bc1 complex, and Li-ion aqueous electrolytes, respectively. The transmembrane input files were downloaded from [MemProt MD](https://memprotmd.bioch.ox.ac.uk/_ref/mpstruc/transmembrane-proteins-alpha-helical/_sim/1sqq_default_dppc/Chain.D/) and have been slightly modified in terms of the .mdp and README files to ensure compatibility with the current version of GROMACS. 
 
 ## LAMMPS Dataset
-To be completed ASAP.
+The folders "[LAMMPS-Water/](./LAMMPS-Water)" contains LAMMPS input files for the SPC/E bulk water system. The system is replicated 11-fold and 34-fold to generate larger systems containing 3,597,693 and 106,238,712 atoms, respectively.  
 
 # Quick Start
 To be completed ASAP.

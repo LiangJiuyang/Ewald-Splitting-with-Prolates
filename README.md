@@ -20,12 +20,34 @@ The folders "[LysoProtein/](./LysoProtein/)", "[Transmembrane/](./Transmembrane/
 The folders "[LAMMPS-Water/](./LAMMPS-Water)" contains LAMMPS input files for the SPC/E bulk water system. The system is replicated 11-fold and 34-fold to generate larger systems containing 3,597,693 and 106,238,712 atoms, respectively.  
 
 # Quick Start
-To be completed ASAP.
+
 
 ## Use ESP method in LAMMPS
-
+The compilation process follows the standard LAMMPS build commands. Below is an example:
+```
+mkdir LAMMPS/build
+cd LAMMPS/build
+cmake -C ../cmake/presets/oneapi.cmake -D PKG_RIGID=on -D PKG_MOLECULE=on -D PKG_KSPACE=on ../cmake
+make install
+make -j 4 
+```
+To use the PPPM, include the following commands in the input file:
+```
+pair_style lj/cut/coul/long  10 6  # Cutoffs for the LJ and Coulomb interactions
+kspace_style pppm 1e-4 # Splitting accuracy
+```
+To switch to the PSWF, replace them with:
+```
+pair_style lj/cut/coul/ps  10 6
+kspace_style ppps 1e-4 1e-4  # Splitting accuracy and spreading accuracy
+```
+For specifying the number of Fourier grids and spreading points, you can use:
+```
+kspace_modify mesh 100 100 100 order 4  # Mesh size along each axis and spreading order
+```
+Currently, my code supports orders ranging from 2 to 8 and spreading/splitting accuracy between 10^-7 and 10^-1.
 ## Use ESP method in GROMACS
-
+To be completed ASAP.
 # "Optimal" Parameter Sets
 To be completed ASAP.
 

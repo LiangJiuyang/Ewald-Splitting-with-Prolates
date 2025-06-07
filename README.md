@@ -33,12 +33,12 @@ make -j 4
 ```
 To use the PPPM, include the following commands in the input file:
 ```
-pair_style lj/cut/coul/long  10 6  # Cutoffs for the LJ and Coulomb interactions
+pair_style lj/cut/coul/long  9 9  # Cutoffs for the LJ and Coulomb interactions
 kspace_style pppm 1e-4 # Splitting accuracy
 ```
 To switch to the PSWF, replace them with:
 ```
-pair_style lj/cut/coul/ps  10 6
+pair_style lj/cut/coul/ps  9 9
 kspace_style ppps 1e-4 1e-4  # Splitting accuracy and spreading accuracy
 ```
 For specifying the number of Fourier grids and spreading points, you can use:

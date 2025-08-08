@@ -1265,24 +1265,24 @@ void spread_real_poly(int P, double tol, int order, double& c, std::vector<doubl
     std::vector<double> nodes;
     int nnodes = (int)order*1.75;
     //monomial_nodes_1d(nnodes, nodes, -0.5, 0.5);
-    cheb_nodes_1d(nnodes, nodes, -0.5, 0.5);
+    cheb_nodes_1d(nnodes, nodes, -0.5, 0.5); // use Chebyshev nodes for better accuracy
 
-    auto f = [](int P, int i, double c, double x) {
-        double arg = x - P / 2.0 + i + 0.5;
+    auto f = [](int P, int iP, double c, double x) {
+        double arg = x - P / 2.0 + iP + 0.5;
         arg /= P / 2.0;
         double val = prolate0_eval(c, arg);
         return val;
     };
 
-    std::vector<double> fn_v(P * nnodes);
-    for (int iP = 0; iP < P; iP++) {
-        for (int i = 0; i < nnodes; i++) {
-            fn_v[iP * nnodes + i] = f(P, iP, c, nodes[i]);
+    std::vector<double> fn_v(P * nnodes); // sample Chebyshev points > order (polynomial interpolation)
+    for (int iP = 0; iP < P; iP++) { // loop over P
+        for (int i = 0; i < nnodes; i++) { // loop over nodes
+            fn_v[iP * nnodes + i] = f(P, iP, c, nodes[i]); // evaluate prolate0 function at each LS point
         }
     }
 
-    std::vector<double> coeffs_tmp(P * order);
-    monomial_interp_1d(order, nnodes, fn_v, coeffs_tmp, -0.5, 0.5);
+    std::vector<double> coeffs_tmp(P * order); // coefficients for each P, order polynomial
+    monomial_interp_1d(order, nnodes, fn_v, coeffs_tmp, -0.5, 0.5); // interpolate each polynomial for each P
 
     coeffs.resize(P * order, 0.0);
     // copy coeffs_tmp to coeffs
@@ -1292,6 +1292,41 @@ void spread_real_poly(int P, double tol, int order, double& c, std::vector<doubl
         }
     }
 }
+
+void spread_real_poly_LegendaryJiangFormula(int P, double tol, int order, double rcut, double h, double& c, std::vector<double>& coeffs) {
+    prolc180(tol, c);
+
+    std::vector<double> nodes;
+    int nnodes = (int)order*1.75;
+    //monomial_nodes_1d(nnodes, nodes, -0.5, 0.5);
+    cheb_nodes_1d(nnodes, nodes, -0.5, 0.5); // use Chebyshev nodes for better accuracy
+
+    auto f = [](int P, int iP, double c, double x, double rcut, double h) {
+        double arg = x - P / 2.0 + iP + 0.5;
+        arg /= rcut / h;
+        double val = prolate0_eval(c, arg);
+        return val;
+    };
+
+    std::vector<double> fn_v(P * nnodes); // sample Chebyshev points > order (polynomial interpolation)
+    for (int iP = 0; iP < P; iP++) { // loop over P
+        for (int i = 0; i < nnodes; i++) { // loop over nodes
+            fn_v[iP * nnodes + i] = f(P, iP, c, nodes[i], rcut, h); // evaluate prolate0 function at each LS point
+        }
+    }
+
+    std::vector<double> coeffs_tmp(P * order); // coefficients for each P, order polynomial
+    monomial_interp_1d(order, nnodes, fn_v, coeffs_tmp, -0.5, 0.5); // interpolate each polynomial for each P
+
+    coeffs.resize(P * order, 0.0);
+    // copy coeffs_tmp to coeffs
+    for (int i = 0; i < P; i++) {
+        for (int j = 0; j < order; j++) {
+            coeffs[j*P + i] = coeffs_tmp[i*order + order - j - 1];
+        }
+    }
+}
+
 /*
 // test to generate coefficients
 // g++-14 -std=c++17 -O3 -march=native pswf.cpp -lopenblas

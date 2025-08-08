@@ -13,14 +13,15 @@
 
 #ifdef KSPACE_CLASS
 // clang-format off
-KSpaceStyle(ppps,PPPS);
+KSpaceStyle(ppps/timing,PPPSTiming);
 // clang-format on
 #else
 
-#ifndef LMP_PPPS_H
-#define LMP_PPPS_H
+#include "ppps.h"
 
-#include "error.h"
+#ifndef LMP_PPPS_TIMING_H
+#define LMP_PPPS_TIMING_H
+
 #include "kspace.h"
 #include "math_const.h"
 #include "lmpfftsettings.h" // IWYU pragma: export
@@ -29,10 +30,10 @@ using namespace MathConst;
 
 namespace LAMMPS_NS {
 
-class PPPS : public KSpace {
+class PPPSTiming : public KSpace {
  public:
-  PPPS(class LAMMPS *);
-  ~PPPS() override;
+  PPPSTiming(class LAMMPS *);
+  ~PPPSTiming() override;
   void settings(int, char **) override;
   void init() override;
   void setup() override;
@@ -56,13 +57,14 @@ class PPPS : public KSpace {
   double shift, shiftone, shiftatom_lo, shiftatom_hi;
   int peratom_allocate_flag;
 
+  double **Time; // timing for each step
+
   int nxlo_in, nylo_in, nzlo_in, nxhi_in, nyhi_in, nzhi_in;
   int nxlo_out, nylo_out, nzlo_out, nxhi_out, nyhi_out, nzhi_out;
   int nxlo_ghost, nxhi_ghost, nylo_ghost, nyhi_ghost, nzlo_ghost, nzhi_ghost;
   int nxlo_fft, nylo_fft, nzlo_fft, nxhi_fft, nyhi_fft, nzhi_fft;
   int nlower, nupper;
   int ngrid, nfft_brick, nfft, nfft_both;
-  int macro_if_use_new_shidong_formula;
 
   FFT_SCALAR ***density_brick;
   FFT_SCALAR ***vdx_brick, ***vdy_brick, ***vdz_brick;
@@ -204,115 +206,47 @@ class PPPS : public KSpace {
     double denominator = 0.00;
     for (nx = -5; nx <= 5; nx++) {
       qx = kx + 2 * MY_PI * nx / hx;
-
-      if(macro_if_use_new_shidong_formula == 0){
-        double ph_2_kx_c = order * hx / 2.0 * fabs(qx) / spreading_select_c;
-        wx = 0.00;
-        if(ph_2_kx_c <= 1.00){
-          double Fourier_spreading_appx = Fourier_spreading_coeff[0];
-          double Fourier_spreading_r = 1.0;
-          for(int i=1; i<Fourier_spreading_order; i++){
-            Fourier_spreading_r *= ph_2_kx_c;
-            Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
-          }
-          wx = order / 2.0 * Fourier_spreading_appx;
-          wx = wx * wx;
+      double ph_2_kx_c = order * hx / 2.0 * fabs(qx) / spreading_select_c;
+      wx = 0.00;
+      if(ph_2_kx_c <= 1.00){
+        double Fourier_spreading_appx = Fourier_spreading_coeff[0];
+        double Fourier_spreading_r = 1.0;
+        for(int i=1; i<Fourier_spreading_order; i++){
+          Fourier_spreading_r *= ph_2_kx_c;
+          Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
         }
-      }
-      else if(macro_if_use_new_shidong_formula == 1)
-      {
-        double rc_kx_c = cutoff * fabs(qx) / spreading_select_c;
-        wx = 0.00;
-        if(rc_kx_c <= 1.00){
-          double Fourier_spreading_appx = Fourier_spreading_coeff[0];
-          double Fourier_spreading_r = 1.0;
-          for(int i=1; i<Fourier_spreading_order; i++){
-            Fourier_spreading_r *= rc_kx_c;
-            Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
-          }
-          wx = cutoff / hx * Fourier_spreading_appx;
-          wx = wx * wx;
-        }
-      }
-      else
-      {
-        error->all(FLERR, "macro_if_use_new_shidong_formula should be 0 or 1");
+        wx = order / 2.0 * Fourier_spreading_appx;
+        wx = wx * wx;
       }
 
       for (ny = -5; ny <= 5; ny++) {
         qy = ky + 2 * MY_PI * ny / hy;
-
-        if(macro_if_use_new_shidong_formula == 0)
-        {
-          double ph_2_ky_c = order * hy / 2.0 * fabs(qy) / spreading_select_c;
-          wy = 0.00;
-          if(ph_2_ky_c <= 1.00){
-            double Fourier_spreading_appx = Fourier_spreading_coeff[0];
-            double Fourier_spreading_r = 1.0;
-            for(int i=1; i<Fourier_spreading_order; i++){
-              Fourier_spreading_r *= ph_2_ky_c;
-              Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
-            }
-            wy = order / 2.0 * Fourier_spreading_appx;
-            wy = wy * wy;
+        double ph_2_ky_c = order * hy / 2.0 * fabs(qy) / spreading_select_c;
+        wy = 0.00;
+        if(ph_2_ky_c <= 1.00){
+          double Fourier_spreading_appx = Fourier_spreading_coeff[0];
+          double Fourier_spreading_r = 1.0;
+          for(int i=1; i<Fourier_spreading_order; i++){
+            Fourier_spreading_r *= ph_2_ky_c;
+            Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
           }
-        }
-        else if(macro_if_use_new_shidong_formula == 1)
-        {
-          double rc_ky_c = cutoff * fabs(qy) / spreading_select_c;
-          wy = 0.00;
-          if(rc_ky_c <= 1.00){
-            double Fourier_spreading_appx = Fourier_spreading_coeff[0];
-            double Fourier_spreading_r = 1.0;
-            for(int i=1; i<Fourier_spreading_order; i++){
-              Fourier_spreading_r *= rc_ky_c;
-              Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
-            }
-            wy = cutoff / hy * Fourier_spreading_appx;
-            wy = wy * wy;
-          }
-        }
-        else
-        {
-          error->all(FLERR, "macro_if_use_new_shidong_formula should be 0 or 1");
+          wy = order / 2.0 * Fourier_spreading_appx;
+          wy = wy * wy;
         }
 
         for (nz = -5; nz <= 5; nz++) {
             qz = kz + 2 * MY_PI * nz / hz;
-
-            if(macro_if_use_new_shidong_formula == 0)
-            {
-                double ph_2_kz_c = order * hz / 2.0 * fabs(qz) / spreading_select_c;
-                wz = 0.00;
-                if(ph_2_kz_c <= 1.00){
-                  double Fourier_spreading_appx = Fourier_spreading_coeff[0];
-                  double Fourier_spreading_r = 1.0;
-                  for(int i=1; i<Fourier_spreading_order; i++){
-                    Fourier_spreading_r *= ph_2_kz_c;
-                    Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
-                  }
-                  wz = order / 2.0 * Fourier_spreading_appx;
-                  wz = wz * wz;
-                }
-            }
-            else if(macro_if_use_new_shidong_formula == 1)
-            {
-                double rc_kz_c = cutoff * fabs(qz) / spreading_select_c;
-                wz = 0.00;
-                if(rc_kz_c <= 1.00){
-                  double Fourier_spreading_appx = Fourier_spreading_coeff[0];
-                  double Fourier_spreading_r = 1.0;
-                  for(int i=1; i<Fourier_spreading_order; i++){
-                    Fourier_spreading_r *= rc_kz_c;
-                    Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
-                  }
-                  wz = cutoff / hz * Fourier_spreading_appx;
-                  wz = wz * wz;
-                }
-            }
-            else
-            {
-              error->all(FLERR, "macro_if_use_new_shidong_formula should be 0 or 1");
+            double ph_2_kz_c = order * hz / 2.0 * fabs(qz) / spreading_select_c;
+            wz = 0.00;
+            if(ph_2_kz_c <= 1.00){
+              double Fourier_spreading_appx = Fourier_spreading_coeff[0];
+              double Fourier_spreading_r = 1.0;
+              for(int i=1; i<Fourier_spreading_order; i++){
+                Fourier_spreading_r *= ph_2_kz_c;
+                Fourier_spreading_appx += Fourier_spreading_coeff[i] * Fourier_spreading_r;
+              }
+              wz = order / 2.0 * Fourier_spreading_appx;
+              wz = wz * wz;
             }
             
             if(fabs(nx) == 5 && ny == 0 && nz == 0 && (wx * wy * wz)>=1e-8)

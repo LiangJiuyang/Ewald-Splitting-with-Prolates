@@ -1,4 +1,4 @@
-#include "esp.h"
+#include "ppps.h"
 
 #include "angle.h"
 #include "atom.h"
@@ -13,6 +13,7 @@
 #include "memory.h"
 #include "neighbor.h"
 #include "pair.h"
+#include "pswf.h"
 #include "remap_wrap.h"
 
 #include <cmath>
@@ -27,7 +28,7 @@ using namespace MathSpecial;
    Build Table
 ------------------------------------------------------------------------- */
 
-int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
+int PPPS::build_table(double algorithm_accuracy, double spreading_accuracy)
 {
     double options[16] = {0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002, 0.0001, 0.00005, 0.00002, 0.00001, 0.000005, 0.000002, 0.000001, 0.0000005, 0.0000002, 0.0000001};
     int options_size = 16;
@@ -46,6 +47,25 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
     if(me==0)
       printf("The selected relative error level is %lf\n", closet);
     
+    // Set the coefficients based on the selected accuracy level
+    num_of_force_poly = 15;
+    num_of_energy_poly = 15;
+    num_of_Fourier_poly = 15;
+    memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+    memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+    memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
+    
+    std::vector<double> poly_coeff;
+    force_poly(closet, num_of_force_poly, select_c, poly_coeff);
+    for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff[i];
+
+    energy_poly(closet, num_of_energy_poly, select_c, poly_coeff);
+    for(int i=0; i<num_of_energy_poly; i++) energy_poly_coeff[i] = poly_coeff[i];
+
+    fourier_poly(closet, num_of_Fourier_poly, select_c, Lambda_0, poly_coeff);
+    for(int i=0; i<num_of_Fourier_poly; i++) Fourier_poly_coeff[i] = poly_coeff[i];
+
+/*
     if(closet == 0.01)
     {
        // C = 6.9862  Lambda_0 = 0.948344618546107;
@@ -54,9 +74,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         num_of_force_poly = 8;
         num_of_energy_poly = 7;
         num_of_Fourier_poly = 7; 
-        memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-        memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-        memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+        memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+        memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+        memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
         double poly_coeff_f[]={0.999976976970184,	0.00346624698329073,	-0.0862705381209952,	-3.53479050138590,	-3.91423942767437,	17.0946354870164,	-14.4017862335112,	3.85655992310600};
         for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
         double poly_coeff_e[]={0.999939779902725,	-2.10332973887343,	-0.0829743671199074,	2.61648482694035,	-0.962766737007719,	-1.06417462979906,	0.596893130500942};
@@ -72,9 +92,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 10;
       num_of_energy_poly = 10;
       num_of_Fourier_poly = 9;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={0.999999324024297,	0.000101746872439440,	-0.00201403463508854,	-5.16990722741147,	0.144801668581986,	8.06455061612519,	5.59289884198272,	-21.3916361943072,	15.3766233153695,	-3.60641020760809};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={0.999999889284700,	-2.22298548116544,	-0.000970540289881722,	2.60166723328620,	-0.110346381304243,	-1.87128628432648,	-1.32927266978829,	3.75049722774856,	-2.28662667327734,	0.469323728820715};
@@ -90,9 +110,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 12;
       num_of_energy_poly = 10;
       num_of_Fourier_poly = 11;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={1.00000016792146,	-4.63616027092731e-05,	0.00209482327769395,	-6.34771368826480,	0.320102182467991,	11.8330502754911,	4.67961570340904,	-22.8704843569304,	5.08944696550660,	16.0849167644219,	-12.6618273113199,	2.87453777038353};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={1.00000010540748,	-2.36458085533627,	0.000130278845119097,	3.15888221592848,	-0.0616284058308989,	-2.93238259422184,	-1.54048852720144,	5.75029278906965,	-3.87540469613228,	0.865180132545413};
@@ -109,9 +129,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         num_of_force_poly = 12;
         num_of_energy_poly = 11;
         num_of_Fourier_poly = 12; 
-        memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-        memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-        memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+        memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+        memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+        memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
         double poly_coeff_f[]={1.00000039989940,	-0.000111962487259587,	0.00514843639711582,	-7.29264165850299,	0.830181749158404,	12.6186620024320,	13.6708987736821,	-47.5287345877297,	27.7974058124898,	8.99141286159203,	-13.7437099200624,	3.65337584091615};
         for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
         double poly_coeff_e[]={0.999999716772465,	-2.46424478449351,	-0.00280410611862911,	3.64468157293033,	-0.356765988541030,	-2.56379487753728,	-4.83246201861727,	12.3138189974739,	-9.64688979608662,	3.33144581696123,	-0.422984308746543};
@@ -125,9 +145,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         num_of_force_poly = 11;
         num_of_energy_poly = 11;
         num_of_Fourier_poly = 10;
-        memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-        memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-        memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+        memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+        memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+        memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
         double poly_coeff_f[] = {0.999999716772465,	0,	0.00280410611862911,	-7.28936314586065,	1.07029796562309,	10.2551795101491,	24.1623100930863,	-73.8829139848432,	67.5282285726064,	-26.6368697944564,	3.79032696080417};
         for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
         double poly_coeff_e[] = {0.999999716772465,	-2.46424478449351,	-0.00280410611862911,	3.64468157293033,	-0.356765988541030,	-2.56379487753728,	-4.83246201861727,	12.3138189974739,	-9.64688979608662,	3.32960872430705,	-0.421147440089352};
@@ -144,9 +164,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 13;
       num_of_energy_poly = 12;
       num_of_Fourier_poly = 12;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={0.999999937934452,	2.22000938196812e-05,	-0.00132056539060987,	-8.09018838700313,	-0.379170743154443,	23.6968164549766,	-13.0465638135469,	12.1757149133300,	-88.7453494169642,	155.911091312689,	-121.935353387077,	46.5579043051199,	-7.14263973476524};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={0.999999944619443,	-2.55944108955882,	-0.000704071998158612,	4.07301084968056,	-0.111059945527381,	-4.66367646280159,	-1.74084972953546,	7.98720721513622,	-2.83188665169417,	-3.54373240959362,	3.11566696906769,	-0.724534687883988};
@@ -162,9 +182,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 13;
       num_of_energy_poly = 13;
       num_of_Fourier_poly = 13;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={0.999999970324060,	1.29484638151656e-05,	-0.000912831960741989,	-9.36946746428633,	-0.347475436385835,	29.8590128346239,	-15.0698899852300,	10.6121783341436,	-125.049482171426,	243.235626523391,	-204.860047126553,	83.6981139163635,	-13.7072777555374};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={1.00000001182555,	-2.68023134366658,	0.000248144151621776,	4.69138061023308,	0.0702465528551177,	-7.25813025555189,	2.38283879498389,	-0.450933220187718,	15.9816929265746,	-28.5957587707567,	21.6452792486930,	-7.96945073468913,	1.18281803202510};
@@ -181,9 +201,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 13;
       num_of_energy_poly = 13;
       num_of_Fourier_poly = 12; 
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={1.00000006021466,	-1.54317704013085e-05,	0.000544031060444539,	-10.3848656437997,	-0.0685913949496211,	33.4873483886740,	-10.6190151594428,	-7.00864746526383,	-132.636474376189,	301.342471560251,	-271.952309118610,	116.792012347112,	-19.9522584995319};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={1.00000001075386,	-2.76671977587223,	0.000248133153658028,	5.18451117975703,	0.0771836301689182,	-8.61808700165139,	2.87598455859069,	-0.402380991626970,	21.1916233438731,	-39.8233819500516,	31.5480841091314,	-12.1563446129808,	1.88927937006230};
@@ -197,9 +217,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         num_of_force_poly = 13;
         num_of_energy_poly = 13;
         num_of_Fourier_poly = 14;
-        memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-        memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-        memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+        memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+        memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+        memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
         double poly_coeff_f[] = {1.00000001075386,	0,	-0.000248133153724128,	-10.3690223595126,	-0.231550890509191,	34.4723480064839,	-14.3799227918144,	2.41428594500155,	-148.341363395835,	318.587055584321,	-283.932756968469,	121.565427099596,	-20.7842521068624};
         for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
         double poly_coeff_e[] = {1.00000001075386,	-2.76671977587224,	0.000248133153724128,	5.18451117975632,	0.0771836301697304,	-8.61808700162097,	2.87598455836288,	-0.402380990833592,	21.1916233422621,	-39.8233819480402,	31.5480841076077,	-12.1565427099596,	1.88927936994588};
@@ -216,9 +236,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 15;
       num_of_energy_poly = 13;
       num_of_Fourier_poly = 14;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={0.999999986607656,	5.76073596343998e-06,	-0.000407096211643088,	-11.3860527546485,	-0.158349572595723,	39.0930144922175,	-6.77647358124247,	-46.4914032771385,	-44.1702401277728,	122.205435569987,	43.1836489722343,	-251.443029879477,	237.071110445860,	-97.8950384518770,	15.7678809123309};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={1.00000000419986,	-2.85036017962769,	0.000154088936279329,	5.69421498608091,	0.0640859096827109,	-9.99055823953118,	2.93923507538692,	0.947222912635596,	25.4126861600602,	-51.7646800240185,	43.0408804276299,	-17.2841886975908,	2.79130759367482};
@@ -234,9 +254,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 16;
       num_of_energy_poly = 15;
       num_of_Fourier_poly = 15;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={1.00000000567200,	-2.98196419497992e-06,	0.000260640145792745,	-12.8003649057351,	0.164047500990804,	44.3391527234620,	13.0549333308177,	-157.067309245327,	231.475384345079,	-471.547765905995,	1109.43460723270,	-1602.07064591235,	1357.65431622232,	-679.093556142915,	187.745901912535,	-22.2889177054347};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={1.00000000153754,	-2.95755972859943,	4.57485992839748e-05,	6.39443462352736,	0.0171275345196431,	-11.6734683047598,	0.671843256336931,	13.3305469326335,	2.96440161111971,	-14.2797616079681,	-15.3559467546313,	46.0799937811758,	-39.0566807487586,	15.2199191798773,	-2.35489552708168};
@@ -252,9 +272,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 16;
       num_of_energy_poly = 15;
       num_of_Fourier_poly = 16;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={1.00000000627485,	-3.36432782963719e-06,	0.000300123003584007,	-13.8782436261756,	0.197257524631802,	50.8388120388574,	16.4529275347297,	-196.722236945548,	307.041042891568,	-649.608186153088,	1556.39999914506,	-2311.07135701978,	2026.63301561114,	-1052.86835501504,	303.165930162284,	-37.5808820459041};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={1.00000000326453,	-3.03521553166402,	0.000101136693413356,	6.93099908700899,	0.0405355301947390,	-13.6085983351212,	1.83580148237586,	12.3830231388235,	14.1235805433740,	-37.8920251280739,	4.11573851197565,	42.5007094799800,	-43.9541501704656,	18.5819372076673,	-3.02243696048009};
@@ -270,9 +290,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 18;
       num_of_energy_poly = 16;
       num_of_Fourier_poly = 17;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={0.999999999961415,	3.50514406510100e-08,	-4.97213805364383e-06,	-14.9690649467868,	-0.00747690008593338,	60.6665266966819,	-1.34644856393226,	-126.098008769228,	-54.3352122865931,	423.232596807320,	-636.428142801519,	1177.79162790563,	-2341.66508961917,	3051.02310311967,	-2426.06101122707,	1163.65967928197,	-313.041710575931,	36.5786473990644};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={0.999999999099120,	-3.11072621473413,	-4.16989140530205e-05,	7.48611554575215,	-0.0264660335322304,	-14.8428514991661,	-2.12675694320169,	33.3704991963947,	-38.1390668763677,	72.6529943944285,	-185.189878437022,	272.287233986797,	-229.644249207414,	113.803259994199,	-31.2040207619571,	3.68395455524089};
@@ -288,9 +308,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 18;
       num_of_energy_poly = 16;
       num_of_Fourier_poly = 17;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={1.00000000034339,	-2.02976311321212e-07,	1.94981453826570e-05,	-16.4770715625018,	0.0133019096442411,	71.2794699277118,	0.785151753393450,	-174.531205061627,	-9.95656047618832,	387.067796455747,	-457.820058094369,	967.589109031502,	-2618.02073256696,	3978.91837173825,	-3455.94034979385,	1764.11522775444,	-498.878676874510,	60.8562108409938};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={0.999999999045266,	-3.20834876144458,	-4.67857108627234e-05,	8.23985059888790,	-0.0315364189413687,	-17.4942968522807,	-2.70077010425988,	42.8255756352583,	-51.8167938635987,	103.197300670063,	-270.363676236796,	412.169470341688,	-362.153605212915,	187.496958597706,	-53.8273657694752,	6.66728416275876};
@@ -306,9 +326,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 19;
       num_of_energy_poly = 18;
       num_of_Fourier_poly = 18;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={0.999999999638727,	2.63479773256192e-07,	-3.19417418848389e-05,	-17.6333443474892,	-0.0390074317994884,	80.8707730961580,	-6.20070503290708,	-160.018057923742,	-232.914645924401,	1260.88466321026,	-2648.13558893027,	5420.17767331231,	-9881.03096591064,	12839.8625899721,	-11174.3286120305,	6403.93704775573,	-2331.23540176163,	490.206596129121,	-45.4029803378526};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={0.999999999991520,	-3.27948996189663,	-1.80568509981077e-07,	8.81743754190410,	0.000320571611515774,	-20.0751581733884,	0.117573204335827,	33.0624961311052,	6.30622387244858,	-71.9042114249266,	86.8411829564886,	-158.152192190952,	355.697628537825,	-489.373546883985,	397.550384665017,	-192.665498983712,	52.1956206204255,	-6.13877030177604};
@@ -324,9 +344,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 20;
       num_of_energy_poly = 18;
       num_of_Fourier_poly = 19;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={0.999999999907053,	7.30236850987609e-08,	-9.51015362621321e-06,	-18.8154799642815,	-0.0132912073605151,	89.9360838477049,	-2.38739557034506,	-222.056934960936,	-99.5130494520633,	843.299583785857,	-1214.49369126173,	2124.42025826931,	-4477.21418852592,	5752.07408805164,	-3452.47857543231,	-264.533604482836,	1890.09514360170,	-1309.11506830294,	412.117231418881,	-52.3210992806125};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={0.999999999949391,	-3.34892972881350,	-2.90354997790204e-06,	9.40809286651173,	-0.00202102912071389,	-22.4079242663551,	-0.127494440141390,	40.3628453629183,	1.00129043567824,	-68.2979927953205,	62.5165406487472,	-123.679350496091,	370.733832235627,	-575.007281406772,	497.454284115259,	-251.516932661952,	70.4285943443364,	-8.51755028102381};
@@ -342,9 +362,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 21;
       num_of_energy_poly = 19;
       num_of_Fourier_poly = 20;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={1.00000000001391,	-1.28633318441373e-08,	1.98077942914487e-06,	-20.4265557430431,	0.00394200706009684,	103.203332909006,	1.04450399343619,	-303.952248876184,	67.8704525227690,	221.869386826706,	1417.14471878573,	-5256.42757451275,	10756.5317620360,	-19536.3574847080,	30353.7589777164,	-35219.4823001557,	28675.6200323416,	-15892.9107975074,	5736.10077016188,	-1221.55644143221,	116.965522109065};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={1.00000000005217,	-3.43915091458899,	4.64213665401711e-06,	10.2129931628542,	0.00571173568370331,	-25.9092460458589,	0.915955162733418,	42.4006288697159,	34.7630277907244,	-207.725463967566,	400.092507505656,	-810.618700773072,	1514.32656925020,	-1991.54184036483,	1739.41639295321,	-998.867574034613,	365.080709288437,	-77.3722897236707,	7.25976546276111};
@@ -360,9 +380,9 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       num_of_force_poly = 19;
       num_of_energy_poly = 18;
       num_of_Fourier_poly = 18;
-      memory->create(force_poly_coeff, num_of_force_poly, "esp:force_poly_coeff");
-      memory->create(energy_poly_coeff, num_of_energy_poly, "esp:force_poly_coeff");
-      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "esp:force_poly_coeff");
+      memory->create(force_poly_coeff, num_of_force_poly, "ppps:force_poly_coeff");
+      memory->create(energy_poly_coeff, num_of_energy_poly, "ppps:force_poly_coeff");
+      memory->create(Fourier_poly_coeff, num_of_Fourier_poly, "ppps:force_poly_coeff");
       double poly_coeff_f[]={0.999999999446076,	4.23172355552837e-07,	-5.38070765192522e-05,	-21.6574981666958,	-0.0725929151074709,	115.376103424865,	-12.8311384183207,	-242.196183860689,	-540.052757427997,	2923.43021625385,	-6944.75751750092,	15407.1215589164,	-29663.9487694345,	41275.3086568348,	-39116.1649931860,	24738.2441470991,	-10053.0921969783,	2387.24812313145,	-252.955104163650};
       for(int i=0; i<num_of_force_poly; i++) force_poly_coeff[i] = poly_coeff_f[i];
       double poly_coeff_e[]={0.999999999704477,	-3.50515672756344,	-1.92878813886077e-05,	10.8308958216698,	-0.0168141249582918,	-28.3325153491859,	-1.79712035459171,	66.8399818759439,	-40.4413358286324,	24.6776690750191,	-207.208604930314,	328.177079765309,	-16.9557166242257,	-466.443658446301,	593.355537877069,	-356.900371522548,	111.263300988109,	-14.5431522070165};
@@ -370,6 +390,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       double poly_coeff_Fourier[]={2.00000000275849,	-1.82641509823001e-06,	-18.5383833200707,	-0.00877846730059684,	81.6480538709633,	-2.83339927159389,	-199.920726817654,	-169.907841596936,	1240.46490214984,	-2734.21323656804,	6356.49819835723,	-13481.0962707694,	19878.6975944560,	-19325.1827539063,	12301.1936402614,	-4972.96455121883,	1165.18443767022,	-121.020882876783};
       for(int i=0; i<num_of_Fourier_poly; i++) Fourier_poly_coeff[i] = poly_coeff_Fourier[i];
     }
+*/
 
     double spreading_options[15] = {0.1, 0.05, 0.01, 0.005,  0.001, 0.0005, 0.0001, 0.00005, 0.00001, 0.000005, 0.000001, 0.0000005, 0.0000001, 0.00000005, 0.00000001};
     int spreading_options_size = 15;
@@ -386,7 +407,35 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
     
     if(me==0)
       printf("The selected spreading accuracy level is %.9g\n", spreading_closet);
+
+    poly_order = 15;
+
+    memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+    memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff"); 
+
+    std::vector<double> coeffs;
+
+    if(macro_if_use_new_shidong_formula == 0)
+      spread_real_poly(order, spreading_closet, poly_order, spreading_select_c, coeffs);
+    else if(macro_if_use_new_shidong_formula == 1)
+      spread_real_poly_LegendaryJiangFormula(order, spreading_closet, poly_order, cutoff, h_x, spreading_select_c, coeffs); // need to be split into three parts 
+
+    for(int i=0; i<poly_order; i++){
+        for(int j=0; j<order; j++){
+            rho_coeff[i][j+(1-order)/2] = coeffs[i*order+j];
+        }
+    }
     
+    Fourier_spreading_order = 15;
+    spread_fourier_poly(spreading_closet, Fourier_spreading_order, spreading_select_c, spreading_Lambda_0, coeffs);
+    
+    memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
+
+    for(int i=0; i<Fourier_spreading_order; i++){
+        Fourier_spreading_coeff[i] = coeffs[i];
+    } 
+
+    /*
     if(spreading_closet == 0.00000001){
         spreading_select_c = 21.691;
         spreading_Lambda_0 = 0.538207997662044;
@@ -395,8 +444,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
 
         if(order == 2){
           poly_order = 20;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[20][2] = {
             {  0.139045195142160,    0.139045195142160},
             {  1.67250092690857,    -1.67250092690857},
@@ -427,8 +476,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 3){
           poly_order = 16;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[16][3] = {
             {  0.0113297340899756,   2.28211995691278,    0.0113297340899756},
             {  0.139968225172789,    2.00000000000000e-17, -0.139968225172789},
@@ -455,8 +504,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 4){
           poly_order = 14;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[14][4] = {
             {  0.00199960692065666,   1.17440563657100,    1.17440563657100,    0.00199960692065666},
             {  0.0233708342211055,    3.17040158671781,   -3.17040158671781,   -0.0233708342211055},
@@ -481,8 +530,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 5){
           poly_order = 14;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[14][5] = {
             {  0.000565048233981659,  0.398506805745457,   2.28211995442809,   0.398506805745457,   0.000565048233981659},
             {  0.00618466696394540,   1.45217645478225,    2.00000000000000e-17, -1.45217645478225,  -0.00618466696394540},
@@ -507,8 +556,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 6){
           poly_order = 13;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[13][6] = {
             {  0.000214773994302955,  0.139045194806291,   1.70301642109976,   1.70301642109976,   0.139045194806291,   0.000214773994302955},
             {  0.00220585632513333,   0.557500310186197,   2.00762181773799,  -2.00762181773799,  -0.557500310186197,  -0.00220585632513333},
@@ -532,8 +581,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 7){
           poly_order = 13;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[13][7] = {
             {  9.95502431136609e-05,  0.0540752242384053,  0.954211860166587,   2.28211995791377,   0.954211860166587,   0.0540752242384053,   9.95502431136609e-05},
             {  0.000963693733512654,  0.223704539340011,   1.69914617530266,    2.00000000000000e-17, -1.69914617530266,  -0.223704539340011,  -0.000963693733512654},
@@ -557,8 +606,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 8){
           poly_order = 13;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[13][8] = {
             { 5.30636915489310e-05, 0.0235425034280704, 0.496281588030282, 1.93663326919883, 1.93663326919883, 0.496281588030282, 0.0235425034280704, 5.30636915489310e-05 },
             { 0.000486432680430023, 0.0978058838813323, 1.04803062013515, 1.27649418606389, -1.27649418606389, -1.04803062013515, -0.0978058838813323, -0.000486432680430023 },
@@ -581,7 +630,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
         }
 
-        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
         double Fourier_array[20] = {1.22825521303982,	-1.86585226973762e-08,	-12.8547999047692,	-4.09631326954707e-05,	64.1529205579755,	0.0331756804103367,	-204.325771582658,	8.93322810529360,	389.912548962283,	416.609076290921,	-2562.10786790420,	5581.35196346832,	-12301.9142285051,	24385.8580664781,	-34391.2156338978,	32610.0228039515,	-20524.0901285556,	8289.01503313593,	-1957.02179212551,	206.413191621512};
         for(int i=0; i<20; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -595,8 +644,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         
         if(order == 2){
           poly_order = 20;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[20][2] = {
             {  0.170477246690630,   0.170477246690630 },
             {  1.88581045900646,  -1.88581045900646 },
@@ -627,8 +676,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 3){
           poly_order = 18;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[18][3] = {
             {  0.0170008022536889,   2.23589767624799,   0.0170008022536889 },
             {  0.193055017279687,   2.00000000000000e-17,  -0.193055017279687 },
@@ -657,8 +706,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 4){
           poly_order = 16;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[16][4] = {
             {  0.00345321955759124,   1.21343085982082,   1.21343085982082,   0.00345321955759124 },
             {  0.0370814283708822,   3.01353576526609,  -3.01353576526609,  -0.0370814283708822 },
@@ -685,8 +734,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 5){
           poly_order = 15;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[15][5] = {
             {  0.00108157218882832,   0.448992858885830,   2.23589767623752,   0.448992858885830,   0.00108157218882832 },
             {  0.0108719492105527,   1.50494037319653,   2.00000000000000e-17,  -1.50494037319653,  -0.0108719492105527 },
@@ -712,8 +761,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 6){
           poly_order = 14;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[14][6] = {
             {  0.000444952960328055,   0.170477246725046,   1.70804669163437,   1.70804669163437,   0.170477246725046,   0.000444952960328055 },
             {  0.00419529862872804,   0.628603486880768,   1.85246526512088,  -1.85246526512088,  -0.628603486880768,  -0.00419529862872804 },
@@ -738,8 +787,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 7){
           poly_order = 14;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[14][7] = {
             {  0.000219686979455657,   0.0715316262152358,   1.00244630387598,   2.23589767622016,   1.00244630387598,   0.0715316262152358,   0.000219686979455657 },
             {  0.00195162875871354,   0.272095131316054,   1.64209976753576,   2.00000000000000e-17,  -1.64209976753576,  -0.272095131316054,  -0.00195162875871354 },
@@ -764,8 +813,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 8){
           poly_order = 13;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[13][8] = {
             {  0.000123336612448845,   0.0333009338293933,   0.549403533867175,   1.92248243484569,   1.92248243484569,   0.549403533867175,   0.0333009338293933,   0.000123336612448845 },
             {  0.00103720600899376,   0.127186694493143,   1.06720556244484,   1.16581204751290,  -1.16581204751290,  -1.06720556244484,  -0.127186694493143,  -0.00103720600899376 },
@@ -788,7 +837,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
         }
 
-        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
         double Fourier_array[20] = {1.25265511554422,	3.98474765163359e-08,	-12.0618126035244,	0.000313038026249116,	55.1473690203783,	0.167839782558153,	-161.775919647439,	17.2387935477670,	222.538609948285,	500.916232167234,	-2303.00000746607,	4900.48462520638,	-9746.98472601067,	16935.4576921721,	-21535.8551967861,	18849.7264888945,	-11098.7183938907,	4225.91846095604,	-945.222241764759,	94.7692183202598};
         for(int i=0; i<20; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -802,8 +851,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         
         if(order == 2){
           poly_order = 17;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[17][2] = {
             {  0.185982721072679,   0.185982721072679},
             {  1.98007072682168,   -1.98007072682168},
@@ -831,8 +880,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 3){
           poly_order = 14;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[14][3] = {
             {  0.0202295810565314,   2.21511849578341,    0.0202295810565314},
             {  0.221038549915961,    2.00000000000000e-17, -0.221038549915961},
@@ -857,8 +906,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 4){
           poly_order = 13;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[13][4] = {
             {  0.00436489221689811,  1.22993244812056,    1.22993244812056,    0.00436489221689811},
             {  0.0450897798476373,   2.94028430987731,   -2.94028430987731,   -0.0450897798476373},
@@ -882,8 +931,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 5){
           poly_order = 12;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[12][5] = {
             {  0.00142894140763019,  0.472355509804349,   2.21511850982267,   0.472355509804349,   0.00142894140763019},
             {  0.0138149600483872,   1.52391961668576,    2.00000000000000e-17, -1.52391961668576,  -0.0138149600483872},
@@ -906,8 +955,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 6){
           poly_order = 12;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[12][6] = {
             {  0.000608196118878935,  0.185982723384464,   1.70928588281718,   1.70928588281718,   0.185982723384464,   0.000608196118878935},
             {  0.00551433906976429,   0.660023760920627,   1.78452459575538,  -1.78452459575538,  -0.660023760920627,  -0.00551433906976429},
@@ -930,8 +979,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 7){
           poly_order = 12;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[12][7] = {
             { 0.000308549514274869, 0.0806275163169964, 1.02336418406966, 2.21511851134952, 1.02336418406966, 0.0806275163169964, 0.000308549514274869 },
             { 0.00263537048955005, 0.295152159154453, 1.61364951528337, 2.00000000000000e-17, -1.61364951528337, -0.295152159154453, -0.00263537048955005 },
@@ -954,8 +1003,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 8){
           poly_order = 12;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[12][8] = {
             { 0.000177132748107828, 0.0386323189600583, 0.573637001138312, 1.91539308909241, 1.91539308909241, 0.573637001138312, 0.0386323189600583, 0.000177132748107828 },
             { 0.00143193332830436, 0.141984291216317, 1.07254139973590, 1.11811175670876, -1.11811175670876, -1.07254139973590, -0.141984291216317, -0.00143193332830436 },
@@ -977,7 +1026,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
         }
 
-        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
         double Fourier_array[17] = {1.26391973518716,	3.99199243214347e-06,	-11.7160083712156,	0.0132257477756307,	51.2228258688252,	2.76508057288247,	-162.787278468025,	95.2775157838359,	-26.6857742433259,	656.233467248015,	-1202.97426502759,	22.3489427374285,	2163.75210363905,	-2933.82231301904,	1882.48443695863,	-623.642786951973,	86.2669038880223};
         for(int i=0; i<17; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -991,8 +1040,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
 
        if(order == 2){
         poly_order = 19;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         double array[19][2] = {
             {  0.227659562430612,   0.227659562430612 },
             {  2.20252061417016,  -2.20252061417016 },
@@ -1022,8 +1071,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 3){
         poly_order = 16;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[16][3] = {
             {  0.0303410830435758,   2.16407710980994,   0.0303410830435758 },
             {  0.301058013845917,   2.00000000000000e-17,  -0.301058013845917 },
@@ -1050,8 +1099,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 4){
         poly_order = 15;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[15][4] = {
             {  0.00754039130516089,   1.26755903503214,   1.26755903503214,   0.00754039130516089 },
             {  0.0706925453689467,   2.75480346843146,  -2.75480346843146,  -0.0706925453689467 },
@@ -1077,8 +1126,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 5){
         poly_order = 14;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[14][5] = {
             {  0.00273767518755672,   0.531093860500127,   2.16407710914869,   0.531093860500127,   0.00273767518755672 },
             {  0.0240077939366008,   1.55735778407313,   2.00000000000000e-17,  -1.55735778407313,  -0.0240077939366008 },
@@ -1103,8 +1152,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 6){
         poly_order = 13;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[13][6] = {
             {  0.00126175089100232,   0.227659562418938,   1.70967730891438,   1.70967730891438,   0.227659562418938,   0.00126175089100232 },
             {  0.0103713626991231,   0.734173544928401,   1.62280082418836,  -1.62280082418836,  -0.734173544928401,  -0.0103713626991231 },
@@ -1128,8 +1177,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 7){
         poly_order = 12;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[12][7] = {
             {  0.000682097204717491,   0.106529563461462,   1.07244874680936,   2.16407710994096,   1.07244874680936,   0.106529563461462,   0.000682097204717491 },
             {  0.00527917840112914,   0.354291120149136,   1.53728117885170,   2.00000000000000e-17,  -1.53728117885170,  -0.354291120149136,  -0.00527917840112914 },
@@ -1152,8 +1201,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       } 
        else if(order == 8){
         poly_order = 12;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[12][8] = {
             {  0.000412560513604877,   0.0546015296331088,   0.633660475800737,   1.89612404507496,   1.89612404507496,   0.633660475800737,   0.0546015296331088,   0.000412560513604877 },
             {  0.00302076224634106,   0.182274337380862,   1.07690342689145,   1.00634529883174,  -1.00634529883174,  -1.07690342689145,  -0.182274337380862,  -0.00302076224634106 },
@@ -1175,7 +1224,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
       } 
 
-       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
        double Fourier_array[19] = {1.29239922359155,	-6.32349193230514e-08,	-10.8920149818708,	-0.000325211324320586,	43.2864444296512,	-0.107474512360050,	-107.162002142119,	-6.10150223100402,	217.493292109074,	-76.7248626106733,	-115.278251038169,	-92.4477372526276,	-19.5641575660310,	1058.26202262089,	-2022.85312201707,	1839.04148310780,	-938.139583181804,	261.054548529364,	-31.1591567890018};
        for(int i=0; i<19; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -1189,8 +1238,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         
         if(order == 2){
           poly_order = 15;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[15][2] = {
             { 0.248157922475164,  0.248157922475164},
             { 2.29714813956378,  -2.29714813956378},
@@ -1216,8 +1265,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 3){
           poly_order = 12;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[12][3] = {
             { 0.0360914989749282,  2.14097796314341,   0.0360914989749282},
             { 0.342536429847670,   2.00000000000000e-17, -0.342536429847670},
@@ -1240,8 +1289,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 4){
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[11][4] = {
           {0.00953136643802728,  1.28317517950283,   1.28317517950283,   0.00953136643802728},
           {0.0854447993834379,   2.66887781398602,  -2.66887781398602,  -0.0854447993834379},
@@ -1263,8 +1312,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 5){
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
 
           double array[11][5] = {
           {0.00361799715343252,  0.558143158216225,   2.14097813077618,   0.558143158216225,   0.00361799715343252},
@@ -1287,8 +1336,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 6){
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
 
           double array[11][6] = {
             { 0.00172552569881273,  0.248157949443807,   1.70863283347569,   1.70863283347569,   0.248157949443807,   0.00172552569881273},
@@ -1310,8 +1359,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 7){
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
 
           double array[11][7] = {
             {  0.000958644964635771,   0.119997974550777,    1.09349058526087,    2.14097818807562,    1.09349058526087,    0.119997974550777,    0.000958644964635771},
@@ -1335,8 +1384,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         else if(order == 8)
         {
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           
           double array[11][8] = {
             {  0.000592989111461173,   0.0633127024423366,    0.660888390923135,    1.88656089945326,    1.88656089945326,    0.660888390923135,    0.0633127024423366,    0.000592989111461173},
@@ -1358,7 +1407,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
         }
 
-        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
         double Fourier_array[15] = {1.30567751696758,	1.00903402465331e-05,	-10.5324247661211,	0.0281078739958545,	39.4585122322499,	5.09416735855604,	-129.716953505041,	161.346424774266,	-367.515263364990,	1221.53278115840,	-2191.60472758937,	2192.84209065812,	-1271.93852562032,	404.875820389869,	-55.1756963608585};
         for(int i=0; i<Fourier_spreading_order; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -1372,8 +1421,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
 
        if(order == 2){
         poly_order = 17;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         double array[17][2] = {
             {  0.303120132809666,   0.303120132809666 },
             {  2.50912525731017,  -2.50912525731017 },
@@ -1401,8 +1450,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 3){
         poly_order = 14;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[14][3] = {
             {  0.0540982160229673,   2.08370702336224,   0.0540982160229673 },
             {  0.458707875561574,   2.00000000000000e-17,  -0.458707875561574 },
@@ -1427,8 +1476,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 4){
         poly_order = 13;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[13][4] = {
             {  0.0164731046075819,   1.31793096481877,   1.31793096481877,   0.0164731046075819 },
             {  0.131824309391476,   2.45267669897995,  -2.45267669897995,  -0.131824309391476 },
@@ -1452,8 +1501,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 5){
         poly_order = 12;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[12][5] = {
             {  0.00694036880774795,   0.625816816421159,   2.08370702517325,   0.625816816421159,   0.00694036880774795 },
             {  0.0518966903088969,   1.57080135814761,   2.00000000000000e-17,  -1.57080135814761,  -0.0518966903088969 },
@@ -1476,8 +1525,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 6){
         poly_order = 11;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[11][6] = {
             {  0.00358648208241525,   0.303120131402403,   1.70283327624818,   1.70283327624818,   0.303120131402403,   0.00358648208241525 },
             {  0.0251128039135128,   0.836375084320116,   1.38421074045368,  -1.38421074045368,  -0.836375084320116,  -0.0251128039135128 },
@@ -1499,8 +1548,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 7){
         poly_order = 11;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[11][7] = {
             {  0.00212430620393316,   0.158300163906726,   1.14218049947654,   2.08370702430635,   1.14218049947654,   0.158300163906726,   0.00212430620393316 },
             {  0.0139927534846742,   0.450257453035606,   1.40186367395085,   2.00000000000000e-17,  -1.40186367395085,  -0.450257453035606,  -0.0139927534846742 },
@@ -1522,8 +1571,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       } 
        else if(order == 8){
         poly_order = 11;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[11][8] = {
             {  0.00138502480284775,   0.0893891158217448,   0.727930704402286,   1.86067511277210,   1.86067511277210,   0.727930704402286,   0.0893891158217448,   0.00138502480284775 },
             {  0.00862329019945226,   0.255102408293382,   1.05901667301272,   0.845761602506542,  -0.845761602506542,  -1.05901667301272,  -0.255102408293382,  -0.00862329019945226 },
@@ -1544,7 +1593,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
       } 
 
-       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
        double Fourier_array[17] = {1.33969148304542,	-3.51753979005421e-07,	-9.67019176541188,	-0.00141234684410133,	32.6218319902954,	-0.380585767561295,	-65.2112070849741,	-18.9431408419211,	181.044053404932,	-249.763744725664,	464.937350422977,	-983.051926092768,	1315.74677130998,	-1054.87135377196,	506.102123302345,	-135.656605441580,	15.7583508343821};
        for(int i=0; i<17; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -1558,8 +1607,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         
         if(order == 2){
           poly_order = 14;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
 
           double array[14][2] = {
             {  0.330058275848655,    0.330058275848655},
@@ -1586,8 +1635,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 3){
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[11][3] = {
           {0.0643312715422107, 2.05753056054679, 0.0643312715422107},
           {0.517457795964784, 2.00000000000000e-17, -0.517457795964784},
@@ -1609,8 +1658,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 4){
           poly_order = 10;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
 
           double array[10][4] = {
           {0.0208274733831955,  1.33188411274594,   1.33188411274594,   0.0208274733831955},
@@ -1632,8 +1681,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 5){
           poly_order = 10;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[10][5] = {
           {0.00917791801680253,  0.656778145436459,   2.05752839006094,   0.656778145436459,   0.00917791801680253},
           {0.0650482888476476,   1.56482743510283,    2.00000000000000e-17, -1.56482743510283,  -0.0650482888476476},
@@ -1653,8 +1702,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 6){
           poly_order = 9;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[9][6] = {
           {  0.00490939770318428,   0.330058432535878,    1.69869187741120,    1.69869187741120,    0.330058432535878,    0.00490939770318428},
           {  0.0325712945855313,    0.864336066529646,    1.31099666672187,   -1.31099666672187,   -0.864336066529646,   -0.0325712945855313},
@@ -1674,8 +1723,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 7){
           poly_order = 9;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[9][7] = {
               {  0.00298918279643723,   0.178173430953499,    1.16266914545820,    2.05753047598323,    1.16266914545820,    0.178173430953499,    0.00298918279643723},
               {  0.0186495595974477,   0.480904472193357,    1.35472950967696,    2.00000000000000e-17, -1.35472950967696,   -0.480904472193357,   -0.0186495595974477},
@@ -1695,8 +1744,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 8){
           poly_order = 10;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[10][8] = {
               { 0.00199358167106259, 0.103594991501485, 0.758104789911040, 1.84784681024034, 1.84784681024034, 0.758104789911040, 0.103594991501485, 0.00199358167106259 },
               { 0.0117526267208000, 0.280502709214834, 1.04695824865777, 0.797457119010294, -0.797457119010294, -1.04695824865777, -0.280502709214834, -0.0117526267208000 },
@@ -1716,7 +1765,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
         }
         
-        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
         double Fourier_array[13] = {1.35577360342720,	-0.000215519240876851,	-9.27937887363161,	-0.272813269762981,	32.7789315852292,	-21.5802194950179,	35.4070518996063,	-270.458338967371,	597.821436871576,	-636.365504979391,	368.970996818321,	-112.468405456826,	14.0906946724415};
         for(int i=0; i<13; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -1730,8 +1779,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
 
        if(order == 2){
           poly_order = 14;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
           double array[14][2] = {
             {  0.401873420145306,   0.401873420145306 },
             {  2.76002362833187,  -2.76002362833187 },
@@ -1756,8 +1805,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
        else if(order == 3){
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[11][3] = {
             {  0.0963058546029360,   1.99188805635894,   0.0963058546029360 },
             {  0.676298738673936,   2.00000000000000e-17,  -0.676298738673936 },
@@ -1779,8 +1828,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
        else if(order == 4){
         poly_order = 11;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[11][4] = {
             {  0.0360003372949896,   1.36139369678880,   1.36139369678880,   0.0360003372949896 },
             {  0.238197249674569,   2.10452936002966,  -2.10452936002966,  -0.238197249674569 },
@@ -1802,8 +1851,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 5){
         poly_order = 10;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[10][5] = {
             {  0.0176260372942613,   0.733472709971199,   1.99188807499147,   0.733472709971199,   0.0176260372942613 },
             {  0.108806151151712,   1.52840675867043,   2.00000000000000e-17,  -1.52840675867043,  -0.108806151151712 },
@@ -1824,8 +1873,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 6){
         poly_order = 10;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[10][6] = {
             {  0.0102240872629908,   0.401873446863321,   1.68433115542586,   1.68433115542586,   0.401873446863321,   0.0102240872629908 },
             {  0.0590153522350725,   0.920008042870964,   1.13751871480947,  -1.13751871480947,  -0.920008042870964,  -0.0590153522350725 },
@@ -1846,8 +1895,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 7){
         poly_order = 10;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[10][7] = {
             {  0.00664123747883949,   0.234464184672992,   1.20879934164499,   1.99188799978497,   1.20879934164499,   0.234464184672992,   0.00664123747883949 },
             {  0.0360124085955129,   0.552974836141849,   1.23226570470908,   2.00000000000000e-17,  -1.23226570470908,  -0.552974836141849,  -0.0360124085955129 },
@@ -1868,8 +1917,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       } 
        else if(order == 8){
         poly_order = 9;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[9][8] = {
             {  0.00467117225391113,   0.145994817131479,   0.831540970066187,   1.81306461442427,   1.81306461442427,   0.831540970066187,   0.145994817131479,   0.00467117225391113 },
             {  0.0239103021083033,   0.345266895847224,   1.00445114175189,   0.684727847244013,  -0.684727847244013,  -1.00445114175189,  -0.345266895847224,  -0.0239103021083033 },
@@ -1888,7 +1937,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
       } 
 
-       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
        double Fourier_array[14] = {1.39764057599911,	-2.70143879898014e-06,	-8.38263729032031,	-0.00212593370213860,	23.1661145094270,	0.120057051989591,	-41.1093417525732,	11.1026253662201,	4.93193924982573,	99.9519100180898,	-199.808484995740,	162.053711013862,	-63.3897898719980,	9.96843449632046};
        for(int i=0; i<14; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -1903,8 +1952,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         
         if(order == 2){
           poly_order = 14;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[14][2] = {
             { 0.436925603369186, 0.436925603369186 },
             { 2.81421204437975, -2.81421204437975 },
@@ -1929,8 +1978,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
         else if (order == 3){
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[11][3] = {
             { 0.114482138709968, 1.96140336166991, 0.114482138709968 },
             { 0.753423878300845, 2.00000000000000e-17, -0.753423878300845 },
@@ -1952,8 +2001,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 4){
           poly_order = 11;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[11][4] = {
             { 0.0455377337805148, 1.37239600709157, 1.37239600709157, 0.0455377337805148 },
             { 0.282181633065391, 1.99056704626269, -1.99056704626269, -0.282181633065391 },
@@ -1975,8 +2024,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 5){
           poly_order = 10;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[10][5] = {
               { 0.0233339205573305, 0.768225203537777, 1.96140337297240, 0.768225203537777, 0.0233339205573305 },
               { 0.134817024945303, 1.50166874358479, 2.00000000000000e-17, -1.50166874358479, -0.134817024945303 },
@@ -1997,8 +2046,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 6){
           poly_order = 10;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[10][6] = {
               { 0.0140173884742002, 0.436925609023204, 1.67578910137486, 1.67578910137486, 0.436925609023204, 0.0140173884742002 },
               { 0.0756853026169014, 0.938070808550103, 1.06195728063377, -1.06195728063377, -0.938070808550103, -0.0756853026169014 },
@@ -2019,8 +2068,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 7){
           poly_order = 9;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[9][7] = {
               { 0.00936356085314836, 0.263614032374908, 1.22754721207453, 1.96140331649313, 1.22754721207453, 0.263614032374908, 0.00936356085314836 },
               { 0.0474683747547741, 0.582931835162375, 1.17407785744804, 2.00000000000000e-17, -1.17407785744804, -0.582931835162375, -0.0474683747547741 },
@@ -2040,8 +2089,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if (order == 8){
           poly_order = 9;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[9][8] = {
               { 0.00673916274509376, 0.169078712582033, 0.864198912409876, 1.79569685747976, 1.79569685747976, 0.864198912409876, 0.169078712582033, 0.00673916274509376 },
               { 0.0322322109037615, 0.374820303743804, 0.979285826945936, 0.636362525322216, -0.636362525322216, -0.979285826945936, -0.374820303743804, -0.0322322109037615 },
@@ -2060,7 +2109,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
             }
         }
 
-        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
         double Fourier_array[12] = {1.41785709600891,	-9.54551171283846e-05,	-7.97495441189934,	-0.105867001294493,	21.7242448073335,	-7.34615931797523,	-2.57051679307573,	-79.8299129133637,	175.604955829871,	-155.878621576525,	66.1558807994186,	-11.1967089066119};
         for(int i=0; i<12; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -2074,8 +2123,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
 
        if(order == 2){
         poly_order = 12;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         double array[12][2] = {
             {  0.529582549088048,   0.529582549088048 },
             {  2.87943863410091,  -2.87943863410091 },
@@ -2098,8 +2147,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 3){
         poly_order = 10;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[10][3] = {
             {    0.171164365695719,   1.88352246558425,   0.171164365695719 },
             {  0.948850092693148,   2.00000000000000e-17,  -0.948850092693148 },
@@ -2120,8 +2169,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 4){
         poly_order = 9;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[9][4] = {
             {  0.0787952257250252,   1.39266149960060,   1.39266149960060,   0.0787952257250252 },
             {  0.410447283457589,   1.70753875361766,  -1.70753875361766,  -0.410447283457589 },
@@ -2141,8 +2190,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 5){
         poly_order = 9;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[9][5] = {
             {  0.0449388961930707,   0.852899935359108,   1.88352245245207,   0.852899935359108,   0.0449388961930707 },
             {  0.217844582386834,   1.40839403137475,   2.00000000000000e-17,  -1.40839403137475,  -0.217844582386834 },
@@ -2162,8 +2211,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 6){
         poly_order = 9;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[9][6] = {
             {  0.0293153935183165,   0.529582326563983,   1.64883596095470,   1.64883596095470,   0.529582326563983,   0.0293153935183165 },
             {  0.132560415587469,   0.959812309158132,   0.883457591325943,  -0.883457591325943,  -0.959812309158132,  -0.132560415587469 },
@@ -2183,8 +2232,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 7){
         poly_order = 7;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[7][7] = {
             {  0.0209157149789144,   0.345747100792810,   1.26735644065600,   1.88352283784242,   1.26735644065600,   0.345747100792810,   0.0209157149789144 },
             {  0.0886429861593104,   0.644934762921485,   1.02454574936474,   2.00000000000000e-17,  -1.02454574936474,  -0.644934762921485,  -0.0886429861593104 },
@@ -2202,8 +2251,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       } 
       else if(order == 8){
         poly_order = 7;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[7][8] = {
             {  0.0158913979295034,   0.237746887939385,   0.942085226526322,   1.74805587387623,   1.74805587387623,   0.942085226526322,   0.237746887939385,   0.0158913979295034 },
             {  0.0634317594409783,   0.444263980235362,   0.901961061503760,   0.523813557889781,  -0.523813557889781,  -0.901961061503760,  -0.444263980235362,  -0.0634317594409783 },
@@ -2220,7 +2269,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
       } 
 
-       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
        double Fourier_array[12] = {1.47181497705627,	-7.97584588332796e-05,	-7.00120076833831,	-0.0754192621079211,	15.7929293196923,	-4.42600106767411,	-2.97211752479528,	-40.2409959849833,	81.5055273240189,	-64.7899918481550,	24.3512026420036,	-3.61511407772611};
        for(int i=0; i<12; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -2234,15 +2283,15 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
 
        if(order == 2){
         poly_order = 9;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         rho_coeff[0][0] = 0.574307467864709; rho_coeff[1][0] = 2.87319911087849; rho_coeff[2][0] = 3.43664626314204; rho_coeff[3][0] = -4.49033598130652; rho_coeff[4][0] = -11.082356194141; rho_coeff[5][0] = 1.0781823376851; rho_coeff[6][0] = 13.7042413406122; rho_coeff[7][0] = 1.73889457319428; rho_coeff[8][0] = -7.93106821091405;
         rho_coeff[0][1] = 0.574307467864709; rho_coeff[1][1] = -2.87319911087849; rho_coeff[2][1] = 3.43664626314204; rho_coeff[3][1] = 4.49033598130652; rho_coeff[4][1] = -11.082356194141; rho_coeff[5][1] = -1.0781823376851; rho_coeff[6][1] = 13.7042413406122; rho_coeff[7][1] = -1.73889457319428; rho_coeff[8][1] = -7.93106821091405;  
        }
        else if(order == 3){
         poly_order = 8;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[8][3] = {
             {  0.203294303013937,   1.84652649597325,    0.203294303013937},
             {  1.03553747405562,    2.00000000000000e-17, -1.03553747405562},
@@ -2261,8 +2310,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 4){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         rho_coeff[0][-1] = 0.099693018874845; rho_coeff[1][-1] = 0.476781923984876; rho_coeff[2][-1] = 0.800880039422003; rho_coeff[3][-1] = 0.450560633317604; rho_coeff[4][-1] = -0.192702230561618; rho_coeff[5][-1] = -0.264856686543029;
         rho_coeff[0][0] = 1.39835440671411; rho_coeff[1][0] = 1.57840096107687; rho_coeff[2][0] = -0.784972435014229; rho_coeff[3][0] = -1.34359649381689; rho_coeff[4][0] = 0.132862727353174; rho_coeff[5][0] = 0.476301673064559;
         rho_coeff[0][1] = 1.39835440671411; rho_coeff[1][1] = -1.57840096107687; rho_coeff[2][1] = -0.784972435014229; rho_coeff[3][1] = 1.34359649381689; rho_coeff[4][1] = 0.132862727353174; rho_coeff[5][1] = -0.476301673064559;
@@ -2270,8 +2319,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 5){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[6][5] = {
             {  0.0595598657675920,   0.890425967360455,    1.84650649800725,   0.890425967360455,    0.0595598657675920},
             {  0.264740815145233,   1.35142274193086,     2.00000000000000e-17, -1.35142274193086,  -0.264740815145233},
@@ -2288,8 +2337,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 6){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[6][6] = {
             {  0.0402705341555265,   0.574308183206901,    1.63356683157656,    1.63356683157656,    0.574308183206901,    0.0402705341555265},
             {  0.166775916493942,   0.957517264976828,    0.805977849765258,   -0.805977849765258,   -0.957517264976828,   -0.166775916493942},
@@ -2306,8 +2355,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 7){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[6][7] = {
             {  0.0295668024093345,   0.387985662080701,    1.28212508803122,    1.84653690451238,    1.28212508803122,    0.387985662080701,    0.0295668024093345},
             {  0.114636165228633,   0.665705837410951,    0.953637158659451,    2.00000000000000e-17, -0.953637158659451,   -0.665705837410951,   -0.114636165228633},
@@ -2324,8 +2373,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 8){
         poly_order = 7;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[7][8] = {
             { 0.0230007799571616, 0.274962806420494, 0.975753669316238, 1.72388116689257, 1.72388116689257, 0.975753669316238, 0.274962806420494, 0.0230007799571616 },
             { 0.0838991326097754, 0.472305905344473, 0.859883656210132, 0.475696196631383, -0.475696196631383, -0.859883656210132, -0.472305905344473, -0.0838991326097754 },
@@ -2342,7 +2391,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
       } 
 
-       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
        Fourier_spreading_coeff[0] = 1.49863661960137; Fourier_spreading_coeff[1] = -0.00153580553856105; Fourier_spreading_coeff[2] = -6.53782778468899; Fourier_spreading_coeff[3] = -0.182990744426709; Fourier_spreading_coeff[4] = 12.9149486310785; Fourier_spreading_coeff[5] = 3.40652565837866; Fourier_spreading_coeff[6] = -28.9955774028528; Fourier_spreading_coeff[7] = 24.3356788477811; Fourier_spreading_coeff[8] = -6.43673483655126;
     }
     else if(spreading_closet == 0.005){
@@ -2353,8 +2402,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
 
        if(order == 2){
         poly_order = 9;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         double array[9][2] = {
             {  0.690743588320004,   0.690743588320004 },
             {  2.74309881925916,  -2.74309881925916 },
@@ -2374,8 +2423,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 3){
         poly_order = 8;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[8][3] = {
             {  0.303368485643295,   1.74869148378209,   0.303368485643295 },
             {  1.22158256486055,   2.00000000000000e-17,  -1.22158256486055 },
@@ -2394,8 +2443,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
        else if(order == 4){
         poly_order = 8;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[8][4] = {
             {  0.172921195957461,   1.40141429522199,   1.40141429522199,   0.172921195957461 },
             {  0.650850087734230,   1.25926528297793,  -1.25926528297793,  -0.650850087734230 },
@@ -2414,8 +2463,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 5){
         poly_order = 7;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[7][5] = {
             {  0.115360842539684,   0.978632908586110,   1.74869657865801,   0.978632908586110,   0.115360842539684 },
             {  0.402036481749406,   1.18244970546236,   2.00000000000000e-17,  -1.18244970546236,  -0.402036481749406 },
@@ -2433,8 +2482,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 6){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[6][6] = {
             {  0.0849177703274343,   0.690745078139529,   1.58608231887933,   1.58608231887933,   0.690745078139529,   0.0849177703274343 },
             {  0.274694821457781,   0.914370972353646,   0.623174026163042,  -0.623174026163042,  -0.914370972353646,  -0.274694821457781 },
@@ -2451,8 +2500,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 7){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[6][7] = {
             {  0.0667347955879768,   0.506044401606457,   1.30785858458556,   1.74869452947018,   1.30785858458556,   0.506044401606457,   0.0667347955879768 },
             {  0.201356902754059,   0.688149422359748,   0.774669774531480,   2.00000000000000e-17,  -0.774669774531480,  -0.688149422359748,  -0.201356902754059 },
@@ -2469,8 +2518,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       } 
       else if(order == 8){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[6][8] = {
             {  0.0549041082135395,   0.385229896430659,   1.05251884447941,   1.65553135255854,   1.65553135255854,   1.05251884447941,   0.385229896430659,   0.0549041082135395 },
             {  0.155292346411473,   0.523842906142800,   0.737598290332556,   0.363842366153843,  -0.363842366153843,  -0.737598290332556,  -0.523842906142800,  -0.155292346411473 },
@@ -2486,7 +2535,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
       } 
 
-       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
        double Fourier_array[9] = {1.57326528613285,	0.000631163184483512,	-5.51281970393949,	0.240271210614578,	6.87334952522541,	5.14742500073996,	-18.0218377597664,	12.6142071521804,	-2.90811683752856};
        for(int i=0; i<9; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -2500,23 +2549,23 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        
        if(order == 2){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         rho_coeff[0][0] = 0.747188653323122; rho_coeff[1][0] = 2.62218036427046; rho_coeff[2][0] = 1.11858976349623; rho_coeff[3][0] = -4.44568905233768; rho_coeff[4][0] = -2.73844958387071; rho_coeff[5][0] = 2.80779505939869;
         rho_coeff[0][1] = 0.747188653323122; rho_coeff[1][1] = -2.62218036427046; rho_coeff[2][1] = 1.11858976349623; rho_coeff[3][1] = 4.44568905233768; rho_coeff[4][1] = -2.73844958387071; rho_coeff[5][1] = -2.80779505939869;
        }
        else if(order == 3){
         poly_order = 5;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         rho_coeff[0][-1] = 0.360107573963262; rho_coeff[1][-1] = 1.28272473895721; rho_coeff[2][-1] = 1.19411756036346; rho_coeff[3][-1] = -0.411098945570772; rho_coeff[4][-1] = -0.877202401550827;
         rho_coeff[0][0] = 1.69987474072505; rho_coeff[1][0] =            2e-17; rho_coeff[2][0] = -2.32806224996523; rho_coeff[3][0] = 8e-17; rho_coeff[4][0] = 1.21805138914482;
         rho_coeff[0][1] = 0.360107573963262; rho_coeff[1][1] = -1.28272473895721; rho_coeff[2][1] = 1.19411756036346; rho_coeff[3][1] = 0.411098945570772; rho_coeff[4][1] = -0.877202401550827;
        }
        else if(order == 4){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         rho_coeff[0][-1] = 0.219190865006589; rho_coeff[1][-1] = 0.727057173670847; rho_coeff[2][-1] = 0.706134843543027; rho_coeff[3][-1] = 0.0361723481635011; rho_coeff[4][-1] = -0.253588085950057; rho_coeff[5][-1] = -0.0735575984980672;
         rho_coeff[0][0] = 1.39664617169758; rho_coeff[1][0] =  1.1142133286212; rho_coeff[2][0] = -0.734784497823199; rho_coeff[3][0] = -0.682155222886481; rho_coeff[4][0] = 0.158818816354296; rho_coeff[5][0] = 0.172258729502554;
         rho_coeff[0][1] = 1.39664617169758; rho_coeff[1][1] = -1.1142133286212; rho_coeff[2][1] = -0.734784497823199; rho_coeff[3][1] = 0.682155222886481; rho_coeff[4][1] = 0.158818816354296; rho_coeff[5][1] = -0.172258729502554;
@@ -2524,8 +2573,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 5){
         poly_order = 5;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[5][5] = {
             {  0.153484355062347,   1.01586725977441,    1.69873484188879,   1.01586725977441,    0.153484355062347},
             {  0.470755232352950,   1.08744539641681,    2.00000000000000e-17, -1.08744539641681, -0.470755232352950},
@@ -2541,8 +2590,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 6){
         poly_order = 5;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[5][6] = {
             {  0.117287442123209,   0.746024247475164,    1.55845949566284,    1.55845949566284,    0.746024247475164,    0.117287442123209},
             {  0.332881028694340,   0.874530715528338,    0.543560418955243,   -0.543560418955243,   -0.874530715528338,   -0.332881028694340},
@@ -2558,8 +2607,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 7){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[6][7] = {
             { 0.0949784168314860, 0.566018291318305, 1.31356667413863, 1.70008170491476, 1.31356667413863, 0.566018291318305, 0.0949784168314860 },
             { 0.250587094782525, 0.681489967749969, 0.690657445719605, 2.00000000000000e-17, -0.690657445719605, -0.681489967749969, -0.250587094782525 },
@@ -2576,8 +2625,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 8){
         poly_order = 6;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[6][8] = {
             { 0.0800953311466389, 0.444613342434497, 1.08327139483605, 1.61939300666862, 1.61939300666862, 1.08327139483605, 0.444613342434497, 0.0800953311466389 },
             { 0.197609026471597, 0.534821958924058, 0.673438141686406, 0.316010377769360, -0.316010377769360, -0.673438141686406, -0.534821958924058, -0.197609026471597 },
@@ -2593,7 +2642,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
       }
        
-       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
        Fourier_spreading_coeff[0] = 1.61105318798171; Fourier_spreading_coeff[1] = 0.0808800424612325; Fourier_spreading_coeff[2] = -5.83030357103232; Fourier_spreading_coeff[3] = 2.75313980415827; Fourier_spreading_coeff[4] = 4.05989941037912; Fourier_spreading_coeff[5] = -2.66275733456109;
     }
     else if(spreading_closet == 0.05){
@@ -2604,8 +2653,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
 
         if(order == 2){
           poly_order = 8;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[8][2] = {
             {  0.882210748643093,   0.882210748643093  },
             {  2.13749612914007,   -2.13749612914007  },
@@ -2624,8 +2673,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 3){
           poly_order = 7;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[7][3] = {
             {  0.535916990718485,   1.56031082210029,    0.535916990718485},
             {  1.29658038912763,   2.00000000000000e-17, -1.29658038912763},
@@ -2643,8 +2692,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 4){
           poly_order = 6;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[6][4] = {
             {  0.383237722248187,   1.36126704987023,    1.36126704987023,   0.383237722248187 },
             {  0.853759598411316,   0.753300926931140,  -0.753300926931140,  -0.853759598411316 },
@@ -2661,8 +2710,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 5){
           poly_order = 5;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[5][5] = {
             {  0.302081162624797,   1.09167989296224,    1.56036469512603,   1.09167989296224,   0.302081162624797 },
             {  0.614233858453729,   0.808378518501759,   2.00000000000000e-17,  -0.808378518501759,  -0.614233858453729 },
@@ -2678,8 +2727,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 6){
           poly_order = 5;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[5][6] = {
             {  0.252925459487757,   0.882205240499574,   1.46917662032767,   1.46917662032767,   0.882205240499574,   0.252925459487757 },
             {  0.470948942440187,   0.712358389801192,   0.355862190114156,  -0.355862190114156,  -0.712358389801192,  -0.470948942440187 },
@@ -2695,8 +2744,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 7){
           poly_order = 5;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[5][7] = {
             {  0.220359727684056,   0.730012948044801,   1.30459075105055,   1.56036706984495,   1.30459075105055,   0.730012948044801,   0.220359727684056 },
             {  0.377840647115365,   0.602558512582053,   0.475414826005528,   2.00000000000000e-17,  -0.475414826005528,  -0.602558512582053,  -0.377840647115365 },
@@ -2712,8 +2761,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
         }
         else if(order == 8){
           poly_order = 5;
-          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+          memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+          memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
           double array[5][8] = {
             {  0.197358496179726,   0.618868444188145,   1.14156257761575,   1.50852854806887,   1.50852854806887,   1.14156257761575,   0.618868444188145,   0.197358496179726 },
             {  0.313414188611971,   0.508200208016520,   0.490927941650304,   0.204520326168928,  -0.204520326168928,  -0.490927941650304,  -0.508200208016520,  -0.313414188611971 },
@@ -2728,7 +2777,7 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
         }
 
-        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+        memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
         double Fourier_array[8] = {1.72918334434787,	-0.000614502650135382,	-3.71526307417194,	-0.0794930663458162,	3.47945889936529,	-0.258925142986238,	-1.72028932888204,	0.644496940794116};
         for(int i=0; i<8; i++){
           Fourier_spreading_coeff[i] = Fourier_array[i];
@@ -2742,23 +2791,23 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        
        if(order == 2){
         poly_order = 4;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         rho_coeff[0][0] = 0.941036732651868; rho_coeff[1][0] = 1.78611675908676; rho_coeff[2][0] = -0.519667829304986; rho_coeff[3][0] = -1.80146116443851;
         rho_coeff[0][1] = 0.941036732651868; rho_coeff[1][1] = -1.78611675908676; rho_coeff[2][1] = -0.519667829304986; rho_coeff[3][1] = 1.80146116443851;
        }
        else if(order == 3){
         poly_order = 4;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         rho_coeff[0][-1] = 0.63665296670533; rho_coeff[1][-1] = 1.20144802132803; rho_coeff[2][-1] = 0.176284697522182; rho_coeff[3][-1] = -0.502123109208998;
         rho_coeff[0][0] = 1.47816546036943; rho_coeff[1][0] = 2e-17; rho_coeff[2][0] = -1.0515576180115; rho_coeff[3][0] = 4e-17;
         rho_coeff[0][1] = 0.63665296670533; rho_coeff[1][1] = -1.20144802132803; rho_coeff[2][1] = 0.176284697522182; rho_coeff[3][1] = 0.502123109208998;
        }
        else if(order == 4){
         poly_order = 3;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");          
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");          
         rho_coeff[0][-1] = 0.489922352448191; rho_coeff[1][-1] = 0.810595531724709; rho_coeff[2][-1] = 0.206965409482158;
         rho_coeff[0][0] = 1.3273523413813; rho_coeff[1][0] = 0.551054738369726; rho_coeff[2][0] = -0.468526996456746;
         rho_coeff[0][1] = 1.3273523413813; rho_coeff[1][1] = -0.551054738369726; rho_coeff[2][1] = -0.468526996456746;
@@ -2766,8 +2815,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 5){
         poly_order = 3;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         rho_coeff[0][-2] = 0.407602107070562; rho_coeff[1][-2] = 0.620865471282995; rho_coeff[2][-2] = 0.168204757985836;          
         rho_coeff[0][-1] = 1.11399152893785; rho_coeff[1][-1] = 0.631836228551183; rho_coeff[2][-1] = -0.178671984948009;
         rho_coeff[0][0] = 1.48032600861502; rho_coeff[1][0] = 2.00000000000000e-17; rho_coeff[2][0] = -0.396930596275376;
@@ -2776,8 +2825,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
        }
        else if(order == 6){
         poly_order = 3;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[3][6] = {
             {  0.355780172967334,   0.940884092946573,    1.41104519251124,    1.41104519251124,    0.940884092946573,    0.355780172967334},
             {  0.496513480902230,   0.587010871250854,    0.265377357420847,   -0.265377357420847,   -0.587010871250854,   -0.496513480902230},
@@ -2791,8 +2840,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 7){
         poly_order = 5;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[5][7] = {
             { 0.320365072583726, 0.810168339210813, 1.28361299971501, 1.48057203750656, 1.28361299971501, 0.810168339210813, 0.320365072583726 },
             { 0.414914052470860, 0.527286464910531, 0.372605319651315, 2.00000000000000e-17, -0.372605319651315, -0.527286464910531, -0.414914052470860 },
@@ -2808,8 +2857,8 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
       }
       else if(order == 8){
         poly_order = 4;
-        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"esp:rho_coeff");
-        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"esp:drho_coeff");
+        memory->create2d_offset(rho_coeff,poly_order,(1-order)/2,order/2,"pppm:rho_coeff");
+        memory->create2d_offset(drho_coeff,poly_order,(1-order)/2,order/2,"pppm:drho_coeff");
         double array[4][8] = {
             { 0.294888533003755, 0.711407535352690, 1.15430109120183, 1.44121465718693, 1.44121465718693, 1.15430109120183, 0.711407535352690, 0.294888533003755 },
             { 0.351330832004856, 0.458911465603961, 0.394611261309875, 0.155942673494966, -0.155942673494966, -0.394611261309875, -0.458911465603961, -0.351330832004856 },
@@ -2823,9 +2872,10 @@ int ESP::build_table(double algorithm_accuracy, double spreading_accuracy)
           }
       }
 
-       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "esp:Fourier_spreading_coeff");
+       memory->create(Fourier_spreading_coeff, Fourier_spreading_order, "ppps:Fourier_spreading_coeff");
        Fourier_spreading_coeff[0] = 1.79345737218915; Fourier_spreading_coeff[1] = 0.102644452928885; Fourier_spreading_coeff[2] = -3.90688664859298; Fourier_spreading_coeff[3] = 2.18448520345598;
     }
+    */
 
     for (int m = -(order-1)/2; m <= order/2; m += 1) {
         for (int l = 1; l < poly_order; l++)

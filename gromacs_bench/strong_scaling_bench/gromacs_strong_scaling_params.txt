@@ -1,0 +1,75 @@
+water strong scaling tests
+
+system size 1
+box size = 34.82080  34.82080  34.82080
+number of atoms = 4,214,784
+dt = 0.002(2 fs)
+nsteps = 2000
+ncores: 12, 24, 48, 96, 192, 384, 768, 1536, 3072, 6144, 12288
+
+system size 2
+box size = 124.36000 124.36000 124.36000
+number of atoms = 192,000,000
+dt = 0.002(2 fs)
+nsteps = 2000
+ncores: 96, 192, 384, 768, 1536, 3072, 6144, 9216, 12288, 15360, 18432
+
+esp parameters for system size 1
+fourier-nx = 180 (h = 34.82080/180 around 0.1934)
+fourier-ny = 180
+fourier-nz = 180
+pme_order = 8
+rlist = 1.0
+rcoulomb = 0.9
+rvdw = 0.6
+ewald_rtol = 1e-5
+
+pme "default" parameters for system size 1
+fourier-nx = 756 (h = 34.82080/756 around 0.046)
+fourier-ny = 756
+fourier-nz = 756
+pme_order = 5
+rlist = 1.0
+rcoulomb = 0.9
+rvdw = 0.6
+ewald_rtol = 1.7e-6 
+
+pme "optimal" parameters for system size 1
+fourier-nx = 315 (h = 34.82080/315 around 0.1106)
+fourier-ny = 315
+fourier-nz = 315
+pme_order = 12
+rlist = 1.0
+rcoulomb = 0.9
+rvdw = 0.6
+ewald_rtol = 2.0e-6 
+
+esp parameters for system size 2
+fourier-nx = 640 (h = 124.36000/640 around 0.1943)
+fourier-ny = 640
+fourier-nz = 640
+pme_order = 8
+rlist = 1.0
+rcoulomb = 0.9
+rvdw = 0.6
+ewald_rtol = 1e-5
+
+pme "default" parameters for system size 2
+fourier-nx = 2835 (h = 124.36000/2835 around 0.0438)
+fourier-ny = 2835
+fourier-nz = 2835 
+pme_order = 5
+rlist = 1.0
+rcoulomb = 0.9
+rvdw = 0.6
+ewald_rtol = 1.7e-6 
+
+pme "optimal" parameters for system size 2 
+fourier-nx = 1120 (h = 124.36000/1120 around 0.111)
+fourier-ny = 1120
+fourier-nz = 1120 
+pme_order = 12
+rlist = 1.0
+rcoulomb = 0.9
+rvdw = 0.6
+ewald_rtol = 2e-6

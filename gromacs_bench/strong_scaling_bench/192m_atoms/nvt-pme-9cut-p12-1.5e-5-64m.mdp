@@ -1,0 +1,54 @@
+; Run parameters
+integrator	= md		; leap-frog integrator
+nsteps		= 2000		; 2 * 500000 = 1000 ps
+dt		= 0.002		; 2 fs
+; Output control
+nstxout		= 9000		; save coordinates every 0.2 ps
+nstvout		= 9000		; save velocities every 0.2 ps
+nstenergy	= 9000		; save energies every 0.2 ps
+nstlog		= 9000		; update log file every 0.2 ps
+nstxout-compressed = 9000          ; save freqency 10ps
+nstfout        = 0
+nstcomm = 9000
+; Bond parameters
+continuation	= no		; first dynamics run
+constraint_algorithm = lincs	; holonomic constraints
+constraints	= h-bonds	; all bonds (even heavy atom-H bonds) constrained
+lincs_iter	= 1		; accuracy of LINCS
+lincs_order	= 4		; also related to accuracy
+lincs_warnangle = 40            ; maximum angle that a bond can rotate before LINCS will complain
+; Neighborsearching
+nstcalcenergy = 9000
+ns_type		= grid		; search neighboring grid cells
+nstlist		= 25		; 20 fs
+verlet-buffer-tolerance = -1
+rlist = 1.0
+vdwtype = Cut-off
+rvdw = 0.6
+vdw-modifier = None
+cutoff-scheme = Verlet
+; Electrostatics
+coulombtype = pme
+coulomb-modifier = None
+rcoulomb = 0.9
+pme_order	= 12		; cubic interpolation
+fourier-nx = 1120
+fourier-ny = 1120
+fourier-nz = 1120
+ewald_rtol = 2e-6
+; Temperature coupling is on
+;nsttcouple = 20
+;tcoupl		= Nose-hoover	; modified Berendsen thermostat
+;tc-grps		= Water         ; two coupling groups - more accurate
+;tau_t		= 1.0 		; time constant, in ps
+;ref_t		= 298 		; reference temperature, one for each group, in K
+; Pressure coupling is off
+pcoupl		= no 		; no pressure coupling in NVT
+; Periodic boundary conditions
+pbc		= xyz		; 3-D PBC
+; Dispersion correction
+DispCorr	= no	; account for cut-off vdW scheme
+; Velocity generation
+gen_vel		= yes		; assign velocities from Maxwell distribution
+gen_temp	= 298		; temperature for Maxwell distribution
+gen_seed	= -1		; generate a random seed

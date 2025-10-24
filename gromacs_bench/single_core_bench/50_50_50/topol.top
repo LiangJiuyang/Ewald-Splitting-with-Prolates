@@ -1,0 +1,42 @@
+;
+;	File 'topol.top' was generated
+;	By user: pan (2002)
+;	On host: fs
+;	At date: Wed Oct 14 21:14:12 2020
+;
+;	This is a standalone topology file
+;
+;	Created by:
+;	                    :-) GROMACS - gmx pdb2gmx, 2018.4 (-:
+;	
+;	Executable:   /global/software/gromacs-2018.4-cpu/bin/gmx
+;	Data prefix:  /global/software/gromacs-2018.4-cpu
+;	Working dir:  /home/pan/lmp_SPCE
+;	Command line:
+;	  gmx pdb2gmx -f md.gro -o md1.gro
+;	Force field was read from the standard GROMACS share directory.
+;
+
+; Include forcefield parameters
+#include "oplsaa.ff/forcefield.itp"
+
+; Include water topology
+#include "oplsaa.ff/spce.itp"
+
+#ifdef POSRES_WATER
+; Position restraint for each water oxygen
+[ position_restraints ]
+;  i funct       fcx        fcy        fcz
+   1    1       1000       1000       1000
+#endif
+
+; Include topology for ions
+#include "oplsaa.ff/ions.itp"
+
+[ system ]
+; Name
+Protein in water
+
+[ molecules ]
+; Compound        #mols
+SOL             125000

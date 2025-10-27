@@ -29,7 +29,7 @@ cutoff-scheme = Verlet
 ; Electrostatics
 coulombtype = pme
 rcoulomb = 0.5
-pme_order	= 4		; cubic interpolation
+pme_order	= 5		; cubic interpolation
 fourierspacing	= 0.1		; grid spacing for FFT
 ewald_rtol = 1e-4 
 
@@ -54,3 +54,4 @@ DispCorr	= EnerPres	; account for cut-off vdW scheme
 gen_vel		= yes		; assign velocities from Maxwell distribution
 gen_temp	= 298		; temperature for Maxwell distribution
 gen_seed	= -1		; generate a random seed
+

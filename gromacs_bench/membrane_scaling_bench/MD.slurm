@@ -30,5 +30,5 @@ export OMP_NUM_THREADS=1
 #mpirun --map-by socket:pe=1 -np 96 /mnt/home/jliang/ceph/gromacs/build-genoa/bin/gmx_mpi mdrun -ntomp 1 -rcon 0.9 -maxh 0.5 -resethway -noconfout -cpt 15 -s ./benchMEM-PME.tpr -nsteps 20000 -dlb yes
 
 # ESP
-mpiexec -np 1 /mnt/home/jliang/ceph/gromacs/build-genoa/bin/gmx_mpi adjust-estat -s ./benchMEM.tpr -o ./benchMEM-ESP.tpr -order 4 -fs 0.2 -rtol 4e-4 -rcoul 7e-1
+mpiexec -np 1 /mnt/home/jliang/ceph/gromacs/build-genoa/bin/gmx_mpi adjust-estat -s ./benchMEM.tpr -o ./benchMEM-ESP.tpr -order 5 -fs 0.2 -rtol 4e-4 -rcoul 7e-1
 mpirun --map-by socket:pe=1 -np 96 /mnt/home/jliang/ceph/gromacs/build-genoa/bin/gmx_mpi mdrun -ntomp 1 -rcon 0.9 -maxh 0.5 -resethway -noconfout -cpt 15 -s ./benchMEM-ESP.tpr -nsteps 20000 -dlb yes

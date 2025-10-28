@@ -1,0 +1,12 @@
+Reference solutions are produced using native PME solver with pme-order=12,  ewald_tol=1e-10,  spacing=0.02, and rc=1.
+
+PME results:
+(1) pme-order=4 ewald_tol=1e-5 spacing=0.13 rc=1 actual_accuracy=1.13e-3
+(2) pme-order=4 ewald_tol=1e-5 spacing=0.083 rc=1 actual-accuracy=1.04e-4
+
+ESP results: 
+(1) pme-order=4 ewald_tol=1e-3 spacing=0.14 rc=0.5 actual_accuracy=9.42e-4
+(2) pme-order=5 ewald_tol=1e-4 spacing=0.10 rc=0.5 actual_accuracy= (waiting for FIDO to add me in slurm)
+
+
+

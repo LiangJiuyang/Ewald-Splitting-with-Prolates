@@ -1,3 +1,5 @@
+Bulk Water Systems (Fig. 1a-b)
+
 Reference solutions are produced using native PME solver with pme-order=12,  ewald_tol=1e-10,  spacing=0.02, and rc=1.
 
 PME results:
@@ -8,5 +10,14 @@ ESP results:
 (1) pme-order=4 ewald_tol=1e-3 spacing=0.14 rc=0.5 actual_accuracy=9.42e-4
 (2) pme-order=5 ewald_tol=1e-4 spacing=0.10 rc=0.5 actual_accuracy=9.76e-5
 
+Membrane Systems (Fig. 1c)
+Reference solutions are produced using native PME solver with pme-order=8,  ewald_tol=1e-8,  spacing=0.02, and rc=1.
 
+PME: pme-order=4 ewald_tol=1e-5 spacing=0.12 rc=1.0 actual_accuracy=3.95e-4
+ESP: pme-order=5 ewald_tol=4e-4 spacing=0.20 rc=0.7 actual_accuracy=3.79e-4
 
+RIB Systems (Fig. 1d)
+Reference solutions are produced using native PME solver with pme-order=8,  ewald_tol=1e-8,  spacing=0.02, and rc=1.
+
+PME: pme-order=4 ewald_tol=1e-6 spacing=0.135 rc=1.0 actual_accuracy=1.13e-3
+ESP: pme-order=4 ewald_tol=1e-3 spacing=0.16 rc=0.6 actual_accuracy=9.64e-4

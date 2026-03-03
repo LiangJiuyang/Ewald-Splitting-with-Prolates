@@ -1,0 +1,104 @@
+;=====================================================================
+;-                      title = Minimization-SD                      -
+;=====================================================================
+
+;---------------------------------------------------------------------
+;-              Define can be used to control processes              -
+;---------------------------------------------------------------------
+;define                   = -DFLEXIBLE
+
+;---------------------------------------------------------------------
+;-                            Run control                            -
+;---------------------------------------------------------------------
+integrator               = md                  ; A steepest descent algorithm for energy minimization
+nsteps                   = 20000                  ; maximum number of steps to minimize
+comm-mode                = Linear                 ; remove center of mass translation
+nstcomm                  = 100                    ; frequency for center of mass motion removal
+
+;---------------------------------------------------------------------
+;-                           Output control                          -
+;---------------------------------------------------------------------
+nstxout                  = 250                    ; save coordinates to .trr every 250 steps
+nstvout                  = 0                      ; don't save velocities to .trr
+nstfout                  = 0                      ; don't save forces to .trr
+nstxout-compressed       = 500                    ; xtc compressed trajectory output every 500 steps
+compressed-x-precision   = 1000                   ; precision with which to write to the compressed trajectory file
+nstlog                   = 500                    ; number of steps that elapse between writing energies to the log file
+nstenergy                = 500                    ; number of steps that elapse between writing energies to energy file
+nstcalcenergy            = 100
+
+;---------------------------------------------------------------------
+;-     Neighborsearching and short-range nonbonded interactions      -
+;---------------------------------------------------------------------
+cutoff-scheme            = verlet                 ; Generate a pair list with buffering
+nstlist                  = 10                      ; Frequency to update the neighbor list
+pbc                      = xyz                    ; Use periodic boundary conditions in all directions
+rlist                    = 1.2                    ; Cut-off distance for the short-range neighbor list
+
+;---------------------------------------------------------------------
+;-                          Electrostatics                           -
+;---------------------------------------------------------------------
+coulombtype              = PME                    ; Particle Mesh Ewald for long-range electrostatics
+rcoulomb                 = 0.6                    ; The distance for the Coulomb cut-off
+pme_order                = 10                      ; Interpolation order for PME
+ewald_rtol               = 1e-06                  ; The relative strength of the Ewald-shifted direct potential at rcoulomb 
+fourierspacing           = 0.15
+ewald_geometry           = 3d                     ; Ewald sum is performed in all three dimensions
+
+;---------------------------------------------------------------------
+;-                           van der Waals                           -
+;---------------------------------------------------------------------
+vdwtype                  = cutoff                 ; Plain cut-off with pair list radius rlist and VdW cut-off rvdw
+vdw-modifier             = none                   ; force-switch
+;rvdw-switch              = 1.0
+rvdw                     = 0.005                    ; short-range van der Waals cutoff (in nm)
+DispCorr                 = no 
+verlet-buffer-tolerance  = 0.005
+
+;---------------------------------------------------------------------
+;-        Temperature and pressure coupling are off during EM        -
+;---------------------------------------------------------------------
+tcoupl                   = no                     ; No temperature coupling
+pcoupl                   = no                     ; No pressure coupling
+
+;---------------------------------------------------------------------
+;-                     Free energy control stuff                     -
+;---------------------------------------------------------------------
+;free_energy              = yes
+;init-lambda-state        = 0                      ; starting value for the lambda state
+;delta_lambda             = 0                      ; increment per time step for lambda
+;calc_lambda_neighbors    = -1                     ; Controls the number of lambda values for which Delta H values will be calculated and written out, if init-lambda-state has been set
+;couple-moltype           = lig                    ; the name of the moleculetype to decouple
+;couple-lambda0           = vdw-q                  ; all interactions are on at lambda=0
+;couple-lambda1           = vdw                    ; vdw interactions are on at lambda=1
+;couple-intramol          = yes                     
+
+;---------------------------------------------------------------------
+;-                 Vectors of lambda specified here                  -
+;---------------------------------------------------------------------
+; Each combination is an index that is retrieved from init_lambda_state for each simulation
+; Each combination is an index that is retrieved from init_lambda_state for each simulation
+; init_lambda_state      = 0   1   2   3   4   5   6   7   8   9   10        
+;bonded_lambdas           = 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+;coul_lambdas             = 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0 
+
+;---------------------------------------------------------------------
+;-                     Options for the decoupling                    -
+;---------------------------------------------------------------------
+;sc-alpha                 = 0.5                    ; the soft-core alpha parameter
+;sc-coul                  = no                     ; linear interpolation of Coulomb 
+;sc-power                 = 1                      ; the power for lambda in the soft-core function
+;sc-sigma                 = 0.3                    ; the soft-core sigma for particles which have a C6 or C12 parameter equal to zero or a sigma smaller than sc-sigma
+;nstdhdl                  = 100                    ; the frequency for writing dH/dlambda and possibly Delta H to dhdl.xvg
+;separate-dhdl-file       = yes                    ; the free energy values that are calculated (as specified with the foreign lambda and dhdl-derivatives settings) are written out to a separate file, with the default name dhdl.xvg
+;dhdl-print-energy        = total
+
+;---------------------------------------------------------------------
+;-                      No velocities during EM                      -
+;---------------------------------------------------------------------
+gen_vel                  = no                     ; Do not generate velocities. The velocities are set to zero when there are no velocities in the input structure file
+
+;---------------------------------------------------------------------
+;-            Do not constrain the starting configuration            -
+;---------------------------------------------------------------------
+continuation             = no                     ; apply constraints to the start configuration and reset shells

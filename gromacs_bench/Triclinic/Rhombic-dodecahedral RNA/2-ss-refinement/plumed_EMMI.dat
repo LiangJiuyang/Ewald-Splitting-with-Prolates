@@ -1,0 +1,89 @@
+# if you are restarting the run, please uncomment this line
+#RESTART
+# include topology info
+MOLINFO STRUCTURE=../top/ref.pdb  WHOLE
+
+# define map atoms
+system-map: GROUP NDX_FILE=../top/index.ndx NDX_GROUP=System-MAP
+
+# make map atoms whole 
+WHOLEMOLECULES ...
+ADDREFERENCE EMST
+ENTITY0=system-map STRIDE=4
+... WHOLEMOLECULES
+
+# create EMMI score
+EMMIVOX ...
+# name of this action
+LABEL=emmi
+# general parameters - do not change this!
+# NL_STRIDE: update neighbor list stride
+# NL_DIST_CUTOFF: distance cutoff in nm
+# NL_GAUSS_CUTOFF: cutoff based on the Gaussian sigma
+TEMP=300.0 NL_STRIDE=50 NL_DIST_CUTOFF=1.0 NL_GAUSS_CUTOFF=3.0
+# define atoms for cryo-EM restraint and read experimental data
+ATOMS=system-map DATA_FILE=emd_plumed_aligned.dat
+# info about the experimental map
+NORM_DENSITY=6846.255371 RESOLUTION=0.36
+# data likelihood (or noise model): Marginal
+SIGMA_MIN=0.2 GPU
+# output: in production write with the frequency at which XTC/TRR are written
+STATUS_FILE=EMMIStatus WRITE_STRIDE=5000
+# comment this if you have a hetero-complex
+#BFACT_NOCHAIN
+# in production, you should sample Bfactors
+DBFACT=0.05 MCBFACT_STRIDE=500 BFACT_SIGMA=0.1
+# scale factor
+SCALE=1.250000
+# correlation
+CORRELATION
+...
+
+# in production, apply bias to system
+# translate into bias - updated every 2/4 time steps
+# emr: BIASVALUE ARG=emmi.scoreb STRIDE=2
+emr: BIASVALUE ARG=emmi.scoreb STRIDE=4
+#
+# print output to file
+PRINT ARG=emmi.* FILE=COLVAR STRIDE=5000
+
+
+eRMSD1: ERMSD REFERENCE=../helix-templates/UAGC_36-39_c246_o.pdb ATOMS=@lcs-36,@lcs-37,@lcs-38,@lcs-39,@lcs-47,@lcs-48,@lcs-49,@lcs-50
+eRMSD2: ERMSD REFERENCE=../helix-templates/GGA_530-532_c246_o.pdb ATOMS=@lcs-530,@lcs-531,@lcs-532,@lcs-538,@lcs-539,@lcs-540
+eRMSD3: ERMSD REFERENCE=../helix-templates/ACC_664-666_c246_o.pdb ATOMS=@lcs-664,@lcs-665,@lcs-666,@lcs-716,@lcs-717,@lcs-718
+eRMSD4: ERMSD REFERENCE=../helix-templates/ACGG_669-672_c246_o.pdb ATOMS=@lcs-669,@lcs-670,@lcs-671,@lcs-672,@lcs-710,@lcs-711,@lcs-712,@lcs-713
+eRMSD5: ERMSD REFERENCE=../helix-templates/GCU_679-681_c246_o.pdb ATOMS=@lcs-679,@lcs-680,@lcs-681,@lcs-704,@lcs-705,@lcs-706
+eRMSD6: ERMSD REFERENCE=../helix-templates/GGC_682-684_c246_o.pdb ATOMS=@lcs-682,@lcs-683,@lcs-684,@lcs-699,@lcs-700,@lcs-701
+eRMSD7: ERMSD REFERENCE=../helix-templates/CAG_686-688_c246_o.pdb ATOMS=@lcs-686,@lcs-687,@lcs-688,@lcs-695,@lcs-696,@lcs-697
+eRMSD8: ERMSD REFERENCE=../helix-templates/CCUCU_762-766_c246_o.pdb ATOMS=@lcs-762,@lcs-763,@lcs-764,@lcs-765,@lcs-766,@lcs-771,@lcs-772,@lcs-773,@lcs-774,@lcs-775
+eRMSD9: ERMSD REFERENCE=../helix-templates/GGA_836-838_c246_o.pdb ATOMS=@lcs-836,@lcs-837,@lcs-838,@lcs-852,@lcs-853,@lcs-854
+eRMSD10: ERMSD REFERENCE=../helix-templates/GCCUUG_422-427_c246_o.pdb ATOMS=@lcs-422,@lcs-423,@lcs-424,@lcs-425,@lcs-426,@lcs-427,@lcs-434,@lcs-435,@lcs-436,@lcs-437,@lcs-438,@lcs-439
+eRMSD11: ERMSD REFERENCE=../helix-templates/UGG_616-618_c246_o.pdb ATOMS=@lcs-616,@lcs-617,@lcs-618,@lcs-661,@lcs-662,@lcs-663
+eRMSD12: ERMSD REFERENCE=../helix-templates/GGC_840-842_c246_o.pdb ATOMS=@lcs-840,@lcs-841,@lcs-842,@lcs-849,@lcs-850,@lcs-851
+
+
+RESTRAINT ARG=eRMSD1 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD2 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD3 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD4 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD5 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD6 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD7 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD8 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD9 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD10 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD11 AT=0 KAPPA=500.0
+RESTRAINT ARG=eRMSD12 AT=0 KAPPA=500.0
+
+PRINT ARG=eRMSD1 STRIDE=100 FILE=COLVAR_36-39
+PRINT ARG=eRMSD2 STRIDE=100 FILE=COLVAR_530-532
+PRINT ARG=eRMSD3 STRIDE=100 FILE=COLVAR_664-666
+PRINT ARG=eRMSD4 STRIDE=100 FILE=COLVAR_669-672
+PRINT ARG=eRMSD5 STRIDE=100 FILE=COLVAR_679-681
+PRINT ARG=eRMSD6 STRIDE=100 FILE=COLVAR_682-684
+PRINT ARG=eRMSD7 STRIDE=100 FILE=COLVAR_686-688
+PRINT ARG=eRMSD8 STRIDE=100 FILE=COLVAR_762-766
+PRINT ARG=eRMSD9 STRIDE=100 FILE=COLVAR_836-838
+PRINT ARG=eRMSD10 STRIDE=100 FILE=COLVAR_422-427
+PRINT ARG=eRMSD11 STRIDE=100 FILE=COLVAR_616-618
+PRINT ARG=eRMSD12 STRIDE=100 FILE=COLVAR_840-842

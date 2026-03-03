@@ -1,0 +1,39 @@
+; NVT equilibration with position restraints
+define                  = -DPOSRES -DPOSRES_FC_BB=1000.0 -DPOSRES_FC_SC=100.0
+
+integrator              = md
+dt                      = 0.002
+nsteps                  = 50000
+
+cutoff-scheme           = Verlet
+nstlist                 = 50
+rlist                   = 1.05
+coulombtype             = PME
+rcoulomb                = 1.0
+vdwtype                 = Cut-off
+vdw-modifier            = Potential-shift-Verlet
+rvdw                    = 1.0
+DispCorr                = EnerPres
+fourierspacing          = 0.12
+
+tcoupl                  = V-rescale
+tc-grps                 = System
+tau_t                   = 0.5
+ref_t                   = 303.15
+pcoupl                  = no
+
+constraints             = h-bonds
+constraint-algorithm    = LINCS
+continuation            = no
+
+gen-vel                 = yes
+gen-temp                = 303.15
+gen-seed                = -1
+
+pbc                     = xyz
+
+nstxout-compressed      = 5000
+compressed-x-grps       = System-XTC
+nstenergy               = 500
+nstlog                  = 500
+nstcalcenergy           = 100

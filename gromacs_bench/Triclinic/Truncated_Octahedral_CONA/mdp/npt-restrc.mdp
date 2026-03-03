@@ -1,0 +1,115 @@
+;=====================================================================
+;-            title = NPT-equilibration-resrtc - fc 100              -
+;=====================================================================
+
+;---------------------------------------------------------------------
+;-                            Run control                            -
+;---------------------------------------------------------------------
+define                   = -DPOSRES
+integrator               = sd                     ; stochastic leap-frog integrator
+dt                       = 0.002                  ; 2 fs
+nsteps                   = 150000                 ; 2 * 150,000 fs = 300 ps
+comm-mode                = Linear                 ; remove center of mass translation
+nstcomm                  = 100                    ; frequency for center of mass motion removal
+
+;---------------------------------------------------------------------
+;-                           Output control                          -
+;---------------------------------------------------------------------
+nstxout                  = 0      
+nstvout                  = 0          ; don't save velocities to .trr
+nstfout                  = 0          ; don't save forces to .trr
+nstxout-compressed       = 5000       ; xtc compressed trajectory output every 2 ps
+compressed-x-precision   = 1000       ; precision with which to write to the compressed trajectory file
+nstlog                   = 5000       ; update log file every 2 ps
+nstenergy                = 5000       ; save energies every 2 ps
+nstcalcenergy            = 100        ; calculate energies every 200 fs
+
+;---------------------------------------------------------------------
+;-     Neighborsearching and short-range nonbonded interactions      -
+;---------------------------------------------------------------------
+cutoff-scheme            = verlet                 ; Generate a pair list with buffering
+nstlist                  = 10                     ; Frequency to update the neighbor list
+pbc                      = xyz                    ; Use periodic boundary conditions in all directions
+rlist                    = 1.2                    ; Cut-off distance for the short-range neighbor list
+
+;---------------------------------------------------------------------
+;-                          Electrostatics                           -
+;---------------------------------------------------------------------
+coulombtype              = PME                    ; Particle Mesh Ewald for long-range electrostatics
+rcoulomb                 = 1.2                    ; The distance for the Coulomb cut-off
+pme_order                = 4                      ; Interpolation order for PME
+ewald_rtol               = 1e-06                  ; The relative strength of the Ewald-shifted direct potential at rcoulomb 
+ewald_geometry           = 3d                     ; Ewald sum is performed in all three dimensions
+
+;---------------------------------------------------------------------
+;-                           van der Waals                           -
+;---------------------------------------------------------------------
+vdwtype                  = cutoff                 ; Plain cut-off with pair list radius rlist and VdW cut-off rvdw
+vdw-modifier             = force-switch
+rvdw-switch              = 1.0
+rvdw                     = 1.2                    ; short-range van der Waals cutoff (in nm)
+DispCorr                 = no 
+verlet-buffer-tolerance  = 0.005
+
+;---------------------------------------------------------------------
+;-                       Temperature coupling                        -
+;---------------------------------------------------------------------
+; tcoupl is implicitly handled by the sd integrator
+tc_grps                  = system
+tau_t                    = 1.0
+ref_t                    = 298.15 
+ld-seed                  = -1
+
+;---------------------------------------------------------------------
+;-               Pressure coupling is on during NPT                  -
+;---------------------------------------------------------------------
+pcoupl                   = Berendsen
+pcoupltype               = isotropic
+tau_p                    = 1.0                    ; time constant (ps)
+compressibility          = 4.5e-05                ; isothermal compressibility of water (bar^-1)
+ref_p                    = 1.01325                ; reference pressure (bar) [1.01325 bar = 1 atm]
+refcoord-scaling         = all              
+
+;---------------------------------------------------------------------
+;-                     Free energy control stuff                     -
+;---------------------------------------------------------------------
+free_energy              = yes
+init-lambda-state        = 0                      ; starting value for the lambda state
+delta_lambda             = 0                      ; increment per time step for lambda
+calc_lambda_neighbors    = -1                     ; Controls the number of lambda values for which Delta H values will be calculated and written out, if init-lambda-state has been set
+couple-moltype           = lig                    ; the name of the moleculetype to decouple
+couple-lambda0           = vdw-q                  ; all interactions are on at lambda=0
+couple-lambda1           = vdw                    ; vdw interactions are on at lambda=1
+couple-intramol          = yes                    
+
+;---------------------------------------------------------------------
+;-                 Vectors of lambda specified here                  -
+;---------------------------------------------------------------------
+; Each combination is an index that is retrieved from init_lambda_state for each simulation
+; init_lambda_state      = 0   1   2   3   4   5   6   7   8   9   10        
+bonded_lambdas           = 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+coul_lambdas             = 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+
+;---------------------------------------------------------------------
+;-                     Options for the decoupling                    -
+;---------------------------------------------------------------------
+sc-alpha                 = 0.5                    ; the soft-core alpha parameter
+sc-coul                  = no                     ; linear interpolation of Coulomb 
+sc-power                 = 1                      ; the power for lambda in the soft-core function
+sc-sigma                 = 0.3                    ; the soft-core sigma for particles which have a C6 or C12 parameter equal to zero or a sigma smaller than sc-sigma
+nstdhdl                  = 100                    ; the frequency for writing dH/dlambda and possibly Delta H to dhdl.xvg
+separate-dhdl-file       = yes                    ; the free energy values that are calculated (as specified with the foreign lambda and dhdl-derivatives settings) are written out to a separate file, with the default name dhdl.xvg
+dhdl-print-energy        = total
+
+;---------------------------------------------------------------------
+;-                        Velocity generation                        -
+;---------------------------------------------------------------------
+gen-vel                  = no                     ; Do not generate velocities
+
+;---------------------------------------------------------------------
+;-                         Options for bonds                         -
+;---------------------------------------------------------------------
+constraint_algorithm     = lincs                  ; holonomic constraints
+constraints              = h-bonds                ; hydrogens only are constrained
+lincs-iter               = 6                      ; related to accuracy 
+continuation             = yes                    

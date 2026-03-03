@@ -1,0 +1,52 @@
+integrator              = md
+dt                      = 0.002
+nsteps                  = 500000000
+nstlog                  = 5000
+nstxout                 = 0
+nstvout                 = 0
+nstfout                 = 0
+nstxout-compressed      = 1000
+compressed-x-grps       = System-XTC
+nstcalcenergy           = 100
+nstenergy               = 2500
+;
+verlet-buffer-tolerance  = -1
+cutoff-scheme           = Verlet
+nstlist                 = 200
+rlist                   = 1.05
+coulombtype             = pme
+rcoulomb                = 1.0
+vdwtype                 = Cut-off
+vdw-modifier            = Potential-shift-Verlet
+rvdw_switch             = 0.0
+rvdw                    = 1.0
+DispCorr                = EnerPres
+fourierspacing          = 0.1
+;
+tcoupl                  = v-rescale
+tc_grps                 = System
+tau_t                   = 1.0
+ref_t                   = 303.15
+;
+pcoupl                  = Parrinello-Rahman
+pcoupltype              = isotropic 
+tau_p                   = 5.0
+compressibility         = 4.5e-5 
+ref_p                   = 1.0  
+;
+constraints             = h-bonds
+constraint_algorithm    = LINCS
+continuation            = yes
+;
+gen-vel			= no
+gen-temp		= 303.15
+;
+nstcomm                 = 100
+comm_mode               = linear
+comm_grps               = System
+;
+refcoord_scaling        = com
+;
+disre                   = simple
+disre-fc                = 50
+nstdisreout             = 0

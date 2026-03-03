@@ -1,0 +1,44 @@
+; Continue NPT from finished equilibration and dump one frame every 1000 steps.
+define                  = -DPOSRES -DPOSRES_FC_BB=1000.0 -DPOSRES_FC_SC=100.0
+
+integrator              = md
+dt                      = 0.002
+nsteps                  = 100000
+
+cutoff-scheme           = Verlet
+nstlist                 = 50
+rlist                   = 1.05
+coulombtype             = PME
+rcoulomb                = 1.0
+pme_order               = 5                      ; Interpolation order for PME
+ewald_rtol              = 2e-04                  ; The relative strength of the Ewald-shifted direct potential at rcoulomb
+vdwtype                 = Cut-off
+vdw-modifier            = Potential-shift-Verlet
+rvdw                    = 0.005
+DispCorr                = EnerPres
+fourierspacing          = 0.24
+
+tcoupl                  = V-rescale
+tc-grps                 = System
+tau_t                   = 0.5
+ref_t                   = 303.15
+
+pcoupl                  = C-rescale
+pcoupltype              = isotropic
+tau_p                   = 5.0
+compressibility         = 4.5e-5
+ref_p                   = 1.0
+refcoord_scaling        = com
+
+constraints             = h-bonds
+constraint-algorithm    = LINCS
+continuation            = yes
+gen-vel                 = no
+
+pbc                     = xyz
+
+nstxout-compressed      = 1000
+compressed-x-grps       = System
+nstenergy               = 1000
+nstlog                  = 1000
+nstcalcenergy           = 100

@@ -1,0 +1,4 @@
+Please visit this folder to download the pre-generated `100-conf/` directory
+for the PMC12084557_natcomm_2025_cryo_em_refinement dataset:
+
+https://drive.google.com/drive/folders/1W9G13II0n2k_3tKS5Tkpb8jlc1VjhelQ

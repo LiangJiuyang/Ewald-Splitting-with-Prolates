@@ -1,0 +1,4 @@
+Please visit this folder to download the pre-generated `100-conf/` directory
+for the 02_cona_abfe_truncated_octahedron dataset:
+
+https://drive.google.com/drive/folders/1-BHvmNU0D8e7SXz9YULMv7UHEV3l66GT

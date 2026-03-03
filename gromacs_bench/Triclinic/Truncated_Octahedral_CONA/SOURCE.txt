@@ -1,0 +1,14 @@
+Zenodo record: https://zenodo.org/records/12530173
+
+This dataset folder keeps the minimal branch used for the CONA
+ligand-decoupling-from-complex benchmark:
+
+- system/: extracted from coordinates-and-topologies/1/r1/ligand-decoupling-from-complex
+- mdp/: extracted from MDPs/ligand-decoupling-from-complex/coulomb
+- raw/: original downloaded archives kept for provenance
+
+Additional local files were added to make the benchmark reproducible:
+
+- system/charmm36-feb2021.ff/: force-field include tree referenced by the topology
+- reproduce/: numbered launcher scripts for TPR generation, 100-conf generation,
+  force evaluation, and MPI timing

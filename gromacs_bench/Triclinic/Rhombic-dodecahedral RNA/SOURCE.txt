@@ -1,0 +1,7 @@
+Paper: Nat Commun 2025, Ensemble refinement of mismodeled cryo-EM RNA structures using all-atom simulations
+PMC: https://pmc.ncbi.nlm.nih.gov/articles/PMC12084557/
+Repo: https://github.com/ElisPo/Cryo-EM-refinement
+Files:
+- 1-plain-md/grompp.mdp
+- 1-plain-md/conf.gro
+- top/topol.top

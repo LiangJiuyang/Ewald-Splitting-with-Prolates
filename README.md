@@ -12,9 +12,9 @@ the most widely used method for evaluating long-range Coulomb interactions in MD
 remains a performance bottleneck in all major open-source and commercial MD packages,
 particularly in massively parallel simulations involving $10^9$-$10^{12}$ time steps. Notably, 
 [LAMMPS](https://scholar.google.com/citations?user=Ny7N6KQAAAAJ&hl=en) ($>80,000$ citations on Google Scholar), 
-GROMACS ($>85,000$ citations), and NAMD
+[GROMACS](https://scholar.google.nl/citations?user=IHbqqNEAAAAJ&hl=nl) ($>85,000$ citations), and NAMD
 all rely on Ewald-based approaches, such as the (Smooth) Particle-Mesh Ewald ([PME/SPME](https://scholar.google.com/citations?user=y4Ts-LkAAAAJ&hl=en), $>57,000$ citations)
-and the Particle-Particle-Particle-Mesh (PPPM, $>12000$ citations) methods. 
+and the Particle-Particle-Particle-Mesh ([PPPM](https://scholar.google.com/scholar?q=%22Computer+Simulation+Using+Particles%22+Hockney+Eastwood), $>12,000$ citations) methods. 
 
 # Introduction
 

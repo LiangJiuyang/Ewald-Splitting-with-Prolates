@@ -9,7 +9,7 @@ angle_style     charmm
 dihedral_style  charmm
 improper_style  harmonic
 kspace_style    pppm 0.0001
-#kspace_style    esp 0.0001
+# ESP pair styles in this branch are limited to coul/esp and lj/cut/coul/esp.
 
 read_data       data.peptide
 
@@ -40,4 +40,3 @@ group           peptide type <= 12
 #dump           2 peptide local 300 dump.bond index c_bnd[1] c_bnd[2] c_bnd[3]
 
 run             300
-

@@ -17,9 +17,9 @@ kspace_style ewald 1e-9
 ##kspace_modify order 5 gewald 0.2920
 kspace_modify order 7 mesh 1024 1024 1024 # gewald 0.2920
 
-#pair_style	lj/cut/coul/ps  9 9
+#pair_style	lj/cut/coul/esp  9 9
 #pair_modify tabinner 10 table 0# error analysis
-#kspace_style ppps/timing 1e-5 1e-5
+#kspace_style esp 1e-5 1e-5
 ##kspace_modify order 6
 #kspace_modify mesh 56 56 56 order 7 diff ad #gewald 0.37952417
 

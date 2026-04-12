@@ -132,8 +132,8 @@ or :doc:`read_restart <read_restart>` commands:
 * :math:`k_b`           (force*distance/radians units)
 * :math:`f_{r,c}`       (force units)
 * :math:`f_{s,c}`       (force units)
-* :math:`\tau_{b,c}`    (force*distance units)
 * :math:`\tau_{t,c}`    (force*distance units)
+* :math:`\tau_{b,c}`    (force*distance units)
 * :math:`\gamma_n`      (force/velocity units)
 * :math:`\gamma_s`      (force/velocity units)
 * :math:`\gamma_r`      (force*distance/velocity units)
@@ -145,17 +145,20 @@ must be given in force units.
 
 By default, pair forces are not calculated between bonded particles.
 Pair forces can alternatively be overlaid on top of bond forces by setting
-the *overlay/pair* keyword to *yes*. These settings require specific
-:doc:`special_bonds <special_bonds>` settings described in the
-restrictions.  Further details can be found in the :doc:`how to <Howto_bpm>`
-page on BPMs.
+the *overlay/pair* keyword to *yes*. This keyword is only necessary if
+bonds can break and requires specific :doc:`special_bonds <special_bonds>`
+settings described in the restrictions.  Further details can be found in
+the :doc:`how to <Howto_bpm>` page on BPMs.
 
 .. versionadded:: 28Mar2023
 
 If the *break* keyword is set to *no*, LAMMPS assumes bonds should not break
 during a simulation run. This will prevent some unnecessary calculation.
-However, if a bond reaches a damage criterion greater than one,
-it will trigger an error.
+The recommended bond communication distance no longer depends on bond failure
+coefficients (which are ignored) but instead corresponds to the typical heuristic
+maximum strain used by typical non-bpm bond styles. Similar behavior to *break no*
+can also be attained by setting arbitrarily high values for all four failure
+coefficients. One cannot use *break no* with *smooth yes*.
 
 If the *store/local* keyword is used, an internal fix will track bonds that
 break during the simulation. Whenever a bond breaks, data is processed
@@ -212,6 +215,9 @@ for an overview of LAMMPS output options.
 The vector or array will be floating point values that correspond to
 the specified attribute.
 
+Any settings with the *store/local* option are not saved to a restart
+file and must be redefined.
+
 The single() function of this bond style returns 0.0 for the energy
 of a bonded interaction, since energy is not conserved in these
 dissipative potentials.  It also returns only the normal component of
@@ -234,19 +240,24 @@ This bond style is part of the BPM package.  It is only enabled if
 LAMMPS was built with that package.  See the :doc:`Build package
 <Build_package>` page for more info.
 
-By default if pair interactions between bonded atoms are to be disabled,
-this bond style requires setting
+To handle breaking bonds, BPM bond styles have extra requirements for
+special bonds. If bonds cannot break (*break no*), then one can use any
+special bond weights. Otherwise, restrictions depend on whether pair
+forces are overlaid (*pair/overlay yes*). If so, then all weights must
+be one:
+
+.. code-block:: LAMMPS
+
+   special_bonds lj/coul 1 1 1
+
+If pair forces are disabled (*pair/overlay no*), the default, then the
+weights must be
 
 .. code-block:: LAMMPS
 
    special_bonds lj 0 1 1 coul 1 1 1
 
-and :doc:`newton <newton>` must be set to bond off.  If the *overlay/pair*
-keyword is set to *yes*, this bond style alternatively requires setting
-
-.. code-block:: LAMMPS
-
-   special_bonds lj/coul 1 1 1
+and :doc:`newton <newton>` must be set to bond off.
 
 The *bpm/rotational* style requires :doc:`atom style bpm/sphere <atom_style>`.
 

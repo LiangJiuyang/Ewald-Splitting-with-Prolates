@@ -38,7 +38,7 @@ FixRecenterKokkos<DeviceType>::FixRecenterKokkos(LAMMPS *lmp, int narg, char **a
 {
   kokkosable = 1;
   atomKK = (AtomKokkos *)atom;
-  groupKK = (GroupKokkos<DeviceType> *)group;
+  groupKK = (GroupKokkos *)group;
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
 
   datamask_read = X_MASK | MASK_MASK;
@@ -87,9 +87,10 @@ void FixRecenterKokkos<DeviceType>::initial_integrate(int /*vflag*/)
 
   // current COM
 
-  if (group->dynamic[igroup]) masstotal = groupKK->mass(igroup);
+
+  if (group->dynamic[igroup]) masstotal = groupKK->mass_kk<DeviceType>(igroup);
   double xcm[3];
-  groupKK->xcm(igroup,masstotal,xcm);
+  groupKK->xcm_kk<DeviceType>(igroup,masstotal,xcm);
 
   // shift coords by difference between actual COM and requested COM
 

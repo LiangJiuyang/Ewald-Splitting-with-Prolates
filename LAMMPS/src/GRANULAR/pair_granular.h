@@ -44,8 +44,12 @@ class PairGranular : public Pair {
   int pack_forward_comm(int, int *, double *, int, int *) override;
   void unpack_forward_comm(int, int, double *) override;
   double memory_usage() override;
-  double atom2cut(int) override;
-  double radii2cut(double, double) override;
+  [[nodiscard]] int get_size_history() const { return size_history; }
+
+  // granular models
+  class Granular_NS::GranularModel** models_list;
+  int **types_indices;
+  int nmodels, maxmodels;
 
  protected:
   int freeze_group_bit;
@@ -54,7 +58,6 @@ class PairGranular : public Pair {
   int neighprev;
   double *onerad_dynamic, *onerad_frozen;
   double *maxrad_dynamic, *maxrad_frozen;
-  double **cut;
 
   class FixDummy *fix_dummy;
   class FixNeighHistory *fix_history;
@@ -73,14 +76,11 @@ class PairGranular : public Pair {
   int size_history;
   int heat_flag;
 
-  // granular models
-  int nmodels, maxmodels;
-  class Granular_NS::GranularModel **models_list;
-  int **types_indices;
-
   // optional user-specified global cutoff, per-type user-specified cutoffs
   double **cutoff_type;
   double cutoff_global;
+
+  int extra_svector;
 };
 
 }    // namespace LAMMPS_NS

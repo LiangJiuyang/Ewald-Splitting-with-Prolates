@@ -16,24 +16,24 @@
    Contributing authors:
       Efstratios M Kritikos, California Institute of Technology
       (Implemented original version in LAMMMPS Aug 2019)
-      Navraj S Lalli, Imperial College London
+      Navraj S Lalli, Imperial College London (navrajsinghlalli@gmail.com)
       (Reimplemented QTPIE as a new fix in LAMMPS Aug 2024 and extended functionality)
 ------------------------------------------------------------------------- */
 
 #include "fix_qtpie_reaxff.h"
 
 #include "atom.h"
+#include "citeme.h"
 #include "comm.h"
-#include "domain.h"
 #include "error.h"
 #include "fix_efield.h"
 #include "force.h"
 #include "group.h"
+#include "memory.h"
 #include "modify.h"
 #include "neigh_list.h"
 #include "neighbor.h"
 #include "pair.h"
-#include "region.h"
 #include "respa.h"
 #include "text_file_reader.h"
 #include "update.h"
@@ -49,9 +49,21 @@ using namespace LAMMPS_NS;
 using namespace FixConst;
 
 static constexpr double CONV_TO_EV = 14.4;
-static constexpr double SMALL = 1.0e-14;
 static constexpr double QSUMSMALL = 0.00001;
-static constexpr double ANGSTROM_TO_BOHRRADIUS = 1.8897261259;
+static constexpr double ANGSTROM_TO_BOHRRADIUS_SQ = 3.571064831;
+
+static const char cite_fix_qtpie_reax[] =
+  "fix qtpie/reaxff command: \n\n"
+  "@Article{Kritikos20,\n"
+  " author = {E. Kritikos and A. Giusti},\n"
+  " title = {Reactive Molecular Dynamics Investigation of Toluene Oxidation under Electrostatic Fields: Effect of the Modeling of Local Charge Distribution},\n"
+  " journal = {The Journal of Physical Chemistry A},\n"
+  " volume = {124},\n"
+  " number = {51},\n"
+  " pages = {10705--10716},\n"
+  " year = {2020},\n"
+  " publisher = {ACS Publications}\n"
+  "}\n\n";
 
 /* ---------------------------------------------------------------------- */
 
@@ -68,11 +80,13 @@ FixQtpieReaxFF::FixQtpieReaxFF(LAMMPS *lmp, int narg, char **arg) :
 
   imax = 200;
   maxwarn = 1;
+  scale = 1.0;
 
-  if ((narg < 9) || (narg > 12)) error->all(FLERR,"Illegal fix {} command", style);
+  if ((narg < 9) || (narg > 14))
+    error->all(FLERR,"Illegal fix {} command: incorrect number of parameters", style);
 
   nevery = utils::inumeric(FLERR,arg[3],false,lmp);
-  if (nevery <= 0) error->all(FLERR,"Illegal fix {} command", style);
+  if (nevery <= 0) error->all(FLERR, 3, "Illegal fix {} command", style);
 
   swa = utils::numeric(FLERR,arg[4],false,lmp);
   swb = utils::numeric(FLERR,arg[5],false,lmp);
@@ -85,13 +99,20 @@ FixQtpieReaxFF::FixQtpieReaxFF(LAMMPS *lmp, int narg, char **arg) :
     if (strcmp(arg[iarg],"nowarn") == 0) maxwarn = 0;
     else if (strcmp(arg[iarg],"maxiter") == 0) {
       if (iarg+1 > narg-1)
-        error->all(FLERR,"Illegal fix {} command", style);
-      imax = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+        error->all(FLERR, iarg, "Illegal fix {} command", style);
+      imax = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
       iarg++;
-    } else error->all(FLERR,"Illegal fix {} command", style);
+    } else if (strcmp(arg[iarg],"scale") == 0) {
+      if (iarg+1 > narg-1)
+        error->all(FLERR, iarg, "Illegal fix {} command", style);
+      scale = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+      iarg++;
+    } else error->all(FLERR, iarg, "Illegal fix {} command", style);
     iarg++;
   }
   shld = nullptr;
+  prefactor = nullptr;
+  expfactor = nullptr;
 
   nn = nt = n_cap = 0;
   nmax = 0;
@@ -153,8 +174,10 @@ FixQtpieReaxFF::~FixQtpieReaxFF()
   FixQtpieReaxFF::deallocate_matrix();
 
   memory->destroy(shld);
-
   memory->destroy(gauss_exp);
+  memory->destroy(prefactor);
+  memory->destroy(expfactor);
+
   if (!reaxflag) {
     memory->destroy(chi);
     memory->destroy(eta);
@@ -166,6 +189,9 @@ FixQtpieReaxFF::~FixQtpieReaxFF()
 
 void FixQtpieReaxFF::post_constructor()
 {
+  if (utils::strmatch(style,"^qtpie/reax"))
+    if (lmp->citeme) lmp->citeme->add(cite_fix_qtpie_reax);
+
   grow_arrays(atom->nmax);
   for (int i = 0; i < atom->nmax; i++)
     for (int j = 0; j < nprev; ++j)
@@ -222,34 +248,36 @@ void FixQtpieReaxFF::pertype_parameters(char *arg)
         if (exp < 0)
           throw TokenizerException("Fix qtpie/reaxff: Invalid orbital exponent in gauss file",
                                    std::to_string(exp));
-        gauss_exp[itype] = exp;
+        gauss_exp[itype] = exp * ANGSTROM_TO_BOHRRADIUS_SQ;
       }
+      fclose(fp);
     } catch (std::exception &e) {
-      error->one(FLERR,e.what());
+      error->one(FLERR, Error::NOLASTLINE, e.what());
     }
   }
 
   MPI_Bcast(gauss_exp,ntypes+1,MPI_DOUBLE,0,world);
 
-  // define a cutoff distance (in atomic units) beyond which overlap integrals are neglected
-  // in calc_chi_eff()
-  const double exp_min = find_min_exp(gauss_exp,ntypes+1);
-  const int olap_cut = 10; // overlap integrals are neglected if less than pow(10,-olap_cut)
-  dist_cutoff = sqrt(2*olap_cut/exp_min*log(10.0));
+  // calculate a cutoff distance to neglect overlap integrals in calc_chi_eff()
+  // when less than pow(10, -olap_cut)
+  const double exp_min = find_min_exp(gauss_exp, ntypes+1);
+  const int olap_cut = 10;
+  dist_cutoff_sq = 2 * olap_cut * log(10.0) / exp_min;
 
   // read chi, eta and gamma
 
   if (utils::strmatch(arg,"^reaxff")) {
     reaxflag = 1;
     Pair *pair = force->pair_match("^reaxff",0);
-    if (!pair) error->all(FLERR,"No reaxff pair style for fix qtpie/reaxff");
+    if (!pair) error->all(FLERR, Error::NOLASTLINE, "No reaxff pair style for fix qtpie/reaxff");
 
     int tmp, tmp_all;
     chi = (double *) pair->extract("chi",tmp);
     eta = (double *) pair->extract("eta",tmp);
     gamma = (double *) pair->extract("gamma",tmp);
     if ((chi == nullptr) || (eta == nullptr) || (gamma == nullptr))
-      error->all(FLERR, "Fix qtpie/reaxff could not extract qtpie parameters from pair reaxff");
+      error->all(FLERR, Error::NOLASTLINE,
+                 "Fix qtpie/reaxff could not extract qtpie parameters from pair reaxff");
     tmp = tmp_all = 0;
     for (int i = 0; i < nlocal; ++i) {
       if (mask[i] & groupbit) {
@@ -259,10 +287,12 @@ void FixQtpieReaxFF::pertype_parameters(char *arg)
     }
     MPI_Allreduce(&tmp, &tmp_all, 1, MPI_INT, MPI_MAX, world);
     if (tmp_all)
-      error->all(FLERR, "No qtpie parameters for atom type {} provided by pair reaxff", tmp_all);
+      error->all(FLERR, Error::NOLASTLINE,
+                 "No qtpie parameters for atom type {} provided by pair reaxff", tmp_all);
     return;
   } else if (utils::strmatch(arg,"^reax/c")) {
-    error->all(FLERR, "Fix qtpie/reaxff keyword 'reax/c' is obsolete; please use 'reaxff'");
+    error->all(FLERR, Error::NOLASTLINE,
+               "Fix qtpie/reaxff keyword 'reax/c' is obsolete; please use 'reaxff'");
   } else if (platform::file_is_readable(arg)) {
     ; // arg is readable file. will read below
   } else {
@@ -389,9 +419,9 @@ void FixQtpieReaxFF::allocate_matrix()
     i = ilist[ii];
     m += numneigh[i];
   }
-  bigint m_cap_big = (bigint)MAX(m * safezone, mincap * REAX_MIN_NBRS);
+  auto m_cap_big = (bigint)MAX(m * safezone, mincap * REAX_MIN_NBRS);
   if (m_cap_big > MAXSMALLINT)
-    error->one(FLERR,"Too many neighbors in fix {}",style);
+    error->one(FLERR, Error::NOLASTLINE, "Too many neighbors in fix {}",style);
   m_cap = m_cap_big;
 
   H.n = n_cap;
@@ -425,10 +455,10 @@ void FixQtpieReaxFF::reallocate_matrix()
 void FixQtpieReaxFF::init()
 {
   if (!atom->q_flag)
-    error->all(FLERR,"Fix {} requires atom attribute q", style);
+    error->all(FLERR, Error::NOLASTLINE, "Fix {} requires atom attribute q", style);
 
   if (group->count(igroup) == 0)
-    error->all(FLERR,"Fix {} group has no atoms", style);
+    error->all(FLERR, Error::NOLASTLINE, "Fix {} group has no atoms", style);
 
   // compute net charge and print warning if too large
   double qsum_local = 0.0, qsum = 0.0;
@@ -439,33 +469,39 @@ void FixQtpieReaxFF::init()
   MPI_Allreduce(&qsum_local,&qsum,1,MPI_DOUBLE,MPI_SUM,world);
 
   if ((comm->me == 0) && (fabs(qsum) > QSUMSMALL))
-    error->warning(FLERR,"Fix {} group is not charge neutral, net charge = {:.8}", style, qsum);
+    error->warning(FLERR,"Fix {} group is not charge neutral, net charge = {:.8}" + utils::errorurl(29), style, qsum);
 
   // get pointer to fix efield if present. there may be at most one instance of fix efield in use.
   efield = nullptr;
   auto fixes = modify->get_fix_by_style("^efield");
   if (fixes.size() == 1) efield = dynamic_cast<FixEfield *>(fixes.front());
   else if (fixes.size() > 1)
-    error->all(FLERR, "There may be only one fix efield instance used with fix {}", style);
+    error->all(FLERR, Error::NOLASTLINE,
+               "There may be only one fix efield instance used with fix {}", style);
 
   // ensure that fix efield is properly initialized before accessing its data and check some settings
   if (efield) {
     efield->init();
     if (strcmp(update->unit_style,"real") != 0)
-      error->all(FLERR,"Must use unit_style real with fix {} and external fields", style);
+      error->all(FLERR, Error::NOLASTLINE, "Must use unit_style real with fix {} and external fields", style);
 
     if (efield->groupbit != 1){ // if efield is not applied to all atoms
-      error->all(FLERR,"Must use group id all for fix efield when using fix {}", style);
+      error->all(FLERR, Error::NOLASTLINE, "Must use group id all for fix efield when using fix {}", style);
     }
 
     if (efield->region){ // if efield is not applied to all atoms
-      error->all(FLERR,"Keyword region not supported for fix efield when using fix {}", style);
+      error->all(FLERR, Error::NOLASTLINE, "Keyword region not supported for fix efield when using fix {}", style);
     }
 
     if (efield->varflag == FixEfield::ATOM && efield->pstyle != FixEfield::ATOM)
-      error->all(FLERR,"Atom-style external electric field requires atom-style "
-                       "potential variable when used with fix {}", style);
+      error->all(FLERR, Error::NOLASTLINE, "Atom-style external electric field requires atom-style "
+                 "potential variable when used with fix {}", style);
+  } else {
+    if (utils::strmatch(style,"^qeq/rel/reax") && comm->me == 0)
+      error->warning(FLERR, "Use fix qeq/reaxff instead of fix {} when not using fix efield\n",
+                     style);
   }
+
 
   // we need a half neighbor list w/ Newton off
   // built whenever re-neighboring occurs
@@ -474,6 +510,7 @@ void FixQtpieReaxFF::init()
 
   init_shielding();
   init_taper();
+  init_olap();
 
   if (utils::strmatch(update->integrate_style,"^respa"))
     nlevels_respa = (dynamic_cast<Respa *>(update->integrate))->nlevels;
@@ -518,9 +555,9 @@ void FixQtpieReaxFF::init_taper()
   if (fabs(swa) > 0.01 && comm->me == 0)
     error->warning(FLERR,"Fix qtpie/reaxff has non-zero lower Taper radius cutoff");
   if (swb < 0)
-    error->all(FLERR, "Fix qtpie/reaxff has negative upper Taper radius cutoff");
+    error->all(FLERR, Error::NOLASTLINE, "Fix qtpie/reaxff has negative upper Taper radius cutoff");
   else if (swb < 5 && comm->me == 0)
-    error->warning(FLERR,"Fix qtpie/reaxff has very low Taper radius cutoff");
+    error->warning(FLERR, "Fix qtpie/reaxff has very low Taper radius cutoff");
 
   d7 = pow(swb - swa, 7);
   swa2 = SQR(swa);
@@ -537,6 +574,31 @@ void FixQtpieReaxFF::init_taper()
   Tap[1] = 140.0 * swa3 * swb3 / d7;
   Tap[0] = (-35.0*swa3*swb2*swb2 + 21.0*swa2*swb3*swb2 -
             7.0*swa*swb3*swb3 + swb3*swb3*swb) / d7;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixQtpieReaxFF::init_olap()
+{
+  int i,j;
+  int ntypes;
+  double expa,expb,expsum,expnorm;
+
+  ntypes = atom->ntypes;
+  if (prefactor == nullptr)
+    memory->create(prefactor,ntypes+1,ntypes+1,"qtpie:overlap_prefactor");
+  if (expfactor == nullptr)
+    memory->create(expfactor,ntypes+1,ntypes+1,"qtpie:overlap_expfactor");
+
+  for (i = 1; i <= ntypes; ++i)
+    for (j = 1; j <= ntypes; ++j) {
+      expa = gauss_exp[i];
+      expb = gauss_exp[j];
+      expsum = expa + expb;
+      expnorm = expa * expb / expsum;
+      prefactor[i][j] = pow((4.0 * expnorm / expsum), 0.75);
+      expfactor[i][j] = expnorm;
+    }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -746,7 +808,8 @@ void FixQtpieReaxFF::compute_H()
   }
 
   if (m_fill >= H.m)
-    error->all(FLERR,"Fix qtpie/reaxff H matrix size has been exceeded: m_fill={} H.m={}\n",
+    error->all(FLERR, Error::NOLASTLINE,
+               "Fix qtpie/reaxff H matrix size has been exceeded: m_fill={} H.m={}\n",
                m_fill, H.m);
 }
 
@@ -1100,19 +1163,19 @@ void FixQtpieReaxFF::calc_chi_eff()
 {
   memset(&chi_eff[0],0,atom->nmax*sizeof(double));
 
-  const auto x = (const double * const *)atom->x;
-  const int ntypes = atom->ntypes;
+  const auto *const x = (const double * const *)atom->x;
   const int *type = atom->type;
 
-  double dist,overlap,sum_n,sum_d,expa,expb,chia,chib,phia,phib,p,m;
+  double dx,dy,dz,dist_sq,overlap,sum_n,sum_d,chia,chib,phia,phib;
   int i,j;
 
   // check ghost atoms are stored up to the distance cutoff for overlap integrals
   const double comm_cutoff = MAX(neighbor->cutneighmax,comm->cutghostuser);
-  if(comm_cutoff < dist_cutoff/ANGSTROM_TO_BOHRRADIUS) {
-    error->all(FLERR,"comm cutoff = {} Angstrom is smaller than distance cutoff = {} Angstrom "
-               "for overlap integrals in {}. Increase comm cutoff with comm_modify",
-               comm_cutoff, dist_cutoff/ANGSTROM_TO_BOHRRADIUS, style);
+  if(comm_cutoff*comm_cutoff < dist_cutoff_sq) {
+    error->all(FLERR, Error::NOLASTLINE,
+               "Comm cutoff {} is smaller than distance cutoff {} for overlap integrals in fix {}. "
+               "Increase accordingly using comm_modify cutoff",
+               comm_cutoff, sqrt(dist_cutoff_sq), style);
   }
 
   // efield energy is in real units of kcal/mol, factor needed for conversion to eV
@@ -1126,7 +1189,6 @@ void FixQtpieReaxFF::calc_chi_eff()
 
   // compute chi_eff for each local atom
   for (i = 0; i < nn; i++) {
-    expa = gauss_exp[type[i]];
     chia = chi[type[i]];
     if (efield) {
       if (efield->varflag != FixEfield::ATOM) {
@@ -1140,16 +1202,16 @@ void FixQtpieReaxFF::calc_chi_eff()
     sum_d = 0.0;
 
     for (j = 0; j < nt; j++) {
-      dist = distance(x[i],x[j])*ANGSTROM_TO_BOHRRADIUS; // in atomic units
+      dx = x[i][0] - x[j][0];
+      dy = x[i][1] - x[j][1];
+      dz = x[i][2] - x[j][2];
+      dist_sq = (dx*dx + dy*dy + dz*dz);
 
-      if (dist < dist_cutoff) {
-        expb = gauss_exp[type[j]];
+      if (dist_sq < dist_cutoff_sq) {
         chib = chi[type[j]];
 
         // overlap integral of two normalised 1s Gaussian type orbitals
-        p = expa + expb;
-        m = expa * expb / p;
-        overlap = pow((4.0*m/p),0.75) * exp(-m*dist*dist);
+        overlap = prefactor[type[i]][type[j]] * exp(-expfactor[type[i]][type[j]] * dist_sq);
 
         if (efield) {
           if (efield->varflag != FixEfield::ATOM) {
@@ -1157,7 +1219,7 @@ void FixQtpieReaxFF::calc_chi_eff()
           } else { // atom-style potential from FixEfield
             phib = efield->efield[j][3];
           }
-          sum_n += (chia - chib + phia - phib) * overlap;
+          sum_n += (chia - chib + scale * (phia - phib)) * overlap;
         } else {
           sum_n += (chia - chib) * overlap;
         }
@@ -1181,15 +1243,4 @@ double FixQtpieReaxFF::find_min_exp(const double *array, const int array_length)
       exp_min = array[i];
   }
   return exp_min;
-}
-
-/* ---------------------------------------------------------------------- */
-
-double FixQtpieReaxFF::distance(const double *posa, const double *posb)
-{
-  double dx, dy, dz;
-  dx = posb[0] - posa[0];
-  dy = posb[1] - posa[1];
-  dz = posb[2] - posa[2];
-  return sqrt(dx*dx + dy*dy + dz*dz);
 }

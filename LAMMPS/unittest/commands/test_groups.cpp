@@ -256,7 +256,42 @@ TEST_F(GroupTest, Molecular)
                  command("group three include xxx"););
 }
 
-TEST_F(GroupTest, Dynamic)
+TEST_F(GroupTest, Bitmap)
+{
+    atomic_system();
+
+    BEGIN_HIDE_OUTPUT();
+    command("group one region left");
+    command("group two region right");
+    command("group three empty");
+    command("group four region left");
+    command("group four region right");
+    command("group six subtract four one");
+    END_HIDE_OUTPUT();
+
+    int bm_one   = group->get_bitmask_by_id(FLERR, "one", "unittest 1");
+    int bm_two   = group->get_bitmask_by_id(FLERR, "two", "unittest 2");
+    int bm_three = group->get_bitmask_by_id(FLERR, "three", "unittest 3");
+    int bm_four  = group->get_bitmask_by_id(FLERR, "four", "unittest 4");
+    int bm_six   = group->get_bitmask_by_id(FLERR, "six", "unittest 6");
+    int nlocal   = lmp->atom->natoms;
+    auto mask    = lmp->atom->mask;
+
+    for (int i = 0; i < nlocal; ++i) {
+        if ((mask[i] & bm_one) && (mask[i] & bm_two)) {
+            EXPECT_NE((mask[i] & bm_four), 0);
+        }
+        if (mask[i] & bm_two) {
+            EXPECT_NE((mask[i] & bm_six), 0);
+        }
+        EXPECT_EQ((mask[i] & bm_three), 0);
+    }
+
+    TEST_FAILURE(".*ERROR: Group ID five requested by unittest 5 does not exist.*",
+                 group->get_bitmask_by_id(FLERR, "five", "unittest 5"););
+}
+
+TEST_F(GroupTest, DynamicAtomic)
 {
     atomic_system();
 
@@ -304,6 +339,27 @@ TEST_F(GroupTest, Dynamic)
     END_HIDE_OUTPUT();
     ASSERT_EQ(group->ngroup, 3);
 
+    BEGIN_HIDE_OUTPUT();
+    command("region chunk block -1.1 1.1 -1.1 1.1 -1.1 0.1");
+    command("group chunk dynamic all region chunk every 1");
+    END_HIDE_OUTPUT();
+    ASSERT_EQ(group->count(group->find("all")), 64);
+    ASSERT_EQ(group->count(group->find("chunk")), 0);
+    ASSERT_EQ(group->ngroup, 4);
+    BEGIN_HIDE_OUTPUT();
+    command("run 10 post no");
+    END_HIDE_OUTPUT();
+    ASSERT_EQ(group->count(group->find("chunk")), 4);
+    BEGIN_HIDE_OUTPUT();
+    command("group chunk delete");
+    command("group chunk region chunk");
+    command("group within dynamic chunk region chunk every 1 within 2.0");
+    command("comm_modify cutoff 4.1");
+    command("run 10 post no");
+    END_HIDE_OUTPUT();
+    ASSERT_EQ(group->count(group->find("chunk")), 4);
+    ASSERT_EQ(group->count(group->find("within")), 52);
+
     TEST_FAILURE(".*ERROR: Group dynamic cannot reference itself.*",
                  command("group half dynamic half region top"););
     TEST_FAILURE(".*ERROR: Group dynamic parent group dummy does not exist.*",
@@ -313,6 +369,35 @@ TEST_F(GroupTest, Dynamic)
                  command("group ramp variable ramp"););
     TEST_FAILURE(".*ERROR: Variable name grow for group does not exist.*",
                  command("group ramp variable grow"););
+}
+
+TEST_F(GroupTest, DynamicMolecular)
+{
+    molecular_system();
+
+    BEGIN_HIDE_OUTPUT();
+    command("region chunk block -1.1 1.1 -1.1 1.1 -1.1 0.1");
+    command("group chunk dynamic all region chunk every 10 include molecule");
+    END_HIDE_OUTPUT();
+    EXPECT_EQ(group->count(group->find("all")), 64);
+    EXPECT_EQ(group->count(group->find("chunk")), 0);
+    ASSERT_EQ(group->ngroup, 2);
+    BEGIN_HIDE_OUTPUT();
+    command("run 10 post no");
+    END_HIDE_OUTPUT();
+    EXPECT_EQ(group->count(group->find("chunk")), 8);
+
+    BEGIN_HIDE_OUTPUT();
+    command("group chunk delete");
+    command("group chunk region chunk");
+    command("group within dynamic chunk within 2.0 include molecule");
+    command("group exclude dynamic chunk within 2.0 exclude chunk");
+    command("comm_modify cutoff 4.1");
+    command("run 10 post no");
+    END_HIDE_OUTPUT();
+    EXPECT_EQ(group->count(group->find("chunk")), 4);
+    EXPECT_EQ(group->count(group->find("within")), 59);
+    EXPECT_EQ(group->count(group->find("exclude")), 48);
 }
 
 static constexpr double EPSILON = 1.0e-13;

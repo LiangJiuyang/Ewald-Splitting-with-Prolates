@@ -73,7 +73,7 @@ class PPPMElectrode : public PPPM, public ElectrodeKSpace {
      gf_b = denominator expansion coeffs
   ------------------------------------------------------------------------- */
 
-  inline double gf_denom(const double &x, const double &y, const double &z) const
+  [[nodiscard]] double gf_denom(const double &x, const double &y, const double &z) const
   {
     double sx, sy, sz;
     sz = sy = sx = 0.0;
@@ -93,8 +93,8 @@ class PPPMElectrode : public PPPM, public ElectrodeKSpace {
   void start_compute();
   void make_rho_in_brick(int, FFT_SCALAR ***, bool);
   void project_psi(double *, int);
-  void one_step_multiplication(bigint *, double *, double **, double **, int const, bool);
-  void two_step_multiplication(bigint *, double *, double **, double **, int const, bool);
+  void one_step_multiplication(bigint *, double *, double **, double **, const int, bool);
+  void two_step_multiplication(bigint *, double *, double **, double **, const int, bool);
   void build_amesh(int, int, int, double *, double *);
   bool compute_vector_called;
 };

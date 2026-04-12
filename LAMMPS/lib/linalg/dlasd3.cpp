@@ -4,8 +4,8 @@ extern "C" {
 #include "lmp_f2c.h"
 static integer c__1 = 1;
 static integer c__0 = 0;
-static doublereal c_b13 = 1.;
-static doublereal c_b26 = 0.;
+static doublereal c_b12 = 1.;
+static doublereal c_b25 = 0.;
 int dlasd3_(integer *nl, integer *nr, integer *sqre, integer *k, doublereal *d__, doublereal *q,
             integer *ldq, doublereal *dsigma, doublereal *u, integer *ldu, doublereal *u2,
             integer *ldu2, doublereal *vt, integer *ldvt, doublereal *vt2, integer *ldvt2,
@@ -26,7 +26,6 @@ int dlasd3_(integer *nl, integer *nr, integer *sqre, integer *k, doublereal *d__
     integer ctemp;
     extern int dcopy_(integer *, doublereal *, integer *, doublereal *, integer *);
     integer ktemp;
-    extern doublereal dlamc3_(doublereal *, doublereal *);
     extern int dlasd4_(integer *, integer *, doublereal *, doublereal *, doublereal *, doublereal *,
                        doublereal *, doublereal *, integer *),
         dlascl_(char *, integer *, integer *, doublereal *, doublereal *, integer *, integer *,
@@ -97,13 +96,9 @@ int dlasd3_(integer *nl, integer *nr, integer *sqre, integer *k, doublereal *d__
         }
         return 0;
     }
-    i__1 = *k;
-    for (i__ = 1; i__ <= i__1; ++i__) {
-        dsigma[i__] = dlamc3_(&dsigma[i__], &dsigma[i__]) - dsigma[i__];
-    }
     dcopy_(k, &z__[1], &c__1, &q[q_offset], &c__1);
     rho = dnrm2_(k, &z__[1], &c__1);
-    dlascl_((char *)"G", &c__0, &c__0, &rho, &c_b13, k, &c__1, &z__[1], k, info, (ftnlen)1);
+    dlascl_((char *)"G", &c__0, &c__0, &rho, &c_b12, k, &c__1, &z__[1], k, info, (ftnlen)1);
     rho *= rho;
     i__1 = *k;
     for (j = 1; j <= i__1; ++j) {
@@ -147,30 +142,30 @@ int dlasd3_(integer *nl, integer *nr, integer *sqre, integer *k, doublereal *d__
         }
     }
     if (*k == 2) {
-        dgemm_((char *)"N", (char *)"N", &n, k, k, &c_b13, &u2[u2_offset], ldu2, &q[q_offset], ldq, &c_b26,
+        dgemm_((char *)"N", (char *)"N", &n, k, k, &c_b12, &u2[u2_offset], ldu2, &q[q_offset], ldq, &c_b25,
                &u[u_offset], ldu, (ftnlen)1, (ftnlen)1);
         goto L100;
     }
     if (ctot[1] > 0) {
-        dgemm_((char *)"N", (char *)"N", nl, k, &ctot[1], &c_b13, &u2[(u2_dim1 << 1) + 1], ldu2, &q[q_dim1 + 2],
-               ldq, &c_b26, &u[u_dim1 + 1], ldu, (ftnlen)1, (ftnlen)1);
+        dgemm_((char *)"N", (char *)"N", nl, k, &ctot[1], &c_b12, &u2[(u2_dim1 << 1) + 1], ldu2, &q[q_dim1 + 2],
+               ldq, &c_b25, &u[u_dim1 + 1], ldu, (ftnlen)1, (ftnlen)1);
         if (ctot[3] > 0) {
             ktemp = ctot[1] + 2 + ctot[2];
-            dgemm_((char *)"N", (char *)"N", nl, k, &ctot[3], &c_b13, &u2[ktemp * u2_dim1 + 1], ldu2,
-                   &q[ktemp + q_dim1], ldq, &c_b13, &u[u_dim1 + 1], ldu, (ftnlen)1, (ftnlen)1);
+            dgemm_((char *)"N", (char *)"N", nl, k, &ctot[3], &c_b12, &u2[ktemp * u2_dim1 + 1], ldu2,
+                   &q[ktemp + q_dim1], ldq, &c_b12, &u[u_dim1 + 1], ldu, (ftnlen)1, (ftnlen)1);
         }
     } else if (ctot[3] > 0) {
         ktemp = ctot[1] + 2 + ctot[2];
-        dgemm_((char *)"N", (char *)"N", nl, k, &ctot[3], &c_b13, &u2[ktemp * u2_dim1 + 1], ldu2,
-               &q[ktemp + q_dim1], ldq, &c_b26, &u[u_dim1 + 1], ldu, (ftnlen)1, (ftnlen)1);
+        dgemm_((char *)"N", (char *)"N", nl, k, &ctot[3], &c_b12, &u2[ktemp * u2_dim1 + 1], ldu2,
+               &q[ktemp + q_dim1], ldq, &c_b25, &u[u_dim1 + 1], ldu, (ftnlen)1, (ftnlen)1);
     } else {
         dlacpy_((char *)"F", nl, k, &u2[u2_offset], ldu2, &u[u_offset], ldu, (ftnlen)1);
     }
     dcopy_(k, &q[q_dim1 + 1], ldq, &u[nlp1 + u_dim1], ldu);
     ktemp = ctot[1] + 2;
     ctemp = ctot[2] + ctot[3];
-    dgemm_((char *)"N", (char *)"N", nr, k, &ctemp, &c_b13, &u2[nlp2 + ktemp * u2_dim1], ldu2, &q[ktemp + q_dim1],
-           ldq, &c_b26, &u[nlp2 + u_dim1], ldu, (ftnlen)1, (ftnlen)1);
+    dgemm_((char *)"N", (char *)"N", nr, k, &ctemp, &c_b12, &u2[nlp2 + ktemp * u2_dim1], ldu2, &q[ktemp + q_dim1],
+           ldq, &c_b25, &u[nlp2 + u_dim1], ldu, (ftnlen)1, (ftnlen)1);
 L100:
     i__1 = *k;
     for (i__ = 1; i__ <= i__1; ++i__) {
@@ -183,17 +178,17 @@ L100:
         }
     }
     if (*k == 2) {
-        dgemm_((char *)"N", (char *)"N", k, &m, k, &c_b13, &q[q_offset], ldq, &vt2[vt2_offset], ldvt2, &c_b26,
+        dgemm_((char *)"N", (char *)"N", k, &m, k, &c_b12, &q[q_offset], ldq, &vt2[vt2_offset], ldvt2, &c_b25,
                &vt[vt_offset], ldvt, (ftnlen)1, (ftnlen)1);
         return 0;
     }
     ktemp = ctot[1] + 1;
-    dgemm_((char *)"N", (char *)"N", k, &nlp1, &ktemp, &c_b13, &q[q_dim1 + 1], ldq, &vt2[vt2_dim1 + 1], ldvt2,
-           &c_b26, &vt[vt_dim1 + 1], ldvt, (ftnlen)1, (ftnlen)1);
+    dgemm_((char *)"N", (char *)"N", k, &nlp1, &ktemp, &c_b12, &q[q_dim1 + 1], ldq, &vt2[vt2_dim1 + 1], ldvt2,
+           &c_b25, &vt[vt_dim1 + 1], ldvt, (ftnlen)1, (ftnlen)1);
     ktemp = ctot[1] + 2 + ctot[2];
     if (ktemp <= *ldvt2) {
-        dgemm_((char *)"N", (char *)"N", k, &nlp1, &ctot[3], &c_b13, &q[ktemp * q_dim1 + 1], ldq,
-               &vt2[ktemp + vt2_dim1], ldvt2, &c_b13, &vt[vt_dim1 + 1], ldvt, (ftnlen)1, (ftnlen)1);
+        dgemm_((char *)"N", (char *)"N", k, &nlp1, &ctot[3], &c_b12, &q[ktemp * q_dim1 + 1], ldq,
+               &vt2[ktemp + vt2_dim1], ldvt2, &c_b12, &vt[vt_dim1 + 1], ldvt, (ftnlen)1, (ftnlen)1);
     }
     ktemp = ctot[1] + 1;
     nrp1 = *nr + *sqre;
@@ -208,8 +203,8 @@ L100:
         }
     }
     ctemp = ctot[2] + 1 + ctot[3];
-    dgemm_((char *)"N", (char *)"N", k, &nrp1, &ctemp, &c_b13, &q[ktemp * q_dim1 + 1], ldq,
-           &vt2[ktemp + nlp2 * vt2_dim1], ldvt2, &c_b26, &vt[nlp2 * vt_dim1 + 1], ldvt, (ftnlen)1,
+    dgemm_((char *)"N", (char *)"N", k, &nrp1, &ctemp, &c_b12, &q[ktemp * q_dim1 + 1], ldq,
+           &vt2[ktemp + nlp2 * vt2_dim1], ldvt2, &c_b25, &vt[nlp2 * vt_dim1 + 1], ldvt, (ftnlen)1,
            (ftnlen)1);
     return 0;
 }

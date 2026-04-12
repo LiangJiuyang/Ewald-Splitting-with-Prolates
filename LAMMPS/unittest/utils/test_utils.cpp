@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "lmptype.h"
+#include "atom.h"
 #include "pointers.h"
 #include "tokenizer.h"
 
@@ -19,8 +19,6 @@
 #include "gtest/gtest.h"
 
 #include <cerrno>
-#include <string>
-#include <vector>
 
 using namespace LAMMPS_NS;
 using ::testing::EndsWith;
@@ -44,6 +42,49 @@ TEST(Utils, strdup)
 
     delete[] copy;
     delete[] copy2;
+}
+
+TEST(Utils, strsame)
+{
+    std::string text1("some_text");
+    std::string text2("some_text");
+    ASSERT_TRUE(utils::strsame(text1, text2));
+    text1 = " some   _\ttext\n ";
+    ASSERT_TRUE(utils::strsame(text1, text2));
+    text2 = "  some _  text\n    ";
+    ASSERT_TRUE(utils::strsame(text1, text2));
+
+    text2 = "some_other_text";
+    ASSERT_FALSE(utils::strsame(text1, text2));
+    text2 = " some other_text";
+    ASSERT_FALSE(utils::strsame(text1, text2));
+}
+
+TEST(Utils, strcompress)
+{
+    auto compressed = utils::strcompress("\t some   text   ");
+    ASSERT_THAT(compressed, StrEq("some text"));
+
+    compressed = utils::strcompress("some \ntext");
+    ASSERT_THAT(compressed, StrEq("some text"));
+
+    compressed = utils::strcompress("sometext");
+    ASSERT_THAT(compressed, StrEq("sometext"));
+
+    compressed = utils::strcompress("some   text \r\n");
+    ASSERT_THAT(compressed, StrEq("some text"));
+
+    compressed = utils::strcompress("some other  text \r\n");
+    ASSERT_THAT(compressed, StrEq("some other text"));
+
+    compressed = utils::strcompress("\v some  \t\t  text \f");
+    ASSERT_THAT(compressed, StrEq("some text"));
+
+    compressed = utils::strcompress("   some\t text    ");
+    ASSERT_THAT(compressed, StrEq("some text"));
+
+    compressed = utils::strcompress("  \t\n   ");
+    ASSERT_THAT(compressed, StrEq(""));
 }
 
 TEST(Utils, trim)
@@ -139,10 +180,132 @@ TEST(Utils, count_words_with_extra_spaces)
     ASSERT_EQ(utils::count_words("   some text # comment   "), 4);
 }
 
+TEST(Utils, join)
+{
+    std::vector<int> intvalues = {1, 2, 3};
+
+    auto combined = utils::join(intvalues, " ");
+    ASSERT_THAT(combined, StrEq("1 2 3"));
+    combined = utils::join(intvalues, "");
+    ASSERT_THAT(combined, StrEq("123"));
+    intvalues[1] = 5;
+    combined         = utils::join(intvalues, "__");
+    ASSERT_THAT(combined, StrEq("1__5__3"));
+    intvalues.resize(1);
+    combined = utils::join(intvalues, "/");
+    ASSERT_THAT(combined, StrEq("1"));
+    intvalues.emplace_back(4);
+    combined = utils::join(intvalues, "1");
+    ASSERT_THAT(combined, StrEq("114"));
+
+    std::vector<long int> longvalues = {1, 2, 3};
+
+    combined = utils::join(longvalues, " ");
+    ASSERT_THAT(combined, StrEq("1 2 3"));
+    combined = utils::join(longvalues, "");
+    ASSERT_THAT(combined, StrEq("123"));
+    longvalues[1] = 5;
+    combined         = utils::join(longvalues, "__");
+    ASSERT_THAT(combined, StrEq("1__5__3"));
+    longvalues.resize(1);
+    combined = utils::join(longvalues, "/");
+    ASSERT_THAT(combined, StrEq("1"));
+    longvalues.emplace_back(4);
+    combined = utils::join(longvalues, "1");
+    ASSERT_THAT(combined, StrEq("114"));
+
+    std::vector<long long int> longlongvalues = {1, 2, 3};
+
+    combined = utils::join(longlongvalues, " ");
+    ASSERT_THAT(combined, StrEq("1 2 3"));
+    combined = utils::join(longlongvalues, "");
+    ASSERT_THAT(combined, StrEq("123"));
+    longlongvalues[1] = 5;
+    combined         = utils::join(longlongvalues, "__");
+    ASSERT_THAT(combined, StrEq("1__5__3"));
+    longlongvalues.resize(1);
+    combined = utils::join(longlongvalues, "/");
+    ASSERT_THAT(combined, StrEq("1"));
+    longlongvalues.emplace_back(4);
+    combined = utils::join(longlongvalues, "1");
+    ASSERT_THAT(combined, StrEq("114"));
+
+    std::vector<float> floatvalues = {1.0, -2.000000001, 3.500001};
+
+    combined = utils::join(floatvalues, " ");
+    EXPECT_THAT(combined, StrEq("1 -2 3.500001"));
+    combined = utils::join(floatvalues, "");
+    EXPECT_THAT(combined, StrEq("1-23.500001"));
+    floatvalues[1] = -5.05;
+    combined         = utils::join(floatvalues, "__");
+    EXPECT_THAT(combined, StrEq("1__-5.05__3.500001"));
+    floatvalues.resize(1);
+    combined = utils::join(floatvalues, "/");
+    EXPECT_THAT(combined, StrEq("1"));
+    floatvalues.emplace_back(0.00000000004);
+    combined = utils::join(floatvalues, " ");
+    EXPECT_THAT(combined, StrEq("1 4e-11"));
+
+    std::vector<double> doublevalues = {1.0, -2.0000000000000002, 3.5000000000001};
+
+    combined = utils::join(doublevalues, " ");
+    EXPECT_THAT(combined, StrEq("1 -2 3.5000000000001"));
+    combined = utils::join(doublevalues, "");
+    EXPECT_THAT(combined, StrEq("1-23.5000000000001"));
+    doublevalues[1] = -5.05;
+    combined         = utils::join(doublevalues, "__");
+    EXPECT_THAT(combined, StrEq("1__-5.05__3.5000000000001"));
+    doublevalues.resize(1);
+    combined = utils::join(doublevalues, "/");
+    EXPECT_THAT(combined, StrEq("1"));
+    doublevalues.emplace_back(0.00000000004);
+    combined = utils::join(doublevalues, " ");
+    EXPECT_THAT(combined, StrEq("1 4e-11"));
+
+    std::vector<std::string> words = {"one", "two", "three"};
+
+    combined = utils::join(words, " ");
+    ASSERT_THAT(combined, StrEq("one two three"));
+    combined = utils::join(words, "");
+    ASSERT_THAT(combined, StrEq("onetwothree"));
+    words[1] = "two ";
+    combined = utils::join(words, "__");
+    ASSERT_THAT(combined, StrEq("one__two __three"));
+    words.resize(1);
+    combined = utils::join(words, "/");
+    ASSERT_THAT(combined, StrEq("one"));
+    words.emplace_back("");
+    combined = utils::join(words, "1");
+    ASSERT_THAT(combined, StrEq("one1"));
+    words.clear();
+    combined = utils::join(words, ".");
+    ASSERT_THAT(combined, StrEq(""));
+
+    std::vector<const char *> strings = {"one", "two", "three"};
+
+    combined = utils::join(strings, " ");
+    ASSERT_THAT(combined, StrEq("one two three"));
+    combined = utils::join(strings, "");
+    ASSERT_THAT(combined, StrEq("onetwothree"));
+    strings[1] = "two ";
+    combined = utils::join(strings, "__");
+    ASSERT_THAT(combined, StrEq("one__two __three"));
+    strings.resize(1);
+    combined = utils::join(strings, "/");
+    ASSERT_THAT(combined, StrEq("one"));
+    strings.emplace_back("");
+    combined = utils::join(strings, "1");
+    ASSERT_THAT(combined, StrEq("one1"));
+    strings.clear();
+    combined = utils::join(strings, ".");
+    ASSERT_THAT(combined, StrEq(""));
+}
+
 TEST(Utils, join_words)
 {
     std::vector<std::string> words = {"one", "two", "three"};
-    auto combined                  = utils::join_words(words, " ");
+
+    auto combined = utils::join_words(words, " ");
     ASSERT_THAT(combined, StrEq("one two three"));
     combined = utils::join_words(words, "");
     ASSERT_THAT(combined, StrEq("onetwothree"));
@@ -155,6 +318,9 @@ TEST(Utils, join_words)
     words.emplace_back("");
     combined = utils::join_words(words, "1");
     ASSERT_THAT(combined, StrEq("one1"));
+    words.clear();
+    combined = utils::join_words(words, ".");
+    ASSERT_THAT(combined, StrEq(""));
 }
 
 TEST(Utils, split_words_simple)
@@ -186,7 +352,7 @@ TEST(Utils, split_words_trailing_whitespace)
 
 TEST(Utils, split_words_heredoc)
 {
-    auto list = utils::split_words("one two three \"\"\"");
+    auto list = utils::split_words(R"(one two three """)");
     ASSERT_EQ(list.size(), 4);
     ASSERT_THAT(list[0], StrEq("one"));
     ASSERT_THAT(list[1], StrEq("two"));
@@ -196,7 +362,7 @@ TEST(Utils, split_words_heredoc)
 
 TEST(Utils, split_words_heredoc_whitespace)
 {
-    auto list = utils::split_words("one two three \"\"\"   ");
+    auto list = utils::split_words(R"(one two three """   )");
     ASSERT_EQ(list.size(), 4);
     ASSERT_THAT(list[0], StrEq("one"));
     ASSERT_THAT(list[1], StrEq("two"));
@@ -213,9 +379,26 @@ TEST(Utils, split_words_quoted)
     ASSERT_THAT(list[2], StrEq("three"));
 }
 
+TEST(Utils, split_words_partially_quoted)
+{
+    auto list = utils::split_words(R"(one 'two "three")");
+    ASSERT_EQ(list.size(), 2);
+    ASSERT_THAT(list[0], StrEq("one"));
+    ASSERT_THAT(list[1], StrEq("two \"three\""));
+}
+
+TEST(Utils, split_words_partially_escaped)
+{
+    auto list = utils::split_words(R"(one \'two "three")");
+    ASSERT_EQ(list.size(), 3);
+    ASSERT_THAT(list[0], StrEq("one"));
+    ASSERT_THAT(list[1], StrEq("\\'two"));
+    ASSERT_THAT(list[2], StrEq("three"));
+}
+
 TEST(Utils, split_words_escaped)
 {
-    auto list = utils::split_words("1\\' '\"two\"' 3\\\"");
+    auto list = utils::split_words(R"(1\' '"two"' 3\")");
     ASSERT_EQ(list.size(), 3);
     ASSERT_THAT(list[0], StrEq("1\\'"));
     ASSERT_THAT(list[1], StrEq("\"two\""));
@@ -224,7 +407,7 @@ TEST(Utils, split_words_escaped)
 
 TEST(Utils, split_words_quote_in_quoted)
 {
-    auto list = utils::split_words("one 't\\'wo' \"th\\\"ree\"");
+    auto list = utils::split_words(R"(one 't\'wo' "th\"ree")");
     ASSERT_EQ(list.size(), 3);
     ASSERT_THAT(list[0], StrEq("one"));
     ASSERT_THAT(list[1], StrEq("t\\'wo"));
@@ -929,6 +1112,16 @@ TEST(Utils, boundsbig_case3)
     ASSERT_EQ(nhi, -1);
 }
 
+TEST(Utils, bounds_typelabel_forward)
+{
+    int nlo, nhi;
+
+    nlo = nhi = -1;
+    utils::bounds_typelabel(FLERR, "2*9", 0, 10, nlo, nhi, nullptr, Atom::ATOM);
+    ASSERT_EQ(nlo, 2);
+    ASSERT_EQ(nhi, 9);
+}
+
 TEST(Utils, parse_grid_id)
 {
     auto words = utils::parse_grid_id(FLERR, "c_1:full:density", nullptr);
@@ -969,8 +1162,11 @@ TEST(Utils, parse_grid_id)
 
 TEST(Utils, errorurl)
 {
-    auto errmesg = utils::errorurl(10);
-    ASSERT_THAT(errmesg, Eq("\nFor more information see https://docs.lammps.org/err0010"));
+    ASSERT_THAT(utils::errorurl(10),
+                StrEq("\nFor more information see https://docs.lammps.org/err0010"));
+    ASSERT_THAT(utils::errorurl(0),
+                StrEq("\nFor more information see https://docs.lammps.org/Errors_details.html"));
+    ASSERT_THAT(utils::errorurl(-1), StrEq(""));
 }
 
 TEST(Utils, getsyserror)
@@ -982,6 +1178,40 @@ TEST(Utils, getsyserror)
 #else
     GTEST_SKIP();
 #endif
+}
+
+static void BEGIN_CAPTURE_OUTPUT()
+{
+    ::testing::internal::CaptureStdout();
+}
+
+static std::string END_CAPTURE_OUTPUT()
+{
+    return ::testing::internal::GetCapturedStdout();
+}
+
+TEST(Utils, print)
+{
+    BEGIN_CAPTURE_OUTPUT();
+    utils::print("hello, world!\n");
+    auto text = END_CAPTURE_OUTPUT();
+    EXPECT_THAT(text, StrEq("hello, world!\n"));
+
+    BEGIN_CAPTURE_OUTPUT();
+    utils::print(stdout, "hello, world!\n");
+    text = END_CAPTURE_OUTPUT();
+    EXPECT_THAT(text, StrEq("hello, world!\n"));
+
+    const auto world = "world";
+    BEGIN_CAPTURE_OUTPUT();
+    utils::print("hello, {:>20}!\n", world);
+    text = END_CAPTURE_OUTPUT();
+    EXPECT_THAT(text, StrEq("hello,                world!\n"));
+
+    BEGIN_CAPTURE_OUTPUT();
+    utils::print(stdout, "hello, {:<20}!\n", world);
+    text = END_CAPTURE_OUTPUT();
+    EXPECT_THAT(text, StrEq("hello, world               !\n"));
 }
 
 TEST(Utils, potential_file)
@@ -1073,7 +1303,7 @@ TEST(Utils, timespec2seconds_mmfraction)
 
 TEST(Utils, timespec2seconds_invalid)
 {
-    ASSERT_DOUBLE_EQ(utils::timespec2seconds("2:aa:45"), -1.0);
+    ASSERT_THROW(utils::timespec2seconds("2:aa:45"), TokenizerException);
 }
 
 TEST(Utils, date2num)

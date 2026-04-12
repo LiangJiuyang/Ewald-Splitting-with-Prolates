@@ -54,10 +54,16 @@ int dgehrd_(integer *n, integer *ilo, integer *ihi, doublereal *a, integer *lda,
     } else if (*lwork < max(1, *n) && !lquery) {
         *info = -8;
     }
+    nh = *ihi - *ilo + 1;
     if (*info == 0) {
-        i__1 = 64, i__2 = ilaenv_(&c__1, (char *)"DGEHRD", (char *)" ", n, ilo, ihi, &c_n1, (ftnlen)6, (ftnlen)1);
-        nb = min(i__1, i__2);
-        lwkopt = *n * nb + 4160;
+        if (nh <= 1) {
+            lwkopt = 1;
+        } else {
+            i__1 = 64,
+            i__2 = ilaenv_(&c__1, (char *)"DGEHRD", (char *)" ", n, ilo, ihi, &c_n1, (ftnlen)6, (ftnlen)1);
+            nb = min(i__1, i__2);
+            lwkopt = *n * nb + 4160;
+        }
         work[1] = (doublereal)lwkopt;
     }
     if (*info != 0) {
@@ -75,7 +81,6 @@ int dgehrd_(integer *n, integer *ilo, integer *ihi, doublereal *a, integer *lda,
     for (i__ = max(1, *ihi); i__ <= i__1; ++i__) {
         tau[i__] = 0.;
     }
-    nh = *ihi - *ilo + 1;
     if (nh <= 1) {
         work[1] = 1.;
         return 0;
@@ -87,7 +92,7 @@ int dgehrd_(integer *n, integer *ilo, integer *ihi, doublereal *a, integer *lda,
         i__1 = nb, i__2 = ilaenv_(&c__3, (char *)"DGEHRD", (char *)" ", n, ilo, ihi, &c_n1, (ftnlen)6, (ftnlen)1);
         nx = max(i__1, i__2);
         if (nx < nh) {
-            if (*lwork < *n * nb + 4160) {
+            if (*lwork < lwkopt) {
                 i__1 = 2,
                 i__2 = ilaenv_(&c__2, (char *)"DGEHRD", (char *)" ", n, ilo, ihi, &c_n1, (ftnlen)6, (ftnlen)1);
                 nbmin = max(i__1, i__2);
@@ -114,14 +119,13 @@ int dgehrd_(integer *n, integer *ilo, integer *ihi, doublereal *a, integer *lda,
             ei = a[i__ + ib + (i__ + ib - 1) * a_dim1];
             a[i__ + ib + (i__ + ib - 1) * a_dim1] = 1.;
             i__3 = *ihi - i__ - ib + 1;
-            dgemm_((char *)"No transpose", (char *)"Transpose", ihi, &i__3, &ib, &c_b25, &work[1], &ldwork,
+            dgemm_((char *)"N", (char *)"T", ihi, &i__3, &ib, &c_b25, &work[1], &ldwork,
                    &a[i__ + ib + i__ * a_dim1], lda, &c_b26, &a[(i__ + ib) * a_dim1 + 1], lda,
-                   (ftnlen)12, (ftnlen)9);
+                   (ftnlen)1, (ftnlen)1);
             a[i__ + ib + (i__ + ib - 1) * a_dim1] = ei;
             i__3 = ib - 1;
-            dtrmm_((char *)"Right", (char *)"Lower", (char *)"Transpose", (char *)"Unit", &i__, &i__3, &c_b26,
-                   &a[i__ + 1 + i__ * a_dim1], lda, &work[1], &ldwork, (ftnlen)5, (ftnlen)5,
-                   (ftnlen)9, (ftnlen)4);
+            dtrmm_((char *)"R", (char *)"L", (char *)"T", (char *)"U", &i__, &i__3, &c_b26, &a[i__ + 1 + i__ * a_dim1], lda,
+                   &work[1], &ldwork, (ftnlen)1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
             i__3 = ib - 2;
             for (j = 0; j <= i__3; ++j) {
                 daxpy_(&i__, &c_b25, &work[ldwork * j + 1], &c__1, &a[(i__ + j + 1) * a_dim1 + 1],
@@ -129,10 +133,9 @@ int dgehrd_(integer *n, integer *ilo, integer *ihi, doublereal *a, integer *lda,
             }
             i__3 = *ihi - i__;
             i__4 = *n - i__ - ib + 1;
-            dlarfb_((char *)"Left", (char *)"Transpose", (char *)"Forward", (char *)"Columnwise", &i__3, &i__4, &ib,
-                    &a[i__ + 1 + i__ * a_dim1], lda, &work[iwt], &c__65,
-                    &a[i__ + 1 + (i__ + ib) * a_dim1], lda, &work[1], &ldwork, (ftnlen)4, (ftnlen)9,
-                    (ftnlen)7, (ftnlen)10);
+            dlarfb_((char *)"L", (char *)"T", (char *)"F", (char *)"C", &i__3, &i__4, &ib, &a[i__ + 1 + i__ * a_dim1], lda,
+                    &work[iwt], &c__65, &a[i__ + 1 + (i__ + ib) * a_dim1], lda, &work[1], &ldwork,
+                    (ftnlen)1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
         }
     }
     dgehd2_(n, &i__, ihi, &a[a_offset], lda, &tau[1], &work[1], &iinfo);

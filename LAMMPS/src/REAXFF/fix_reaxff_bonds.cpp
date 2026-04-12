@@ -19,14 +19,19 @@
 #include "fix_reaxff_bonds.h"
 
 #include "atom.h"
+#include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "graphics.h"
 #include "memory.h"
 #include "neigh_list.h"
 #include "update.h"
 
 #include "pair_reaxff.h"
 #include "reaxff_api.h"
+
+#include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -35,38 +40,30 @@ using namespace ReaxFF;
 /* ---------------------------------------------------------------------- */
 
 FixReaxFFBonds::FixReaxFFBonds(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg), neighid(nullptr), abo(nullptr), fp(nullptr), lists(nullptr),
+  reaxff(nullptr), list(nullptr), imgobjs(nullptr), imgparms(nullptr)
 {
-  if (narg != 5) error->all(FLERR,"Illegal fix reaxff/bonds command");
+  if (narg != 5)
+    error->all(FLERR, Error::NOPOINTER, "Fix reaxff/bonds expected 5 arguments but got {}", narg);
 
-  MPI_Comm_rank(world,&me);
-  MPI_Comm_size(world,&nprocs);
-  ntypes = atom->ntypes;
   nmax = atom->nmax;
   compressed = 0;
+  multifile = 0;
+  padflag = 0;
   first_flag = true;
+  numobjs = 0;
+  dynamic_group_allow = 1;     // applies only to FixReaxFFBonds::image()
 
   nevery = utils::inumeric(FLERR,arg[3],false,lmp);
+  if (nevery <= 0) error->all(FLERR, 3, "Illegal fix reaxff/bonds nevery value {}", nevery);
+  global_freq = nevery;
 
-  if (nevery <= 0) error->all(FLERR,"Illegal fix reaxff/bonds command");
-
-  if (me == 0) {
-    if (platform::has_compress_extension(arg[4])) {
-      compressed = 1;
-      fp = platform::compressed_write(arg[4]);
-      if (!fp) error->one(FLERR,"Cannot open compressed file");
-    } else fp = fopen(arg[4],"w");
-
-    if (!fp) error->one(FLERR,"Cannot open fix reaxff/bonds file {}: {}",
-                        arg[4],utils::getsyserror());
-  }
+  filename = arg[4];
+  if (filename.rfind('*') != std::string::npos) multifile = 1;
+  if (platform::has_compress_extension(filename)) compressed = 1;
 
   if (atom->tag_consecutive() == 0)
-    error->all(FLERR,"Atom IDs must be consecutive for fix reaxff bonds");
-
-  abo = nullptr;
-  neighid = nullptr;
-  numneigh = nullptr;
+    error->all(FLERR, Error::NOLASTLINE, "Fix reaxff/bonds requires consecutive atom-IDs");
 
   allocate();
 }
@@ -75,11 +72,13 @@ FixReaxFFBonds::FixReaxFFBonds(LAMMPS *lmp, int narg, char **arg) :
 
 FixReaxFFBonds::~FixReaxFFBonds()
 {
-  MPI_Comm_rank(world,&me);
-
   destroy();
 
-  if (me == 0) fclose(fp);
+  if (fp) fclose(fp);
+
+  // clean up dump image data
+  memory->destroy(imgobjs);
+  memory->destroy(imgparms);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -95,6 +94,9 @@ int FixReaxFFBonds::setmask()
 
 void FixReaxFFBonds::setup(int /*vflag*/)
 {
+  if (atom->natoms > MAXSMALLINT)
+    error->all(FLERR, Error::NOLASTLINE, "Too many atoms for fix {}", style);
+
   // only print output during setup() at the very beginning
   // to avoid duplicate outputs when using multiple run statements
   if (first_flag) end_of_step();
@@ -106,8 +108,9 @@ void FixReaxFFBonds::setup(int /*vflag*/)
 void FixReaxFFBonds::init()
 {
   reaxff = dynamic_cast<PairReaxFF *>(force->pair_match("^reax..",0));
-  if (reaxff == nullptr) error->all(FLERR,"Cannot use fix reaxff/bonds without "
-                                "pair_style reaxff, reaxff/kk, or reaxff/omp");
+  if (reaxff == nullptr)
+    error->all(FLERR, Error::NOLASTLINE, "Cannot use fix reaxff/bonds without "
+               "pair_style reaxff, reaxff/kk, or reaxff/omp");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -115,7 +118,6 @@ void FixReaxFFBonds::init()
 void FixReaxFFBonds::end_of_step()
 {
   Output_ReaxFF_Bonds();
-  if (me == 0) fflush(fp);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -129,7 +131,7 @@ void FixReaxFFBonds::Output_ReaxFF_Bonds()
   double *buf;
 
   int nlocal = atom->nlocal;
-  int nlocal_tot = static_cast<int> (atom->natoms);
+  int nlocal_tot = static_cast<int>(atom->natoms);
 
   if (atom->nmax > nmax) {
     destroy();
@@ -146,6 +148,9 @@ void FixReaxFFBonds::Output_ReaxFF_Bonds()
   }
   numbonds = FindBond();
 
+  // no file output with NULL file name.
+  if (filename == "NULL") return;
+
   // allocate a temporary buffer for the snapshot info
   MPI_Allreduce(&numbonds,&numbonds_max,1,MPI_INT,MPI_MAX,world);
   MPI_Allreduce(&nlocal,&nlocal_max,1,MPI_INT,MPI_MAX,world);
@@ -161,7 +166,6 @@ void FixReaxFFBonds::Output_ReaxFF_Bonds()
   RecvBuffer(buf, nbuf, nbuf_local, nlocal_tot, numbonds_max);
 
   memory->destroy(buf);
-
 }
 
 /* ---------------------------------------------------------------------- */
@@ -180,6 +184,7 @@ int FixReaxFFBonds::FindBond()
 
   tagint *tag = atom->tag;
   int numbonds = 0;
+  numobjs = 0;
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
@@ -198,6 +203,7 @@ int FixReaxFFBonds::FindBond()
       }
     }
     numneigh[i] = nj;
+    numobjs += nj;
     if (nj > numbonds) numbonds = nj;
   }
   return numbonds;
@@ -218,7 +224,7 @@ void FixReaxFFBonds::PassBuffer(double *buf, int &nbuf_local)
     buf[j+2] = reaxff->api->workspace->nlp[i];
     buf[j+3] = atom->q[i];
     buf[j+4] = numneigh[i];
-    numbonds = nint(buf[j+4]);
+    numbonds = std::lround(buf[j+4]);
 
     for (k = 5; k < 5+numbonds; k++) {
       buf[j+k] = neighid[i][k-5];
@@ -252,33 +258,50 @@ void FixReaxFFBonds::RecvBuffer(double *buf, int nbuf, int nbuf_local,
   double cutof3 = reaxff->api->control->bg_cut;
   MPI_Request irequest, irequest2;
 
-  if (me == 0) {
-    fmt::print(fp,"# Timestep {}\n#\n",ntimestep);
-    fmt::print(fp,"# Number of particles {}\n#\n",natoms);
-    fmt::print(fp,"# Max number of bonds per atom {} with coarse bond order cutoff {:5.3f}\n",
+  if (comm->me == 0) {
+    std::string myfile = filename;
+    if (multifile) myfile = utils::star_subst(myfile, update->ntimestep, padflag);
+    if (multifile && fp) {
+      fclose(fp);
+      fp = nullptr;
+    }
+    if (!fp) {
+      if (compressed) {
+        fp = platform::compressed_write(myfile);
+      } else {
+        fp = fopen(myfile.c_str(), "w");
+      }
+      if (!fp)
+        error->one(FLERR, Error::NOLASTLINE,
+                   "Cannot open fix reaxff/bonds file {}: {}", myfile, utils::getsyserror());
+    }
+
+    utils::print(fp,"# Timestep {}\n#\n",ntimestep);
+    utils::print(fp,"# Number of particles {}\n#\n",natoms);
+    utils::print(fp,"# Max number of bonds per atom {} with coarse bond order cutoff {:5.3f}\n",
                maxnum,cutof3);
-    fmt::print(fp,"# Particle connection table and bond orders\n"
+    utils::print(fp,"# Particle connection table and bond orders\n"
                "# id type nb id_1...id_nb mol bo_1...bo_nb abo nlp q\n");
   }
 
   j = 2;
-  if (me == 0) {
-    for (inode = 0; inode < nprocs; inode ++) {
+  if (comm->me == 0) {
+    for (inode = 0; inode < comm->nprocs; inode ++) {
       if (inode == 0) {
         nlocal_tmp = nlocal;
       } else {
         MPI_Irecv(&buf[0],nbuf,MPI_DOUBLE,inode,0,world,&irequest);
         MPI_Wait(&irequest,MPI_STATUS_IGNORE);
-        nlocal_tmp = nint(buf[0]);
+        nlocal_tmp = std::lround(buf[0]);
       }
       j = 2;
       for (i = 0; i < nlocal_tmp; i ++) {
         itag = static_cast<tagint> (buf[j-1]);
-        itype = nint(buf[j+0]);
+        itype = std::lround(buf[j+0]);
         sbotmp = buf[j+1];
         nlptmp = buf[j+2];
         avqtmp = buf[j+3];
-        numbonds = nint(buf[j+4]);
+        numbonds = std::lround(buf[j+4]);
 
         auto mesg = fmt::format(" {} {} {}",itag,itype,numbonds);
         for (k = 5; k < 5+numbonds; k++)
@@ -292,25 +315,17 @@ void FixReaxFFBonds::RecvBuffer(double *buf, int nbuf, int nbuf_local,
         j += (1+numbonds);
 
         mesg += fmt::format("{:14.3f}{:14.3f}{:14.3f}\n",sbotmp,nlptmp,avqtmp);
-        fmt::print(fp, mesg);
+        utils::print(fp, mesg);
       }
     }
   } else {
     MPI_Isend(&buf[0],nbuf_local,MPI_DOUBLE,0,0,world,&irequest2);
     MPI_Wait(&irequest2,MPI_STATUS_IGNORE);
   }
-  if (me == 0) fputs("# \n",fp);
-
-}
-
-/* ---------------------------------------------------------------------- */
-
-int FixReaxFFBonds::nint(const double &r)
-{
-  int i = 0;
-  if (r>0.0) i = static_cast<int>(r+0.5);
-  else if (r<0.0) i = static_cast<int>(r-0.5);
-  return i;
+  if (fp) {
+    fputs("# \n",fp);
+    fflush(fp);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -333,6 +348,18 @@ void FixReaxFFBonds::allocate()
 
 /* ---------------------------------------------------------------------- */
 
+int FixReaxFFBonds::modify_param(int narg, char **arg)
+{
+  if (strcmp(arg[0], "pad") == 0) {
+    if (narg < 2) utils::missing_cmd_args(FLERR, "fix_modify pad", error);
+    padflag = utils::inumeric(FLERR, arg[1], false, lmp);
+    return 2;
+  }
+  return 0;
+}
+
+/* ---------------------------------------------------------------------- */
+
 double FixReaxFFBonds::memory_usage()
 {
   double bytes;
@@ -343,4 +370,54 @@ double FixReaxFFBonds::memory_usage()
   bytes += (double)1.0*nmax*MAXREAXBOND*sizeof(int);
 
   return bytes;
+}
+
+/* ---------------------------------------------------------------------- */
+
+int FixReaxFFBonds::image(int *&objs, double **&parms)
+{
+  if (atom->map_style == Atom::MAP_NONE)
+    error->all(FLERR, Error::NOLASTLINE,
+               "Using fix reaxff/bonds with dump image requires an atom map");
+
+  if (!numobjs) return 0;
+  memory->destroy(imgobjs);
+  memory->destroy(imgparms);
+  memory->create(imgobjs, numobjs, "reaxff/bonds:imgobjs");
+  memory->create(imgparms, numobjs, 8, "reaxff/bonds:imgparms");
+
+  const int *type = atom->type;
+  const int *mask = atom->mask;
+  const double * const * const x = atom->x;
+
+  int inum = reaxff->list->inum;
+  int *ilist = reaxff->list->ilist;
+
+  int n = 0;
+  for (int ii = 0; ii < inum; ++ii) {
+    int i = ilist[ii];
+    if (mask[i] & groupbit) {
+      for (int jj = 0; jj < numneigh[i]; ++jj) {
+        int j = atom->map(neighid[i][jj]);
+        j = domain->closest_image(i,j);
+        if (j < 0) continue;
+        if (mask[j] & groupbit) {
+          imgobjs[n] = Graphics::BOND;
+          imgparms[n][0] = type[i];
+          imgparms[n][1] = type[j];
+          imgparms[n][2] = x[i][0];
+          imgparms[n][3] = x[i][1];
+          imgparms[n][4] = x[i][2];
+          imgparms[n][5] = x[j][0];
+          imgparms[n][6] = x[j][1];
+          imgparms[n][7] = x[j][2];
+          ++n;
+        }
+      }
+    }
+  }
+
+  objs = imgobjs;
+  parms = imgparms;
+  return n;
 }

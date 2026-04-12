@@ -38,13 +38,14 @@ class PairLJCubic : public Pair {
   void write_restart_settings(FILE *) override;
   void read_restart_settings(FILE *) override;
   double single(int, int, int, int, double, double, double, double &) override;
+  void *extract(const char *, int &) override;
 
  protected:
   double **cut, **cut_inner, **cut_inner_sq;
   double **epsilon, **sigma;
   double **lj1, **lj2, **lj3, **lj4;
 
-  void allocate();
+  virtual void allocate();
 };
 }    // namespace LAMMPS_NS
 

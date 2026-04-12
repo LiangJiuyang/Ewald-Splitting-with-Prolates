@@ -6,6 +6,11 @@
 //
 // For the license information refer to format.h.
 
+#if __has_include(<version>)
+#include <version>
+#endif
+#if !defined(__cpp_lib_format) || (__cpp_lib_format < 201907L)
+
 // Disable bogus MSVC warnings.
 #if !defined(_CRT_SECURE_NO_WARNINGS) && defined(_MSC_VER)
 #  define _CRT_SECURE_NO_WARNINGS
@@ -13,51 +18,47 @@
 
 #include "fmt/os.h"
 
-#ifndef FMT_MODULE
-#  include <climits>
+#include <climits>
 
-#  if FMT_USE_FCNTL
-#    include <sys/stat.h>
-#    include <sys/types.h>
+#if FMT_USE_FCNTL
+#  include <sys/stat.h>
+#  include <sys/types.h>
 
-#    ifdef _WRS_KERNEL    // VxWorks7 kernel
-#      include <ioLib.h>  // getpagesize
-#    endif
-
-#    ifndef _WIN32
-#      include <unistd.h>
-#    else
-#      ifndef WIN32_LEAN_AND_MEAN
-#        define WIN32_LEAN_AND_MEAN
-#      endif
-#      include <io.h>
-#    endif  // _WIN32
-#  endif    // FMT_USE_FCNTL
-
-#  ifdef _WIN32
-#    include <windows.h>
+#  ifdef _WRS_KERNEL    // VxWorks7 kernel
+#    include <ioLib.h>  // getpagesize
 #  endif
-#endif
+
+#  ifndef _WIN32
+#    include <unistd.h>
+#  else
+#    ifndef WIN32_LEAN_AND_MEAN
+#      define WIN32_LEAN_AND_MEAN
+#    endif
+#    include <io.h>
+
+#    ifndef S_IRUSR
+#      define S_IRUSR _S_IREAD
+#    endif
+#    ifndef S_IWUSR
+#      define S_IWUSR _S_IWRITE
+#    endif
+#    ifndef S_IRGRP
+#      define S_IRGRP 0
+#    endif
+#    ifndef S_IWGRP
+#      define S_IWGRP 0
+#    endif
+#    ifndef S_IROTH
+#      define S_IROTH 0
+#    endif
+#    ifndef S_IWOTH
+#      define S_IWOTH 0
+#    endif
+#  endif  // _WIN32
+#endif    // FMT_USE_FCNTL
 
 #ifdef _WIN32
-#  ifndef S_IRUSR
-#    define S_IRUSR _S_IREAD
-#  endif
-#  ifndef S_IWUSR
-#    define S_IWUSR _S_IWRITE
-#  endif
-#  ifndef S_IRGRP
-#    define S_IRGRP 0
-#  endif
-#  ifndef S_IWGRP
-#    define S_IWGRP 0
-#  endif
-#  ifndef S_IROTH
-#    define S_IROTH 0
-#  endif
-#  ifndef S_IWOTH
-#    define S_IWOTH 0
-#  endif
+#  include <windows.h>
 #endif
 
 namespace {
@@ -187,14 +188,12 @@ void buffered_file::close() {
 }
 
 int buffered_file::descriptor() const {
-#ifdef FMT_HAS_SYSTEM
-  // fileno is a macro on OpenBSD.
-#  ifdef fileno
-#    undef fileno
-#  endif
+#if !defined(fileno)
   int fd = FMT_POSIX_CALL(fileno(file_));
-#elif defined(_WIN32)
-  int fd = _fileno(file_);
+#elif defined(FMT_HAS_SYSTEM)
+  // fileno is a macro on OpenBSD so we cannot use FMT_POSIX_CALL.
+#  define FMT_DISABLE_MACRO
+  int fd = FMT_SYSTEM(fileno FMT_DISABLE_MACRO(file_));
 #else
   int fd = fileno(file_);
 #endif
@@ -386,7 +385,7 @@ file_buffer::file_buffer(cstring_view path, const ostream_params& params)
   set(new char[params.buffer_size], params.buffer_size);
 }
 
-file_buffer::file_buffer(file_buffer&& other) noexcept
+file_buffer::file_buffer(file_buffer&& other)
     : buffer<char>(grow, other.data(), other.size(), other.capacity()),
       file_(std::move(other.file_)) {
   other.clear();
@@ -402,3 +401,4 @@ file_buffer::~file_buffer() {
 ostream::~ostream() = default;
 #endif  // FMT_USE_FCNTL
 FMT_END_NAMESPACE
+#endif // (__cplusplus < 202002L)

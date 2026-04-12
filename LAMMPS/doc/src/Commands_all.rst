@@ -119,11 +119,12 @@ An alphabetic list of general LAMMPS commands.
    * :doc:`write_coeff <write_coeff>`
    * :doc:`write_data <write_data>`
    * :doc:`write_dump <write_dump>`
+   * :doc:`write_molecule <write_molecule>`
    * :doc:`write_restart <write_restart>`
 
 Additional general LAMMPS commands provided by packages.  A few
 commands have accelerated versions.  This is indicated by an
-additional letter in parenthesis: k = KOKKOS.
+additional letter in parentheses: k = KOKKOS.
 
 .. table_from_list::
    :columns: 6
@@ -140,6 +141,7 @@ additional letter in parenthesis: k = KOKKOS.
    * :doc:`plugin <plugin>`
    * :doc:`prd <prd>`
    * :doc:`python <python>`
+   * :doc:`region2vmd <region2vmd>`
    * :doc:`tad <tad>`
    * :doc:`temper <temper>`
    * :doc:`temper/grem <temper_grem>`

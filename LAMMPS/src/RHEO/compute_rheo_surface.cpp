@@ -29,8 +29,10 @@
 #include "math_extra.h"
 #include "memory.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
 #include "neighbor.h"
+
+#include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace RHEO_NS;
@@ -80,6 +82,8 @@ void ComputeRHEOSurface::init()
   threshold_z = fix_rheo->zmin_surface;
   threshold_splash = fix_rheo->zmin_splash;
   interface_flag = fix_rheo->interface_flag;
+
+  fix_rheo->coordination_flag = 1;
 
   cutsq = cut * cut;
 
@@ -197,10 +201,8 @@ void ComputeRHEOSurface::compute_peratom()
 
   // reverse gradC and divr, forward divr
   comm_stage = 0;
-  comm_reverse = dim * dim + 1;
-  comm_forward = 1;
-  if (newton) comm->reverse_comm(this);
-  comm->forward_comm(this);
+  if (newton) comm->reverse_comm(this, dim * dim + 1);
+  comm->forward_comm(this, 1);
 
   // calculate nsurface for local atoms
   // Note, this isn't forwarded to ghosts
@@ -297,10 +299,8 @@ void ComputeRHEOSurface::compute_peratom()
 
   // forward/reverse status and rsurface
   comm_stage = 1;
-  comm_reverse = 2;
-  comm_forward = 2;
-  if (newton) comm->reverse_comm(this);
-  comm->forward_comm(this);
+  if (newton) comm->reverse_comm(this, 2);
+  comm->forward_comm(this, 2);
 }
 
 /* ---------------------------------------------------------------------- */

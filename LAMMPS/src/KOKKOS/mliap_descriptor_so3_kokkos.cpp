@@ -24,10 +24,12 @@
 #include "mliap_data_kokkos.h"
 #include "mliap_so3_kokkos.h"
 #include "pair_mliap.h"
+#include "atom_masks.h"
 
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
+
 template <class DeviceType>
 MLIAPDescriptorSO3Kokkos<DeviceType>::MLIAPDescriptorSO3Kokkos(LAMMPS *lmp, char *paramfilename)
  // TODO: why take self as param, shouldn't be needed
@@ -40,6 +42,14 @@ MLIAPDescriptorSO3Kokkos<DeviceType>::MLIAPDescriptorSO3Kokkos(LAMMPS *lmp, char
 /* ---------------------------------------------------------------------- */
 
 template <class DeviceType>
+MLIAPDescriptorSO3Kokkos<DeviceType>::~MLIAPDescriptorSO3Kokkos()
+{
+  delete so3ptr_kokkos;
+}
+
+/* ---------------------------------------------------------------------- */
+
+template <class DeviceType>
 void MLIAPDescriptorSO3Kokkos<DeviceType>::compute_descriptors(class MLIAPData *data_)
 {
   auto data = static_cast<MLIAPDataKokkos<DeviceType>*>(data_);
@@ -47,7 +57,7 @@ void MLIAPDescriptorSO3Kokkos<DeviceType>::compute_descriptors(class MLIAPData *
                           nmax, lmax, rcutfac, alpha, data->npairs, data->ndescriptors);
 
   Kokkos::deep_copy(data->k_descriptors.template view<DeviceType>(), so3ptr_kokkos->m_plist_r);
-  Kokkos::deep_copy(data->k_descriptors.h_view, so3ptr_kokkos->m_plist_r);
+  Kokkos::deep_copy(data->k_descriptors.view_host(), so3ptr_kokkos->m_plist_r);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -61,7 +71,9 @@ void MLIAPDescriptorSO3Kokkos<DeviceType>::compute_forces(class MLIAPData *data_
   so3ptr_kokkos->spectrum_dxdr(data->nlistatoms, data->k_numneighs, data->k_jelems, this->k_wjelem, data->k_rij, data->k_ij,
                                nmax, lmax, rcutfac, alpha, npairs, data->ndescriptors);
 
+  atomKK->sync(ExecutionSpaceFromDevice<DeviceType>::space,F_MASK);
   auto d_f = atomKK->k_f.view<DeviceType>();
+
   auto d_iatoms = data->k_iatoms.template view<DeviceType>();
   auto d_jatoms = data->k_jatoms.template view<DeviceType>();
   auto d_betas = data->k_betas.template view<DeviceType>();
@@ -69,13 +81,15 @@ void MLIAPDescriptorSO3Kokkos<DeviceType>::compute_forces(class MLIAPData *data_
   auto d_ij = data->k_ij.template view<DeviceType>();
   auto ndescriptors = data->ndescriptors;
   auto d_dplist_r = so3ptr_kokkos->k_dplist_r;
-  auto vflag=data->vflag;
-  int vflag_either=data->k_pairmliap->vflag_either, vflag_global=data->pairmliap->vflag_global, vflag_atom=data->pairmliap->vflag_atom;
+  auto vflag = data->vflag;
+  int vflag_either = data->pairmliap->vflag_either;
+  int vflag_global = data->pairmliap->vflag_global;
+  int vflag_atom = data->pairmliap->vflag_atom;
   auto d_vatom = data->k_pairmliap->k_vatom.template view<DeviceType>();
   Kokkos::View<double[6], DeviceType> virial("virial");
-  data->k_pairmliap->k_vatom.template modify<LMPHostType>();
+  data->k_pairmliap->k_vatom.modify_host();
   data->k_pairmliap->k_vatom.template sync<DeviceType>();
-  Kokkos::parallel_for(data->nlistatoms, KOKKOS_LAMBDA(int ii) {
+  Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType>(0,data->nlistatoms), KOKKOS_LAMBDA(int ii) {
     double fij[3];
     const int i = d_iatoms(ii);
 
@@ -117,7 +131,7 @@ void MLIAPDescriptorSO3Kokkos<DeviceType>::compute_forces(class MLIAPData *data_
     }
     if (vflag_atom) {
       data->k_pairmliap->k_vatom.template modify<DeviceType>();
-      data->k_pairmliap->k_vatom.template sync<LMPHostType>();
+      data->k_pairmliap->k_vatom.sync_host();
     }
   }
 }
@@ -127,6 +141,7 @@ void MLIAPDescriptorSO3Kokkos<DeviceType>::compute_forces(class MLIAPData *data_
 ------------------------------------------------------------------------- */
 template <class DeviceType>
 template <typename ViewType>
+// NOLINTNEXTLINE
 KOKKOS_INLINE_FUNCTION
 void MLIAPDescriptorSO3Kokkos<DeviceType>::v_tally(int vflag_either, int vflag_global, int vflag_atom, int i, int j, int ij,
     double *fij, ViewType rij, Kokkos::View<double[6],DeviceType> virial, ViewType vatom)
@@ -187,7 +202,7 @@ void MLIAPDescriptorSO3Kokkos<DeviceType>::compute_force_gradients(class MLIAPDa
 
   auto yoffset = data->yoffset, zoffset = data->zoffset, gamma_nnz = data->gamma_nnz;
 
-  Kokkos::parallel_for (data->nlistatoms, KOKKOS_LAMBDA (int ii) {
+  Kokkos::parallel_for (Kokkos::RangePolicy<DeviceType>(0,data->nlistatoms), KOKKOS_LAMBDA (int ii) {
     const int i = d_iatoms(ii);
 
     // ensure rij, inside, wj, and rcutij are of size jnum
@@ -230,7 +245,7 @@ void MLIAPDescriptorSO3Kokkos<DeviceType>::compute_descriptor_gradients(class ML
                                nmax, lmax, rcutfac, alpha, npairs, data->ndescriptors);
   auto graddesc = data->k_graddesc.template view<DeviceType>();
   Kokkos::deep_copy(graddesc, so3ptr_kokkos->k_dplist_r);
-  Kokkos::deep_copy(data->k_graddesc.h_view, graddesc);
+  Kokkos::deep_copy(data->k_graddesc.view_host(), graddesc);
 }
 
 /* ---------------------------------------------------------------------- */

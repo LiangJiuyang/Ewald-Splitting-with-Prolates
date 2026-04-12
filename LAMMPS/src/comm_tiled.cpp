@@ -79,7 +79,6 @@ CommTiled::~CommTiled()
   deallocate_swap(maxswap);
   memory->sfree(rcbinfo);
   memory->destroy(cutghostmulti);
-  memory->destroy(cutghostmultiold);
 }
 
 /* ----------------------------------------------------------------------
@@ -92,7 +91,6 @@ void CommTiled::init_pointers()
   overlap = nullptr;
   rcbinfo = nullptr;
   cutghostmulti = nullptr;
-  cutghostmultiold = nullptr;
 
   nsendproc = nullptr;
   nrecvproc = nullptr;
@@ -113,7 +111,6 @@ void CommTiled::init_pointers()
   pbc = nullptr;
   sendbox = nullptr;
   sendbox_multi = nullptr;
-  sendbox_multiold = nullptr;
   maxsendlist = nullptr;
   sendlist = nullptr;
   requests = nullptr;
@@ -179,10 +176,6 @@ void CommTiled::init()
     memory->create(cutghostmulti,ncollections,3,"comm:cutghostmulti");
   }
 
-  memory->destroy(cutghostmultiold);
-  if (mode == Comm::MULTIOLD)
-    memory->create(cutghostmultiold,atom->ntypes+1,3,"comm:cutghostmultiold");
-
   int bufextra_old = bufextra;
   init_exchange();
   if (bufextra > bufextra_old) grow_send(maxsend+bufextra,2);
@@ -201,7 +194,6 @@ void CommTiled::setup()
 
   dimension = domain->dimension;
   int *periodicity = domain->periodicity;
-  int ntypes = atom->ntypes;
 
   if (triclinic == 0) {
     prd = domain->prd;
@@ -267,21 +259,10 @@ void CommTiled::setup()
     }
   }
 
-  if (mode == Comm::MULTIOLD) {
-    double *cuttype = neighbor->cuttype;
-    for (i = 1; i <= ntypes; i++) {
-      double tmp = 0.0;
-      if (cutusermultiold) tmp = cutusermultiold[i];
-      cutghostmultiold[i][0] = MAX(tmp,cuttype[i]);
-      cutghostmultiold[i][1] = MAX(tmp,cuttype[i]);
-      cutghostmultiold[i][2] = MAX(tmp,cuttype[i]);
-    }
-  }
-
   double cut = get_comm_cutoff();
   if ((cut == 0.0) && (me == 0))
-    error->warning(FLERR,"Communication cutoff is 0.0. No ghost atoms "
-                   "will be generated. Atoms may get lost.");
+    error->warning(FLERR,"Communication cutoff is 0.0. No ghost atoms will be generated. "
+                   "Energies and forces may be wrong and atoms may get lost.");
 
   if (triclinic == 0) cutghost[0] = cutghost[1] = cutghost[2] = cut;
   else {
@@ -298,14 +279,6 @@ void CommTiled::setup()
         cutghostmulti[i][0] *= length0;
         cutghostmulti[i][1] *= length1;
         cutghostmulti[i][2] *= length2;
-      }
-    }
-
-    if (mode == Comm::MULTIOLD) {
-      for (i = 1; i <= ntypes; i++) {
-        cutghostmultiold[i][0] *= length0;
-        cutghostmultiold[i][1] *= length1;
-        cutghostmultiold[i][2] *= length2;
       }
     }
   }
@@ -445,7 +418,7 @@ void CommTiled::setup()
       //   extend sbox in those lower dims to include ghost atoms
       // single mode and multi mode
 
-      double oboxlo[3],oboxhi[3],sbox[6],sbox_multi[6],sbox_multiold[6];
+      double oboxlo[3],oboxhi[3],sbox[6],sbox_multi[6];
 
       if (mode == Comm::SINGLE) {
         for (i = 0; i < noverlap; i++) {
@@ -576,81 +549,6 @@ void CommTiled::setup()
           }
         }
       }
-
-      if (mode == Comm::MULTIOLD) {
-        for (i = 0; i < noverlap; i++) {
-          pbc_flag[iswap][i] = 0;
-          pbc[iswap][i][0] = pbc[iswap][i][1] = pbc[iswap][i][2] =
-            pbc[iswap][i][3] = pbc[iswap][i][4] = pbc[iswap][i][5] = 0;
-
-          (this->*box_other)(idim,idir,overlap[i],oboxlo,oboxhi);
-
-          if (i < noverlap1) {
-            sbox[0] = MAX(oboxlo[0],lo1[0]);
-            sbox[1] = MAX(oboxlo[1],lo1[1]);
-            sbox[2] = MAX(oboxlo[2],lo1[2]);
-            sbox[3] = MIN(oboxhi[0],hi1[0]);
-            sbox[4] = MIN(oboxhi[1],hi1[1]);
-            sbox[5] = MIN(oboxhi[2],hi1[2]);
-          } else {
-            pbc_flag[iswap][i] = 1;
-            if (idir == 0) pbc[iswap][i][idim] = 1;
-            else pbc[iswap][i][idim] = -1;
-            if (triclinic) {
-              if (idim == 1) pbc[iswap][i][5] = pbc[iswap][i][idim];
-              if (idim == 2) pbc[iswap][i][4] = pbc[iswap][i][3] = pbc[iswap][i][idim];
-            }
-            sbox[0] = MAX(oboxlo[0],lo2[0]);
-            sbox[1] = MAX(oboxlo[1],lo2[1]);
-            sbox[2] = MAX(oboxlo[2],lo2[2]);
-            sbox[3] = MIN(oboxhi[0],hi2[0]);
-            sbox[4] = MIN(oboxhi[1],hi2[1]);
-            sbox[5] = MIN(oboxhi[2],hi2[2]);
-          }
-
-          for (int itype = 1; itype <= atom->ntypes; itype++) {
-            sbox_multiold[0] = sbox[0];
-            sbox_multiold[1] = sbox[1];
-            sbox_multiold[2] = sbox[2];
-            sbox_multiold[3] = sbox[3];
-            sbox_multiold[4] = sbox[4];
-            sbox_multiold[5] = sbox[5];
-            if (idir == 0) {
-              sbox_multiold[idim] = sublo[idim];
-              if (i < noverlap1)
-                sbox_multiold[3+idim] =
-                  MIN(sbox_multiold[3+idim]+cutghostmultiold[itype][idim],subhi[idim]);
-              else
-                sbox_multiold[3+idim] =
-                  MIN(sbox_multiold[3+idim]-prd[idim]+cutghostmultiold[itype][idim],subhi[idim]);
-            } else {
-              if (i < noverlap1)
-                sbox_multiold[idim] =
-                  MAX(sbox_multiold[idim]-cutghostmultiold[itype][idim],sublo[idim]);
-              else
-                sbox_multiold[idim] =
-                  MAX(sbox_multiold[idim]+prd[idim]-cutghostmultiold[itype][idim],sublo[idim]);
-              sbox_multiold[3+idim] = subhi[idim];
-            }
-
-            if (idim >= 1) {
-              if (sbox_multiold[0] == oboxlo[0])
-                sbox_multiold[0] -= cutghostmultiold[itype][idim];
-              if (sbox_multiold[3] == oboxhi[0])
-                sbox_multiold[3] += cutghostmultiold[itype][idim];
-            }
-            if (idim == 2) {
-              if (sbox_multiold[1] == oboxlo[1])
-                sbox_multiold[1] -= cutghostmultiold[itype][idim];
-              if (sbox_multiold[4] == oboxhi[1])
-                sbox_multiold[4] += cutghostmultiold[itype][idim];
-            }
-
-            memcpy(sendbox_multiold[iswap][i][itype],sbox_multiold,6*sizeof(double));
-          }
-        }
-      }
-
       iswap++;
     }
   }
@@ -711,9 +609,9 @@ void CommTiled::setup()
 
     if (noverlap > nexchprocmax[idim]) {
       while (nexchprocmax[idim] < noverlap) nexchprocmax[idim] += DELTA_PROCS;
-      delete [] exchproc[idim];
+      delete[] exchproc[idim];
       exchproc[idim] = new int[nexchprocmax[idim]];
-      delete [] exchnum[idim];
+      delete[] exchnum[idim];
       exchnum[idim] = new int[nexchprocmax[idim]];
     }
 
@@ -737,7 +635,7 @@ void CommTiled::setup()
   for (i = 0; i < dimension; i++) nmax = MAX(nmax,nexchprocmax[i]);
   if (nmax > maxrequest) {
     maxrequest = nmax;
-    delete [] requests;
+    delete[] requests;
     requests = new MPI_Request[maxrequest];
   }
 }
@@ -1188,56 +1086,6 @@ void CommTiled::borders()
         sendnum[iswap][m] = ncount;
         smaxone = MAX(smaxone,ncount);
         ncountall += ncount;
-      } else {
-
-        int* type=atom->type;
-        int itype;
-        ncount = 0;
-
-        if (!bordergroup) {
-          for (i = 0; i < nlast; i++) {
-            itype=type[i];
-            bbox = sendbox_multiold[iswap][m][itype];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-        } else {
-          ngroup = atom->nfirst;
-          for (i = 0; i < ngroup; i++) {
-            itype=type[i];
-            bbox = sendbox_multiold[iswap][m][itype];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-          for (i = atom->nlocal; i < nlast; i++) {
-            itype=type[i];
-            bbox = sendbox_multiold[iswap][m][itype];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-        }
-
-        sendnum[iswap][m] = ncount;
-        smaxone = MAX(smaxone,ncount);
-        ncountall += ncount;
       }
     }
 
@@ -1382,14 +1230,19 @@ void CommTiled::borders()
 
 /* ----------------------------------------------------------------------
    forward communication invoked by a Pair
-   nsize used only to set recv buffer limit
+   size/nsize used only to set recv buffer limit
+   size = 0 (default) -> use comm_forward from Pair
+   size > 0 -> Pair passes max size per atom
+   the latter is only useful if Pair does several comm modes,
+     some are smaller than max stored in its comm_forward
 ------------------------------------------------------------------------- */
 
-void CommTiled::forward_comm(Pair *pair)
+void CommTiled::forward_comm(Pair *pair, int size)
 {
-  int i,irecv,n,nsend,nrecv;
+  int i,irecv,n,nsize,nsend,nrecv;
 
-  int nsize = pair->comm_forward;
+  if (size) nsize = size;
+  else nsize = pair->comm_forward;
 
   for (int iswap = 0; iswap < nswap; iswap++) {
     nsend = nsendproc[iswap] - sendself[iswap];
@@ -1426,14 +1279,19 @@ void CommTiled::forward_comm(Pair *pair)
 
 /* ----------------------------------------------------------------------
    reverse communication invoked by a Pair
-   nsize used only to set recv buffer limit
+   size/nsize used only to set recv buffer limit
+   size = 0 (default) -> use comm_reverse from Fix
+   size > 0 -> Fix passes max size per atom
+   the latter is only useful if Fix does several comm modes,
+     some are smaller than max stored in its comm_reverse
 ------------------------------------------------------------------------- */
 
-void CommTiled::reverse_comm(Pair *pair)
+void CommTiled::reverse_comm(Pair *pair, int size)
 {
-  int i,irecv,n,nsend,nrecv;
+  int i,irecv,n,nsize,nsend,nrecv;
 
-  int nsize = MAX(pair->comm_reverse,pair->comm_reverse_off);
+  if (size) nsize = MAX(pair->comm_reverse, pair->comm_reverse_off);
+  else nsize = pair->comm_reverse;
 
   for (int iswap = nswap-1; iswap >= 0; iswap--) {
     nsend = nsendproc[iswap] - sendself[iswap];
@@ -1466,14 +1324,18 @@ void CommTiled::reverse_comm(Pair *pair)
 
 /* ----------------------------------------------------------------------
    forward communication invoked by a Bond
-   nsize used only to set recv buffer limit
+   size/nsize used only to set recv buffer limit
+   size = 0 (default) -> use comm_forward from Bond
+   size > 0 -> Bond passes max size per atom
+   the latter is only useful if Bond does several comm modes,
+     some are smaller than max stored in its comm_forward
 ------------------------------------------------------------------------- */
-
-void CommTiled::forward_comm(Bond *bond)
+void CommTiled::forward_comm(Bond *bond, int size)
 {
-  int i,irecv,n,nsend,nrecv;
+  int i,irecv,n,nsize,nsend,nrecv;
 
-  int nsize = bond->comm_forward;
+  if (size) nsize = size;
+  else nsize = bond->comm_forward;
 
   for (int iswap = 0; iswap < nswap; iswap++) {
     nsend = nsendproc[iswap] - sendself[iswap];
@@ -1510,14 +1372,19 @@ void CommTiled::forward_comm(Bond *bond)
 
 /* ----------------------------------------------------------------------
    reverse communication invoked by a Bond
-   nsize used only to set recv buffer limit
+   size/nsize used only to set recv buffer limit
+   size = 0 (default) -> use comm_reverse from Bond
+   size > 0 -> Bond passes max size per atom
+   the latter is only useful if Bond does several comm modes,
+     some are smaller than max stored in its comm_reverse
 ------------------------------------------------------------------------- */
 
-void CommTiled::reverse_comm(Bond *bond)
+void CommTiled::reverse_comm(Bond *bond, int size)
 {
-  int i,irecv,n,nsend,nrecv;
+  int i,irecv,n,nsize,nsend,nrecv;
 
-  int nsize = MAX(bond->comm_reverse,bond->comm_reverse_off);
+  if (size) nsize = size;
+  else nsize = MAX(bond->comm_reverse,bond->comm_reverse_off);
 
   for (int iswap = nswap-1; iswap >= 0; iswap--) {
     nsend = nsendproc[iswap] - sendself[iswap];
@@ -1598,10 +1465,10 @@ void CommTiled::forward_comm(Fix *fix, int size)
 /* ----------------------------------------------------------------------
    reverse communication invoked by a Fix
    size/nsize used only to set recv buffer limit
-   size = 0 (default) -> use comm_forward from Fix
+   size = 0 (default) -> use comm_reverse from Fix
    size > 0 -> Fix passes max size per atom
    the latter is only useful if Fix does several comm modes,
-     some are smaller than max stored in its comm_forward
+     some are smaller than max stored in its comm_reverse
 ------------------------------------------------------------------------- */
 
 void CommTiled::reverse_comm(Fix *fix, int size)
@@ -1654,14 +1521,19 @@ void CommTiled::reverse_comm_variable(Fix * /*fix*/)
 
 /* ----------------------------------------------------------------------
    forward communication invoked by a Compute
-   nsize used only to set recv buffer limit
+   size/nsize used only to set recv buffer limit
+   size = 0 (default) -> use comm_forward from Compute
+   size > 0 -> Compute passes max size per atom
+   the latter is only useful if Compute does several comm modes,
+     some are smaller than max stored in its comm_forward
 ------------------------------------------------------------------------- */
 
-void CommTiled::forward_comm(Compute *compute)
+void CommTiled::forward_comm(Compute *compute, int size)
 {
-  int i,irecv,n,nsend,nrecv;
+  int i,irecv,n,nsize,nsend,nrecv;
 
-  int nsize = compute->comm_forward;
+  if (size) nsize = size;
+  else nsize = compute->comm_forward;
 
   for (int iswap = 0; iswap < nswap; iswap++) {
     nsend = nsendproc[iswap] - sendself[iswap];
@@ -1697,14 +1569,19 @@ void CommTiled::forward_comm(Compute *compute)
 
 /* ----------------------------------------------------------------------
    reverse communication invoked by a Compute
-   nsize used only to set recv buffer limit
+   size/nsize used only to set recv buffer limit
+   size = 0 (default) -> use comm_reverse from Compute
+   size > 0 -> Compute passes max size per atom
+   the latter is only useful if Compute does several comm modes,
+     some are smaller than max stored in its comm_reverse
 ------------------------------------------------------------------------- */
 
-void CommTiled::reverse_comm(Compute *compute)
+void CommTiled::reverse_comm(Compute *compute, int size)
 {
-  int i,irecv,n,nsend,nrecv;
+  int i,irecv,n,nsize,nsend,nrecv;
 
-  int nsize = compute->comm_reverse;
+  if (size) nsize = size;
+  else nsize = compute->comm_reverse;
 
   for (int iswap = nswap-1; iswap >= 0; iswap--) {
     nsend = nsendproc[iswap] - sendself[iswap];
@@ -1738,14 +1615,19 @@ void CommTiled::reverse_comm(Compute *compute)
 
 /* ----------------------------------------------------------------------
    forward communication invoked by a Dump
-   nsize used only to set recv buffer limit
+   size/nsize used only to set recv buffer limit
+   size = 0 (default) -> use comm_forward from Dump
+   size > 0 -> Dump passes max size per atom
+   the latter is only useful if Dump does several comm modes,
+     some are smaller than max stored in its comm_forward
 ------------------------------------------------------------------------- */
 
-void CommTiled::forward_comm(Dump *dump)
+void CommTiled::forward_comm(Dump *dump, int size)
 {
-  int i,irecv,n,nsend,nrecv;
+  int i,irecv,n,nsize,nsend,nrecv;
 
-  int nsize = dump->comm_forward;
+  if (size) nsize = size;
+  else nsize = dump->comm_forward;
 
   for (int iswap = 0; iswap < nswap; iswap++) {
     nsend = nsendproc[iswap] - sendself[iswap];
@@ -1781,14 +1663,19 @@ void CommTiled::forward_comm(Dump *dump)
 
 /* ----------------------------------------------------------------------
    reverse communication invoked by a Dump
-   nsize used only to set recv buffer limit
+   size/nsize used only to set recv buffer limit
+   size = 0 (default) -> use comm_reverse from Dump
+   size > 0 -> Dump passes max size per atom
+   the latter is only useful if Dump does several comm modes,
+     some are smaller than max stored in its comm_reverse
 ------------------------------------------------------------------------- */
 
-void CommTiled::reverse_comm(Dump *dump)
+void CommTiled::reverse_comm(Dump *dump, int size)
 {
-  int i,irecv,n,nsend,nrecv;
+  int i,irecv,n,nsize,nsend,nrecv;
 
-  int nsize = dump->comm_reverse;
+  if (size) nsize = size;
+  else nsize = dump->comm_reverse;
 
   for (int iswap = nswap-1; iswap >= 0; iswap--) {
     nsend = nsendproc[iswap] - sendself[iswap];
@@ -2327,7 +2214,6 @@ void CommTiled::allocate_swap(int n)
   pbc = new int**[n];
   sendbox = new double**[n];
   sendbox_multi = new double***[n];
-  sendbox_multiold = new double***[n];
   maxsendlist = new int*[n];
   sendlist = new int**[n];
 
@@ -2342,7 +2228,6 @@ void CommTiled::allocate_swap(int n)
     pbc[i] = nullptr;
     sendbox[i] = nullptr;
     sendbox_multi[i] = nullptr;
-    sendbox_multiold[i] = nullptr;
     maxsendlist[i] = nullptr;
     sendlist[i] = nullptr;
   }
@@ -2375,31 +2260,29 @@ void CommTiled::allocate_swap(int n)
 
 void CommTiled::grow_swap_send(int i, int n, int nold)
 {
-  delete [] sendproc[i];
+  delete[] sendproc[i];
   sendproc[i] = new int[n];
-  delete [] sendnum[i];
+  delete[] sendnum[i];
   sendnum[i] = new int[n];
 
-  delete [] size_reverse_recv[i];
+  delete[] size_reverse_recv[i];
   size_reverse_recv[i] = new int[n];
-  delete [] reverse_recv_offset[i];
+  delete[] reverse_recv_offset[i];
   reverse_recv_offset[i] = new int[n];
 
-  delete [] pbc_flag[i];
+  delete[] pbc_flag[i];
   pbc_flag[i] = new int[n];
   memory->destroy(pbc[i]);
   memory->create(pbc[i],n,6,"comm:pbc_flag");
   memory->destroy(sendbox[i]);
   memory->create(sendbox[i],n,6,"comm:sendbox");
   grow_swap_send_multi(i,n);
-  memory->destroy(sendbox_multiold[i]);
-  memory->create(sendbox_multiold[i],n,atom->ntypes+1,6,"comm:sendbox_multiold");
 
-  delete [] maxsendlist[i];
+  delete[] maxsendlist[i];
   maxsendlist[i] = new int[n];
 
   for (int j = 0; j < nold; j++) memory->destroy(sendlist[i][j]);
-  delete [] sendlist[i];
+  delete[] sendlist[i];
   sendlist[i] = new int*[n];
   for (int j = 0; j < n; j++) {
     maxsendlist[i][j] = BUFMIN;
@@ -2409,19 +2292,19 @@ void CommTiled::grow_swap_send(int i, int n, int nold)
 
 void CommTiled::grow_swap_recv(int i, int n)
 {
-  delete [] recvproc[i];
+  delete[] recvproc[i];
   recvproc[i] = new int[n];
-  delete [] recvnum[i];
+  delete[] recvnum[i];
   recvnum[i] = new int[n];
 
-  delete [] size_forward_recv[i];
+  delete[] size_forward_recv[i];
   size_forward_recv[i] = new int[n];
-  delete [] firstrecv[i];
+  delete[] firstrecv[i];
   firstrecv[i] = new int[n];
-  delete [] forward_recv_offset[i];
+  delete[] forward_recv_offset[i];
   forward_recv_offset[i] = new int[n];
 
-  delete [] size_reverse_send[i];
+  delete[] size_reverse_send[i];
   size_reverse_send[i] = new int[n];
 }
 
@@ -2444,71 +2327,70 @@ void CommTiled::grow_swap_send_multi(int i, int n)
 
 void CommTiled::deallocate_swap(int n)
 {
-  delete [] nsendproc;
-  delete [] nrecvproc;
-  delete [] sendother;
-  delete [] recvother;
-  delete [] sendself;
+  delete[] nsendproc;
+  delete[] nrecvproc;
+  delete[] sendother;
+  delete[] recvother;
+  delete[] sendself;
 
   for (int i = 0; i < n; i++) {
-    delete [] sendproc[i];
-    delete [] recvproc[i];
-    delete [] sendnum[i];
-    delete [] recvnum[i];
-    delete [] size_forward_recv[i];
-    delete [] firstrecv[i];
-    delete [] size_reverse_send[i];
-    delete [] size_reverse_recv[i];
-    delete [] forward_recv_offset[i];
-    delete [] reverse_recv_offset[i];
+    delete[] sendproc[i];
+    delete[] recvproc[i];
+    delete[] sendnum[i];
+    delete[] recvnum[i];
+    delete[] size_forward_recv[i];
+    delete[] firstrecv[i];
+    delete[] size_reverse_send[i];
+    delete[] size_reverse_recv[i];
+    delete[] forward_recv_offset[i];
+    delete[] reverse_recv_offset[i];
 
-    delete [] pbc_flag[i];
+    delete[] pbc_flag[i];
     memory->destroy(pbc[i]);
     memory->destroy(sendbox[i]);
     memory->destroy(sendbox_multi[i]);
-    memory->destroy(sendbox_multiold[i]);
 
-    delete [] maxsendlist[i];
+    if (maxsendlist)
+      delete[] maxsendlist[i];
 
     if (sendlist && sendlist[i]) {
       for (int j = 0; j < nprocmax[i]; j++) memory->destroy(sendlist[i][j]);
-      delete [] sendlist[i];
+      delete[] sendlist[i];
     }
   }
 
-  delete [] sendproc;
-  delete [] recvproc;
-  delete [] sendnum;
-  delete [] recvnum;
-  delete [] size_forward_recv;
-  delete [] firstrecv;
-  delete [] size_reverse_send;
-  delete [] size_reverse_recv;
-  delete [] forward_recv_offset;
-  delete [] reverse_recv_offset;
+  delete[] sendproc;
+  delete[] recvproc;
+  delete[] sendnum;
+  delete[] recvnum;
+  delete[] size_forward_recv;
+  delete[] firstrecv;
+  delete[] size_reverse_send;
+  delete[] size_reverse_recv;
+  delete[] forward_recv_offset;
+  delete[] reverse_recv_offset;
 
-  delete [] pbc_flag;
-  delete [] pbc;
-  delete [] sendbox;
-  delete [] sendbox_multi;
-  delete [] sendbox_multiold;
-  delete [] maxsendlist;
-  delete [] sendlist;
+  delete[] pbc_flag;
+  delete[] pbc;
+  delete[] sendbox;
+  delete[] sendbox_multi;
+  delete[] maxsendlist;
+  delete[] sendlist;
 
-  delete [] requests;
+  delete[] requests;
 
-  delete [] nprocmax;
+  delete[] nprocmax;
 
-  delete [] nexchproc;
-  delete [] nexchprocmax;
+  delete[] nexchproc;
+  delete[] nexchprocmax;
 
   for (int i = 0; i < n/2; i++) {
-    delete [] exchproc[i];
-    delete [] exchnum[i];
+    delete[] exchproc[i];
+    delete[] exchnum[i];
   }
 
-  delete [] exchproc;
-  delete [] exchnum;
+  delete[] exchproc;
+  delete[] exchnum;
 }
 
 /* ----------------------------------------------------------------------

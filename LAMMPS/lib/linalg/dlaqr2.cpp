@@ -26,17 +26,14 @@ int dlaqr2_(logical *wantt, logical *wantz, integer *n, integer *ktop, integer *
     integer lwk1, lwk2;
     doublereal beta;
     integer kend, kcol, info, ifst, ilst, ltop, krow;
-    extern int dlarf_(char *, integer *, integer *, doublereal *, integer *, doublereal *,
-                      doublereal *, integer *, doublereal *, ftnlen),
-        dgemm_(char *, char *, integer *, integer *, integer *, doublereal *, doublereal *,
-               integer *, doublereal *, integer *, doublereal *, doublereal *, integer *, ftnlen,
-               ftnlen);
+    extern int dgemm_(char *, char *, integer *, integer *, integer *, doublereal *, doublereal *,
+                      integer *, doublereal *, integer *, doublereal *, doublereal *, integer *,
+                      ftnlen, ftnlen);
     logical bulge;
     extern int dcopy_(integer *, doublereal *, integer *, doublereal *, integer *);
     integer infqr, kwtop;
     extern int dlanv2_(doublereal *, doublereal *, doublereal *, doublereal *, doublereal *,
-                       doublereal *, doublereal *, doublereal *, doublereal *, doublereal *),
-        dlabad_(doublereal *, doublereal *);
+                       doublereal *, doublereal *, doublereal *, doublereal *, doublereal *);
     extern doublereal dlamch_(char *, ftnlen);
     extern int dgehrd_(integer *, integer *, integer *, doublereal *, integer *, doublereal *,
                        doublereal *, integer *, integer *),
@@ -57,6 +54,8 @@ int dlaqr2_(logical *wantt, logical *wantz, integer *n, integer *ktop, integer *
                 ftnlen);
     logical sorted;
     doublereal smlnum;
+    extern int dlarf1f_(char *, integer *, integer *, doublereal *, integer *, doublereal *,
+                        doublereal *, integer *, doublereal *, ftnlen);
     integer lwkopt;
     h_dim1 = *ldh;
     h_offset = 1 + h_dim1;
@@ -105,7 +104,6 @@ int dlaqr2_(logical *wantt, logical *wantz, integer *n, integer *ktop, integer *
     }
     safmin = dlamch_((char *)"SAFE MINIMUM", (ftnlen)12);
     safmax = 1. / safmin;
-    dlabad_(&safmin, &safmax);
     ulp = dlamch_((char *)"PRECISION", (ftnlen)9);
     smlnum = safmin * ((doublereal)(*n) / ulp);
     i__1 = *nw, i__2 = *kbot - *ktop + 1;
@@ -283,15 +281,15 @@ L60:
             dcopy_(ns, &v[v_offset], ldv, &work[1], &c__1);
             beta = work[1];
             dlarfg_(ns, &beta, &work[2], &c__1, &tau);
-            work[1] = 1.;
             i__1 = jw - 2;
             i__2 = jw - 2;
             dlaset_((char *)"L", &i__1, &i__2, &c_b12, &c_b12, &t[t_dim1 + 3], ldt, (ftnlen)1);
-            dlarf_((char *)"L", ns, &jw, &work[1], &c__1, &tau, &t[t_offset], ldt, &work[jw + 1],
-                   (ftnlen)1);
-            dlarf_((char *)"R", ns, ns, &work[1], &c__1, &tau, &t[t_offset], ldt, &work[jw + 1], (ftnlen)1);
-            dlarf_((char *)"R", &jw, ns, &work[1], &c__1, &tau, &v[v_offset], ldv, &work[jw + 1],
-                   (ftnlen)1);
+            dlarf1f_((char *)"L", ns, &jw, &work[1], &c__1, &tau, &t[t_offset], ldt, &work[jw + 1],
+                     (ftnlen)1);
+            dlarf1f_((char *)"R", ns, ns, &work[1], &c__1, &tau, &t[t_offset], ldt, &work[jw + 1],
+                     (ftnlen)1);
+            dlarf1f_((char *)"R", &jw, ns, &work[1], &c__1, &tau, &v[v_offset], ldv, &work[jw + 1],
+                     (ftnlen)1);
             i__1 = *lwork - jw;
             dgehrd_(&jw, &c__1, ns, &t[t_offset], ldt, &work[1], &work[jw + 1], &i__1, &info);
         }

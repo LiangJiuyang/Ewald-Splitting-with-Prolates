@@ -76,7 +76,7 @@ class KSpace : protected Pointers {
 
   int ewaldflag;         // 1 if a Ewald solver
   int pppmflag;          // 1 if a PPPM solver
-  int pppsflag;          // 1 if a PPPS solver
+  int espflag;           // 1 if a ESP solver
   int msmflag;           // 1 if a MSM solver
   int dispersionflag;    // 1 if a LJ/dispersion solver
   int tip4pflag;         // 1 if a TIP4P solver
@@ -113,16 +113,20 @@ class KSpace : protected Pointers {
 
   double g_ewald, g_ewald_6;
 
-  double *force_poly_coeff, *energy_poly_coeff, *Fourier_poly_coeff; 
-  int num_of_force_poly, num_of_energy_poly, num_of_Fourier_poly;
-  double select_c; // select the c value
-  double Lambda_0; // select the Lambda_0 value
-  
-  double spreading_accuracy; // using the pswf as the spreading function
-  double spreading_select_c; // select the c value for the spreading step
-  double spreading_Lambda_0; // select the Lambda_0 value for the spreading step
-  int poly_order, Fourier_spreading_order;
-  double *Fourier_spreading_coeff;
+  // Parameters required for ESP methods (automatically determined based on the user-specified force accuracy)
+
+  double *force_poly_coeff, *energy_poly_coeff,
+      *fourier_split_poly_coeff;    // polynomial coefficients
+  int num_of_force_poly, num_of_energy_poly,
+      num_of_Fourier_poly;    // order of polynomial approximations
+  double select_c;            // the c value for ESP
+  double Lambda_0;            // the Lambda_0 value for ESP
+
+  double spreading_accuracy;    // using the pswf as the spreading function
+  double spreading_select_c;    // select the c value for the spreading step
+  double spreading_Lambda_0;    // select the Lambda_0 value for the spreading step
+  int poly_order, fourier_spreading_order;
+  double *fourier_spread_poly_coeff;
 
   int nx_pppm, ny_pppm, nz_pppm;          // global FFT grid for Coulombics
   int nx_pppm_6, ny_pppm_6, nz_pppm_6;    // global FFT grid for dispersion
@@ -138,13 +142,14 @@ class KSpace : protected Pointers {
   // KOKKOS host/device flag and data masks
 
   ExecutionSpace execution_space;
-  unsigned int datamask_read, datamask_modify;
+  uint64_t datamask_read, datamask_modify;
   int copymode;
 
-  int compute_flag;       // 0 if skip compute()
-  int fftbench;           // 0 if skip FFT timing
-  int collective_flag;    // 1 if use MPI collectives for FFT/remap
-  int stagger_flag;       // 1 if using staggered PPPM grids
+  int compute_flag;        // 0 if skip compute()
+  int fftbench;            // 0 if skip FFT timing
+  int collective_flag;     // 1 if use MPI collectives for FFT/remap
+  int nonblocking_flag;    // 1 if use MPI_Isend for FFT/remap
+  int stagger_flag;        // 1 if using staggered PPPM grids
 
   double splittol;    // tolerance for when to truncate splitting
 
@@ -154,7 +159,7 @@ class KSpace : protected Pointers {
   void triclinic_check();
   void modify_params(int, char **);
   void *extract(const char *);
-  void compute_dummy(int, int);
+  void compute_dummy(int eflag, int vflag, int alloc = 1);
 
   // triclinic
 
@@ -192,7 +197,7 @@ class KSpace : protected Pointers {
    see Eq 4 from Parallel Computing 35 (2009) 164-177
 ------------------------------------------------------------------------- */
 
-  double gamma(const double &rho) const
+  [[nodiscard]] double gamma(const double &rho) const
   {
     if (rho <= 1.0) {
       const int split_order = order / 2;
@@ -213,7 +218,7 @@ class KSpace : protected Pointers {
    see Eq 4 from Parallel Computing 35 (2009) 164-177
 ------------------------------------------------------------------------- */
 
-  double dgamma(const double &rho) const
+  [[nodiscard]] double dgamma(const double &rho) const
   {
     if (rho <= 1.0) {
       const int split_order = order / 2;
@@ -244,7 +249,7 @@ class KSpace : protected Pointers {
   double **gcons, **dgcons;    // accumulated per-atom energy/virial
 
   int evflag, evflag_atom;
-  int eflag_either, eflag_global, eflag_atom;
+  int eflag_either, eflag_global, eflag_atom, eflag_only;
   int vflag_either, vflag_global, vflag_atom;
   int maxeatom, maxvatom;
 
@@ -257,7 +262,7 @@ class KSpace : protected Pointers {
     if (eflag || vflag)
       ev_setup(eflag, vflag, alloc);
     else
-      evflag = evflag_atom = eflag_either = eflag_global = eflag_atom = vflag_either =
+      evflag = evflag_atom = eflag_either = eflag_global = eflag_atom = eflag_only = vflag_either =
           vflag_global = vflag_atom = 0;
   }
   void ev_setup(int, int, int alloc = 1);

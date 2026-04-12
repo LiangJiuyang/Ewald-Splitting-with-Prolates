@@ -34,9 +34,7 @@
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
-#include "utils.h"
 
-#include <cmath>
 #include <cstring>
 
 using namespace LAMMPS_NS;
@@ -79,7 +77,7 @@ ComputeRHEOPropertyAtom::ComputeRHEOPropertyAtom(LAMMPS *lmp, int narg, char **a
     size_peratom_cols = nvalues;
 
   pressure_flag = thermal_flag = interface_flag = 0;
-  surface_flag = shift_flag = shell_flag = 0;
+  surface_flag = shift_flag = shell_flag = coordination_flag = 0;
 
   // parse input values
   // customize a new keyword by adding to if statement
@@ -109,6 +107,7 @@ ComputeRHEOPropertyAtom::ComputeRHEOPropertyAtom(LAMMPS *lmp, int narg, char **a
       surface_flag = 1;
       pack_choice[i] = &ComputeRHEOPropertyAtom::pack_surface_divr;
     } else if (strcmp(arg[iarg], "coordination") == 0) {
+      coordination_flag = 1;
       pack_choice[i] = &ComputeRHEOPropertyAtom::pack_coordination;
     } else if (strcmp(arg[iarg], "pressure") == 0) {
       pressure_flag = 1;
@@ -125,8 +124,10 @@ ComputeRHEOPropertyAtom::ComputeRHEOPropertyAtom(LAMMPS *lmp, int narg, char **a
     } else if (utils::strmatch(arg[iarg], "^grad/v/")) {
       i += add_tensor_component(arg[iarg], i, &ComputeRHEOPropertyAtom::pack_gradv) - 1;
     } else if (utils::strmatch(arg[iarg], "^stress/v/")) {
+      pressure_flag = 1;
       i += add_tensor_component(arg[iarg], i, &ComputeRHEOPropertyAtom::pack_viscous_stress) - 1;
     } else if (utils::strmatch(arg[iarg], "^stress/t/")) {
+      pressure_flag = 1;
       i += add_tensor_component(arg[iarg], i, &ComputeRHEOPropertyAtom::pack_total_stress) - 1;
     } else if (strcmp(arg[iarg], "energy") == 0) {
       avec_index[i] = atom->avec->property_atom("esph");
@@ -203,16 +204,22 @@ void ComputeRHEOPropertyAtom::setup()
 {
   if (thermal_flag) {
     auto fixes = modify->get_fix_by_style("rheo/thermal");
+    if (fixes.empty())
+      error->all(FLERR, "Cannot request thermal property without fix rheo/thermal");
     fix_thermal = dynamic_cast<FixRHEOThermal *>(fixes[0]);
   }
 
   if (pressure_flag) {
     auto fixes = modify->get_fix_by_style("rheo/pressure");
+    if (fixes.empty())
+      error->all(FLERR, "Cannot request pressure property without fix rheo/pressure");
     fix_pressure = dynamic_cast<FixRHEOPressure *>(fixes[0]);
   }
 
   if (shell_flag) {
     auto fixes = modify->get_fix_by_style("rheo/oxidation");
+    if (fixes.empty())
+      error->all(FLERR, "Cannot request nbond/shell without fix rheo/oxidation");
     fix_oxidation = dynamic_cast<FixRHEOOxidation *>(fixes[0]);
   }
 }
@@ -222,6 +229,11 @@ void ComputeRHEOPropertyAtom::setup()
 void ComputeRHEOPropertyAtom::compute_peratom()
 {
   invoked_peratom = update->ntimestep;
+
+  // calculate optional values, if needed
+
+  if (coordination_flag && !(fix_rheo->coordination_flag))
+    compute_kernel->compute_coordination();
 
   // grow vector or array if necessary
 
@@ -427,14 +439,13 @@ void ComputeRHEOPropertyAtom::pack_cv(int n)
 
 void ComputeRHEOPropertyAtom::pack_pressure(int n)
 {
-  int *type = atom->type;
   int *mask = atom->mask;
   double *rho = atom->rho;
   int nlocal = atom->nlocal;
 
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit)
-      buf[n] = fix_pressure->calc_pressure(rho[i], type[i]);
+      buf[n] = fix_pressure->calc_pressure(rho[i], i);
     else
       buf[n] = 0.0;
     n += nvalues;
@@ -471,7 +482,6 @@ void ComputeRHEOPropertyAtom::pack_total_stress(int n)
   double **gradv = compute_grad->gradv;
   double *viscosity = atom->viscosity;
   double *rho = atom->rho;
-  int *type = atom->type;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
   int index = col_index[n];
@@ -484,7 +494,7 @@ void ComputeRHEOPropertyAtom::pack_total_stress(int n)
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
       if (index == index_transpose)
-        p = fix_pressure->calc_pressure(rho[i], type[i]);
+        p = fix_pressure->calc_pressure(rho[i], i);
       else
         p = 0.0;
       buf[n] = viscosity[i] * (gradv[i][index] + gradv[i][index_transpose]) + p;
@@ -498,7 +508,7 @@ void ComputeRHEOPropertyAtom::pack_total_stress(int n)
 
 void ComputeRHEOPropertyAtom::pack_nbond_shell(int n)
 {
-  int *nbond = fix_oxidation->nbond;
+  int *nbond = atom->ivector[fix_oxidation->index_nb];
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
 

@@ -75,14 +75,13 @@ int ztrtri_(char *uplo, char *diag, integer *n, doublecomplex *a, integer *lda, 
                 i__4 = nb, i__5 = *n - j + 1;
                 jb = min(i__4, i__5);
                 i__4 = j - 1;
-                ztrmm_((char *)"Left", (char *)"Upper", (char *)"No transpose", diag, &i__4, &jb, &c_b1, &a[a_offset], lda,
-                       &a[j * a_dim1 + 1], lda, (ftnlen)4, (ftnlen)5, (ftnlen)12, (ftnlen)1);
+                ztrmm_((char *)"L", (char *)"U", (char *)"N", diag, &i__4, &jb, &c_b1, &a[a_offset], lda,
+                       &a[j * a_dim1 + 1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
                 i__4 = j - 1;
                 z__1.r = -1., z__1.i = -0.;
-                ztrsm_((char *)"Right", (char *)"Upper", (char *)"No transpose", diag, &i__4, &jb, &z__1,
-                       &a[j + j * a_dim1], lda, &a[j * a_dim1 + 1], lda, (ftnlen)5, (ftnlen)5,
-                       (ftnlen)12, (ftnlen)1);
-                ztrti2_((char *)"Upper", diag, &jb, &a[j + j * a_dim1], lda, info, (ftnlen)5, (ftnlen)1);
+                ztrsm_((char *)"R", (char *)"U", (char *)"N", diag, &i__4, &jb, &z__1, &a[j + j * a_dim1], lda,
+                       &a[j * a_dim1 + 1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
+                ztrti2_((char *)"U", diag, &jb, &a[j + j * a_dim1], lda, info, (ftnlen)1, (ftnlen)1);
             }
         } else {
             nn = (*n - 1) / nb * nb + 1;
@@ -92,16 +91,16 @@ int ztrtri_(char *uplo, char *diag, integer *n, doublecomplex *a, integer *lda, 
                 jb = min(i__1, i__4);
                 if (j + jb <= *n) {
                     i__1 = *n - j - jb + 1;
-                    ztrmm_((char *)"Left", (char *)"Lower", (char *)"No transpose", diag, &i__1, &jb, &c_b1,
-                           &a[j + jb + (j + jb) * a_dim1], lda, &a[j + jb + j * a_dim1], lda,
-                           (ftnlen)4, (ftnlen)5, (ftnlen)12, (ftnlen)1);
+                    ztrmm_((char *)"L", (char *)"L", (char *)"N", diag, &i__1, &jb, &c_b1, &a[j + jb + (j + jb) * a_dim1],
+                           lda, &a[j + jb + j * a_dim1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1,
+                           (ftnlen)1);
                     i__1 = *n - j - jb + 1;
                     z__1.r = -1., z__1.i = -0.;
-                    ztrsm_((char *)"Right", (char *)"Lower", (char *)"No transpose", diag, &i__1, &jb, &z__1,
-                           &a[j + j * a_dim1], lda, &a[j + jb + j * a_dim1], lda, (ftnlen)5,
-                           (ftnlen)5, (ftnlen)12, (ftnlen)1);
+                    ztrsm_((char *)"R", (char *)"L", (char *)"N", diag, &i__1, &jb, &z__1, &a[j + j * a_dim1], lda,
+                           &a[j + jb + j * a_dim1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1,
+                           (ftnlen)1);
                 }
-                ztrti2_((char *)"Lower", diag, &jb, &a[j + j * a_dim1], lda, info, (ftnlen)5, (ftnlen)1);
+                ztrti2_((char *)"L", diag, &jb, &a[j + j * a_dim1], lda, info, (ftnlen)1, (ftnlen)1);
             }
         }
     }

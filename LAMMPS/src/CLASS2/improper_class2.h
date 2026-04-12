@@ -33,13 +33,14 @@ class ImproperClass2 : public Improper {
   void write_restart(FILE *) override;
   void read_restart(FILE *) override;
   void write_data(FILE *) override;
+  void *extract(const char *, int &) override;
 
  protected:
   double *k0, *chi0;
   double *aa_k1, *aa_k2, *aa_k3, *aa_theta0_1, *aa_theta0_2, *aa_theta0_3;
   int *setflag_i, *setflag_aa;
 
-  void allocate();
+  virtual void allocate();
   void angleangle(int, int);
   void cross(double *, double *, double *);
   double dot(double *, double *);

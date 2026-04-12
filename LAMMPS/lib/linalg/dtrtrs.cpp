@@ -56,8 +56,8 @@ int dtrtrs_(char *uplo, char *trans, char *diag, integer *n, integer *nrhs, doub
         }
     }
     *info = 0;
-    dtrsm_((char *)"Left", uplo, trans, diag, n, nrhs, &c_b12, &a[a_offset], lda, &b[b_offset], ldb,
-           (ftnlen)4, (ftnlen)1, (ftnlen)1, (ftnlen)1);
+    dtrsm_((char *)"L", uplo, trans, diag, n, nrhs, &c_b12, &a[a_offset], lda, &b[b_offset], ldb, (ftnlen)1,
+           (ftnlen)1, (ftnlen)1, (ftnlen)1);
     return 0;
 }
 #ifdef __cplusplus

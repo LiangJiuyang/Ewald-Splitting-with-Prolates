@@ -95,16 +95,16 @@ int zhegv_(integer *itype, char *jobz, char *uplo, integer *n, doublecomplex *a,
             } else {
                 *(unsigned char *)trans = 'C';
             }
-            ztrsm_((char *)"Left", uplo, trans, (char *)"Non-unit", n, &neig, &c_b1, &b[b_offset], ldb,
-                   &a[a_offset], lda, (ftnlen)4, (ftnlen)1, (ftnlen)1, (ftnlen)8);
+            ztrsm_((char *)"L", uplo, trans, (char *)"N", n, &neig, &c_b1, &b[b_offset], ldb, &a[a_offset], lda,
+                   (ftnlen)1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
         } else if (*itype == 3) {
             if (upper) {
                 *(unsigned char *)trans = 'C';
             } else {
                 *(unsigned char *)trans = 'N';
             }
-            ztrmm_((char *)"Left", uplo, trans, (char *)"Non-unit", n, &neig, &c_b1, &b[b_offset], ldb,
-                   &a[a_offset], lda, (ftnlen)4, (ftnlen)1, (ftnlen)1, (ftnlen)8);
+            ztrmm_((char *)"L", uplo, trans, (char *)"N", n, &neig, &c_b1, &b[b_offset], ldb, &a[a_offset], lda,
+                   (ftnlen)1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
         }
     }
     work[1].r = (doublereal)lwkopt, work[1].i = 0.;

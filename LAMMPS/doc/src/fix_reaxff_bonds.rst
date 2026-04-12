@@ -14,7 +14,7 @@ Syntax
    fix ID group-ID reaxff/bonds Nevery filename
 
 * ID, group-ID are documented in :doc:`fix <fix>` command
-* reax/bonds = style name of this fix command
+* reaxff/bonds = style name of this fix command
 * Nevery = output interval in timesteps
 * filename = name of output file
 
@@ -35,7 +35,8 @@ is written to *filename* on timesteps that are multiples of *Nevery*,
 including timestep 0.  For time-averaged chemical species analysis,
 please see the :doc:`fix reaxff/species <fix_reaxff_species>` command.
 
-The specified group-ID is ignored by this fix.
+The specified group-ID is ignored by this fix except for the :doc:`dump
+image <dump_image>` related functionality (see below).
 
 The format of the output file should be reasonably self-explanatory.
 The meaning of the column header abbreviations is as follows:
@@ -52,20 +53,64 @@ The meaning of the column header abbreviations is as follows:
 * nlp = number of lone pairs
 * q = atomic charge
 
-If the filename ends with ".gz", the output file is written in gzipped
-format.  A gzipped dump file will be about 3x smaller than the text
-version, but will also take longer to write.
+If the filename ends with ".gz" or some :ref:`other supported
+compression format suffix <gzip>`, the output file is written in
+compressed format.  A compressed output file can be significantly
+smaller than the text version, but will also take longer to write.
+
+.. versionadded:: 2Apr2025
+
+If the filename contains the wildcard character "\*", a new file is
+created on every timestep where bond information is written.  The "\*"
+character is replaced with the timestep value.  Note that the
+:doc:`fix_modify pad <fix_modify>` command can be used so that all
+timestep numbers have the same length by adding leading zeroes
+(e.g. 00010 for a pad value of 5).  The default pad value is 0, i.e. no
+leading zeroes.
+
+.. versionadded:: 11Feb2026
+
+If the filename is "NULL", then no output is created.  This can be
+useful when using fix *reaxff/bonds* in combination with :doc:`dump
+image fix <dump_image>` keyword to visualize the bonds computed by
+the ReaxFF force field.
+
+Dump image info
+"""""""""""""""
+
+.. versionadded:: 11Feb2026
+
+Fix *reaxff/bonds* supports the *fix* keyword of :doc:`dump image
+<dump_image>`.  The fix will pass geometry information about the bonds
+computed by the :doc:`ReaxFF pair style <pair_reaxff>` to *dump image*
+so that they can be included in the rendered image.  Only bonds where
+*both* atoms are within the fix group generate graphics objects that are
+displayed in the dumped images.  That group may be a dynamic group.
+
+The color of the bonds is by default that of the atoms when using color
+styles "type" or "element".  With color style "const" the default value
+of "white" can be changed using :doc:`dump_modify fcolor <dump_image>`.
+The transparency is by default fully opaque and can be changed with
+*dump\_modify ftrans*\ .
+
+The *fflag1* setting of *dump image fix* determines whether the bonds
+will be capped with spheres (1) or not (0).
+
+The *fflag2* setting allows to adjust diameter of the cylinders for the
+bonds.  By default, a diameter of 0.5 length units will be used.
 
 ----------
 
 Restart, fix_modify, output, run start/stop, minimize info
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-No information about this fix is written to :doc:`binary restart files <restart>`.  None of the :doc:`fix_modify <fix_modify>` options
-are relevant to this fix.  No global or per-atom quantities are stored
-by this fix for access by various :doc:`output commands <Howto_output>`.
-No parameter of this fix can be used with the *start/stop* keywords of
-the :doc:`run <run>` command.  This fix is not invoked during :doc:`energy minimization <minimize>`.
+No information about this fix is written to :doc:`binary restart files
+<restart>`.  This fix supports the :doc:`fix_modify pad <fix_modify>`
+option.  No global or per-atom quantities are stored by this fix for
+access by various :doc:`output commands <Howto_output>`.  No parameter
+of this fix can be used with the *start/stop* keywords of the :doc:`run
+<run>` command.  This fix is not invoked during :doc:`energy
+minimization <minimize>`.
 
 ----------
 
@@ -76,13 +121,14 @@ the :doc:`run <run>` command.  This fix is not invoked during :doc:`energy minim
 Restrictions
 """"""""""""
 
-The fix reaxff/bonds command requires that the :doc:`pair_style reaxff <pair_reaxff>` is invoked.  This fix is part of the
-REAXFF package.  It is only enabled if LAMMPS was built with that
-package.  See the :doc:`Build package <Build_package>` page for more
-info.
+The fix reaxff/bonds command requires that the :doc:`pair_style reaxff
+<pair_reaxff>` is invoked.  This fix is part of the REAXFF package.  It
+is only enabled if LAMMPS was built with that package.  See the
+:doc:`Build package <Build_package>` page for more info.
 
-To write gzipped bond files, you must compile LAMMPS with the
--DLAMMPS_GZIP option.
+To write compressed bond files, you must compile LAMMPS with the
+``-DLAMMPS_GZIP`` option.  See the :doc:`Build settings <Build_settings>`
+doc page for details.
 
 Related commands
 """"""""""""""""
@@ -92,4 +138,4 @@ Related commands
 Default
 """""""
 
-none
+pad = 0

@@ -66,7 +66,7 @@ void FixNVELimitKokkos<DeviceType>::initial_integrate(int /*vflag*/)
     auto d_type = atomKK->k_type.template view<DeviceType>();
     atomKK->sync(execution_space, X_MASK|V_MASK|F_MASK|MASK_MASK|RMASS_MASK );
 
-    Kokkos::parallel_reduce(nlocal, KOKKOS_LAMBDA(const int i, int &l_ncount) {
+    Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal), KOKKOS_LAMBDA(const int i, int &l_ncount) {
       if (d_mask[i] & l_groupbit) {
         const double dtfm = l_dtf / d_rmass[i];
         d_v(i,0) += dtfm * d_f(i,0);
@@ -95,7 +95,7 @@ void FixNVELimitKokkos<DeviceType>::initial_integrate(int /*vflag*/)
     auto l_groupbit = groupbit;
     atomKK->sync(execution_space, X_MASK|V_MASK|F_MASK|MASK_MASK|TYPE_MASK );
 
-    Kokkos::parallel_reduce(nlocal, KOKKOS_LAMBDA(const int i, int &l_ncount) {
+    Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal), KOKKOS_LAMBDA(const int i, int &l_ncount) {
       if (d_mask[i] & l_groupbit) {
         const double dtfm = l_dtf / d_mass[d_type[i]];
         d_v(i,0) += dtfm * d_f(i,0);
@@ -144,7 +144,7 @@ void FixNVELimitKokkos<DeviceType>::final_integrate()
     auto d_rmass = atomKK->k_rmass.template view<DeviceType>();
     atomKK->sync(execution_space, V_MASK|F_MASK|MASK_MASK|RMASS_MASK );
 
-    Kokkos::parallel_reduce(nlocal, KOKKOS_LAMBDA(const int i, int &l_ncount) {
+    Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal), KOKKOS_LAMBDA(const int i, int &l_ncount) {
       if (d_mask[i] & l_groupbit) {
         const double dtfm = l_dtf / d_rmass[i];
         d_v(i,0) += dtfm * d_f(i,0);
@@ -168,7 +168,7 @@ void FixNVELimitKokkos<DeviceType>::final_integrate()
     auto d_type = atomKK->k_type.template view<DeviceType>();
     atomKK->sync(execution_space, V_MASK|F_MASK|MASK_MASK|TYPE_MASK );
 
-    Kokkos::parallel_reduce(nlocal, KOKKOS_LAMBDA(const int i, int &l_ncount) {
+    Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal), KOKKOS_LAMBDA(const int i, int &l_ncount) {
       if (d_mask[i] & l_groupbit) {
         const double dtfm = l_dtf / d_mass[d_type[i]];
         d_v(i,0) += dtfm * d_f(i,0);

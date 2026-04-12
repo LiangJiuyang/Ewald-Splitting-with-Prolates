@@ -105,7 +105,7 @@ using namespace LAMMPS_NS;
  *
  * The LAMMPS class manages the components of an MD simulation by creating,
  * deleting, and initializing instances of the classes it is composed of,
- * processing command line flags, and providing access to some global properties.
+ * processing command-line flags, and providing access to some global properties.
  * The specifics of setting up and running a simulation are handled by the
  * individual component class instances. */
 
@@ -143,9 +143,13 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
   num_ver = utils::date2num(version);
   restart_ver = -1;
 
-  // append git descriptor info to update string when compiling development or maintenance version
+  std::string update_string = UPDATE_STRING; // NOLINT
 
-  std::string update_string = UPDATE_STRING;
+  // increment the version number for development branch
+  // so that it is larger than that of the release version
+  if (update_string == " - Development") ++num_ver;
+
+  // append git descriptor info to update string when compiling development or maintenance version
   if (has_git_info() && ((update_string == " - Development") || (update_string == " - Maintenance")))
     update_string += fmt::format(" - {}", git_descriptor());
 
@@ -528,8 +532,7 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
       if (helpflag == 0) {
         universe->ulogfile = fopen("log.lammps","w");
         if (universe->ulogfile == nullptr)
-          error->universe_warn(FLERR,"Cannot open log.lammps for writing: "
-                               + utils::getsyserror());
+          error->universe_warn(FLERR,"Cannot open log.lammps for writing: " + utils::getsyserror());
       }
     } else if (strcmp(arg[logflag],"none") == 0)
       universe->ulogfile = nullptr;
@@ -561,15 +564,12 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
       if (inflag <= 0) infile = stdin;
       else if (strcmp(arg[inflag], "none") == 0) infile = stdin;
       else infile = fopen(arg[inflag],"r");
+
       if (infile == nullptr)
         error->one(FLERR,"Cannot open input script {}: {}", arg[inflag], utils::getsyserror());
       if (!helpflag)
         utils::logmesg(this,"LAMMPS ({}{})\n", version, update_string);
 
-     // warn against using I/O redirection in parallel runs
-      if ((inflag == 0) && (universe->nprocs > 1))
-        error->warning(FLERR, "Using I/O redirection is unreliable with parallel runs. "
-                       "Better to use the -in switch to read input files.");
       utils::flush_buffers(this);
     }
 
@@ -649,18 +649,24 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
     }
 
     // screen and logfile messages for universe and world
+    std::string update_string = UPDATE_STRING; // NOLINT
+    if (has_git_info() && ((update_string == " - Development")
+                           || (update_string == " - Maintenance")))
+      update_string += fmt::format(" - {}", git_descriptor());
 
     if ((universe->me == 0) && (!helpflag)) {
-      const char fmt[] = "LAMMPS ({})\nRunning on {} partitions of processors\n";
+
+      constexpr char fmt[] = "LAMMPS ({}{})\nRunning on {} partitions of processors\n";
       if (universe->uscreen)
-        fmt::print(universe->uscreen,fmt,version,universe->nworlds);
+        utils::print(universe->uscreen, fmt, version, update_string, universe->nworlds);
 
       if (universe->ulogfile)
-        fmt::print(universe->ulogfile,fmt,version,universe->nworlds);
+        utils::print(universe->ulogfile, fmt, version, update_string, universe->nworlds);
     }
 
     if ((me == 0) && (!helpflag))
-      utils::logmesg(this,"LAMMPS ({})\nProcessor partition = {}\n", version, universe->iworld);
+      utils::logmesg(this,"LAMMPS ({}{})\nProcessor partition = {}\n", version, update_string,
+                     universe->iworld);
   }
 
   // check consistency of datatype settings in lmptype.h
@@ -690,11 +696,6 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
 #ifdef LAMMPS_BIGBIG
   if (sizeof(smallint) != 4 || sizeof(imageint) != 8 ||
       sizeof(tagint) != 8 || sizeof(bigint) != 8)
-    error->all(FLERR,"Small to big integers are not sized correctly");
-#endif
-#ifdef LAMMPS_SMALLSMALL
-  if (sizeof(smallint) != 4 || sizeof(imageint) != 4 ||
-      sizeof(tagint) != 4 || sizeof(bigint) != 4)
     error->all(FLERR,"Small to big integers are not sized correctly");
 #endif
 
@@ -792,10 +793,10 @@ LAMMPS::~LAMMPS() noexcept(false)
 
   double totalclock = platform::walltime() - initclock;
   if ((me == 0) && (screen || logfile)) {
-    int seconds = fmod(totalclock,60.0);
+    auto seconds = (int) fmod(totalclock,60.0);
     totalclock  = (totalclock - seconds) / 60.0;
-    int minutes = fmod(totalclock,60.0);
-    int hours = (totalclock - minutes) / 60.0;
+    auto minutes = (int) fmod(totalclock,60.0);
+    auto hours = (int) ((totalclock - minutes) / 60.0);
     utils::logmesg(this, "Total wall time: {}:{:02d}:{:02d}\n", hours, minutes, seconds);
   }
 
@@ -872,7 +873,9 @@ void LAMMPS::create()
   else
     atom->create_avec("atomic",0,nullptr,1);
 
-  group = new Group(this);
+  if (kokkos) group = new GroupKokkos(this);
+  else group = new Group(this);
+
   force = new Force(this);    // must be after group, to create temperature
 
   if (kokkos) modify = new ModifyKokkos(this);
@@ -885,8 +888,9 @@ void LAMMPS::create()
 
   python = new Python(this);
 
-  // auto-load plugins
+  // restore and auto-load plugins
 #if defined(LMP_PLUGIN)
+  plugin_restore(this, true);
   plugin_auto_load(this);
 #endif
 }
@@ -993,11 +997,6 @@ void LAMMPS::init()
 
 void LAMMPS::destroy()
 {
-  // must wipe out all plugins first, if configured
-#if defined(LMP_PLUGIN)
-  plugin_clear(this);
-#endif
-
   delete update;
   update = nullptr;
 
@@ -1147,19 +1146,6 @@ void _noopt LAMMPS::init_pkg_lists()
 #undef REGION_CLASS
 }
 
-/** Return true if a LAMMPS package is enabled in this binary
- *
- * \param pkg name of package
- * \return true if yes, else false
- */
-bool LAMMPS::is_installed_pkg(const char *pkg)
-{
-  for (int i=0; installed_packages[i] != nullptr; ++i)
-    if (strcmp(installed_packages[i],pkg) == 0) return true;
-
-  return false;
-}
-
 #define check_for_match(style,list,name)                                \
   if (strcmp(list,#style) == 0) {                                       \
     std::map<std::string,std::string> &styles(pkg_lists-> style ## _styles); \
@@ -1222,7 +1208,7 @@ const char *LAMMPS::non_pair_suffix() const
 }
 
 /* ----------------------------------------------------------------------
-   help message for command line options and styles present in executable
+   help message for command-line options and styles present in executable
 ------------------------------------------------------------------------- */
 
 void _noopt LAMMPS::help()
@@ -1233,7 +1219,7 @@ void _noopt LAMMPS::help()
   // if output is a console, use a pipe to a pager for paged output.
   // this will avoid the most important help text to rush past the
   // user. scrollback buffers are often not large enough. this is most
-  // beneficial to windows users, who are not used to command line.
+  // beneficial to windows users, who are not used to command-line.
 
   int use_pager = platform::is_console(fp);
 
@@ -1255,7 +1241,7 @@ void _noopt LAMMPS::help()
     }
   }
 
-  // general help message about command line and flags
+  // general help message about command-line and flags
 
   if (has_git_info()) {
     fprintf(fp,"\nLarge-scale Atomic/Molecular Massively Parallel Simulator - "
@@ -1266,7 +1252,7 @@ void _noopt LAMMPS::help()
   }
   fprintf(fp,
           "Usage example: %s -var t 300 -echo screen -in in.alloy\n\n"
-          "List of command line options supported by this LAMMPS executable:\n\n"
+          "List of command-line options supported by this LAMMPS executable:\n\n"
           "-echo none/screen/log/both  : echoing of input script (-e)\n"
           "-help                       : print this help message (-h)\n"
           "-in none/filename           : read input from file or stdin (default) (-i)\n"
@@ -1452,20 +1438,22 @@ void LAMMPS::print_config(FILE *fp)
   const char *pkg;
   int ncword, ncline = 0;
 
-  fmt::print(fp,"OS: {}\n\n",platform::os_info());
+  utils::print(fp,"OS: {}\n\n",platform::os_info());
 
-  fmt::print(fp,"Compiler: {} with {}\nC++ standard: {}\n",
+  utils::print(fp,"Compiler: {} with {}\nC++ standard: {}\n",
              platform::compiler_info(),platform::openmp_standard(),
              platform::cxx_standard());
+  fputs(Info::get_fmt_info().c_str(),fp);
+  fputs(Info::get_json_info().c_str(),fp);
 
   int major,minor;
   std::string infobuf = platform::mpi_info(major,minor);
-  fmt::print(fp,"MPI v{}.{}: {}\n\n",major,minor,infobuf);
+  utils::print(fp,"\nMPI v{}.{}: {}\n\n",major,minor,infobuf);
 
-  fmt::print(fp,"Accelerator configuration:\n\n{}\n",
+  utils::print(fp,"Accelerator configuration:\n\n{}\n",
              Info::get_accelerator_info());
 #if defined(LMP_GPU)
-  fmt::print(fp,"Compatible GPU present: {}\n\n",Info::has_gpu_device() ? "yes" : "no");
+  utils::print(fp,"Compatible GPU present: {}\n\n",Info::has_gpu_device() ? "yes" : "no");
 #endif
 
   fputs("FFT information:\n\n",fp);
@@ -1482,18 +1470,16 @@ void LAMMPS::print_config(FILE *fp)
   fputs("-DLAMMPS_BIGBIG\n",fp);
 #elif defined(LAMMPS_SMALLBIG)
   fputs("-DLAMMPS_SMALLBIG\n",fp);
-#else // defined(LAMMPS_SMALLSMALL)
-  fputs("-DLAMMPS_SMALLSMALL\n",fp);
 #endif
 
-  fmt::print(fp,"sizeof(smallint): {}-bit\n"
+  utils::print(fp,"sizeof(smallint): {}-bit\n"
              "sizeof(imageint): {}-bit\n"
              "sizeof(tagint):   {}-bit\n"
              "sizeof(bigint):   {}-bit\n",
              sizeof(smallint)*8, sizeof(imageint)*8,
              sizeof(tagint)*8, sizeof(bigint)*8);
 
-  if (Info::has_gzip_support()) fmt::print(fp,"\n{}\n",platform::compress_info());
+  if (Info::has_gzip_support()) utils::print(fp,"\n{}\n",platform::compress_info());
 
   fputs("\nInstalled packages:\n\n",fp);
   for (int i = 0; nullptr != (pkg = installed_packages[i]); ++i) {
@@ -1508,14 +1494,15 @@ void LAMMPS::print_config(FILE *fp)
   fputs("\n\n",fp);
 }
 
-/** Create vector of argv string pointers including terminating nullptr element
+/** Create vector of argv char pointers including terminating nullptr element
  *
  * \param args list of arguments
+ * \return vector of argument pointers
  */
-std::vector<char*> LAMMPS::argv_pointers(argv & args){
+std::vector<char*> LAMMPS::argv_pointers(argv &args){
   std::vector<char*> r;
   r.reserve(args.size()+1);
-  for(auto & a : args) {
+  for(auto &a : args) {
     r.push_back((char*)a.data());
   }
   r.push_back(nullptr);

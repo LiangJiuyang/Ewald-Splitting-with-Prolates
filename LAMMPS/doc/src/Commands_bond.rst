@@ -23,6 +23,7 @@ OPT.
    *
    * :doc:`bpm/rotational <bond_bpm_rotational>`
    * :doc:`bpm/spring <bond_bpm_spring>`
+   * :doc:`bpm/spring/plastic <bond_bpm_spring_plastic>`
    * :doc:`class2 (ko) <bond_class2>`
    * :doc:`fene (iko) <bond_fene>`
    * :doc:`fene/expand (o) <bond_fene_expand>`
@@ -73,6 +74,7 @@ OPT.
    * :doc:`charmm (iko) <angle_charmm>`
    * :doc:`class2 (ko) <angle_class2>`
    * :doc:`class2/p6 <angle_class2>`
+   * :doc:`class2xe <angle_class2>`
    * :doc:`cosine (ko) <angle_cosine>`
    * :doc:`cosine/buck6d <angle_cosine_buck6d>`
    * :doc:`cosine/delta (o) <angle_cosine_delta>`
@@ -90,6 +92,7 @@ OPT.
    * :doc:`lepton (o) <angle_lepton>`
    * :doc:`mesocnt <angle_mesocnt>`
    * :doc:`mm3 <angle_mm3>`
+   * :doc:`mwlc <angle_mwlc>`
    * :doc:`quartic (o) <angle_quartic>`
    * :doc:`spica (ko) <angle_spica>`
    * :doc:`table (o) <angle_table>`
@@ -120,14 +123,15 @@ OPT.
    * :doc:`charmm (iko) <dihedral_charmm>`
    * :doc:`charmmfsw (k) <dihedral_charmm>`
    * :doc:`class2 (ko) <dihedral_class2>`
+   * :doc:`class2xe <dihedral_class2>`
    * :doc:`cosine/shift/exp (o) <dihedral_cosine_shift_exp>`
    * :doc:`cosine/squared/restricted <dihedral_cosine_squared_restricted>`
-   * :doc:`fourier (io) <dihedral_fourier>`
+   * :doc:`fourier (iko) <dihedral_fourier>`
    * :doc:`harmonic (iko) <dihedral_harmonic>`
    * :doc:`helix (o) <dihedral_helix>`
    * :doc:`lepton (o) <dihedral_lepton>`
-   * :doc:`multi/harmonic (o) <dihedral_multi_harmonic>`
-   * :doc:`nharmonic (o) <dihedral_nharmonic>`
+   * :doc:`multi/harmonic (ko) <dihedral_multi_harmonic>`
+   * :doc:`nharmonic (ko) <dihedral_nharmonic>`
    * :doc:`opls (iko) <dihedral_opls>`
    * :doc:`quadratic (o) <dihedral_quadratic>`
    * :doc:`spherical <dihedral_spherical>`
@@ -160,7 +164,7 @@ OPT.
    * :doc:`amoeba <improper_amoeba>`
    * :doc:`class2 (ko) <improper_class2>`
    * :doc:`cossq (o) <improper_cossq>`
-   * :doc:`cvff (io) <improper_cvff>`
+   * :doc:`cvff (iko) <improper_cvff>`
    * :doc:`distance <improper_distance>`
    * :doc:`distharm <improper_distharm>`
    * :doc:`fourier (o) <improper_fourier>`

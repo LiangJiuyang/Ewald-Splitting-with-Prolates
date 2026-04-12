@@ -27,6 +27,7 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "math_special.h"
 #include "memory.h"
 #include "my_page.h"
@@ -41,10 +42,12 @@
 using namespace LAMMPS_NS;
 using namespace MathSpecial;
 
-static constexpr double TOL = 1.0e-9;
-static constexpr int PGDELTA = 1;
+namespace {
+constexpr double TOL = 1.0e-9;
+constexpr int PGDELTA = 1;
 
-static const char *style[3] = {"airebo", "rebo", "airebo/morse"};
+const char *style[3] = {"airebo", "rebo", "airebo/morse"};
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -215,7 +218,7 @@ void PairAIREBO::coeff(int narg, char **arg)
         count++;
       }
 
-  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 }
 
 /* ----------------------------------------------------------------------
@@ -259,7 +262,9 @@ void PairAIREBO::init_style()
 
 double PairAIREBO::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
 
   // convert to C,H types
 
@@ -403,7 +408,7 @@ void PairAIREBO::REBO_neigh()
     REBO_numneigh[i] = n;
     ipage->vgot(n);
     if (ipage->status())
-      error->one(FLERR,"Neighbor list overflow, boost neigh_modify one");
+      error->one(FLERR, Error::NOLASTLINE, "Neighbor list overflow, boost neigh_modify one" + utils::errorurl(36));
   }
 }
 

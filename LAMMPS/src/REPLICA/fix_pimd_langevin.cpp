@@ -34,6 +34,7 @@
 #include "error.h"
 #include "force.h"
 #include "group.h"
+#include "kspace.h"
 #include "math_const.h"
 #include "math_special.h"
 #include "memory.h"
@@ -44,6 +45,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <map>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -53,25 +55,33 @@ using MathConst::MY_SQRT2;
 using MathConst::THIRD;
 using MathSpecial::powint;
 
-enum { PIMD, NMPIMD };
-enum { PHYSICAL, NORMAL };
-enum { BAOAB, OBABO };
-enum { ISO, ANISO, TRICLINIC };
-enum { PILE_L };
-enum { MTTK, BZP };
-enum { NVE, NVT, NPH, NPT };
-enum { SINGLE_PROC, MULTI_PROC };
+namespace {
+std::map<int, std::string> Barostats{{FixPIMDLangevin::MTTK, "MTTK"},
+                                     {FixPIMDLangevin::BZP, "BZP"}};
+std::map<int, std::string> Ensembles{{FixPIMDLangevin::NVE, "NVE"},
+                                     {FixPIMDLangevin::NVT, "NVT"},
+                                     {FixPIMDLangevin::NPH, "NPH"},
+                                     {FixPIMDLangevin::NPT, "NPT"}};
+}    // namespace
 
-static std::map<int, std::string> Barostats{{MTTK, "MTTK"}, {BZP, "BZP"}};
-static std::map<int, std::string> Ensembles{{NVE, "NVE"}, {NVT, "NVT"}, {NPH, "NPH"}, {NPT, "NPT"}};
+namespace {
+constexpr int TAG_INTER_REPLICA_COUNT = 10;
+constexpr int TAG_INTER_REPLICA_TAGS  = 11;
+constexpr int TAG_INTER_REPLICA_VALS  = 12;
+
+constexpr int TAG_RING_MISS_COUNT = 400;
+constexpr int TAG_RING_MISS_TAGS  = 401;
+constexpr int TAG_RING_REP_COUNT  = 402;
+constexpr int TAG_RING_REP_TAGS   = 403;
+constexpr int TAG_RING_REP_VALS   = 404;
+} // namespace
 
 /* ---------------------------------------------------------------------- */
 
 FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), mass(nullptr), plansend(nullptr), planrecv(nullptr), tagsend(nullptr),
     tagrecv(nullptr), bufsend(nullptr), bufrecv(nullptr), bufbeads(nullptr), bufsorted(nullptr),
-    bufsortedall(nullptr), outsorted(nullptr), buftransall(nullptr), tagsendall(nullptr),
-    tagrecvall(nullptr), bufsendall(nullptr), bufrecvall(nullptr), counts(nullptr),
+    bufsortedall(nullptr), counts(nullptr),
     displacements(nullptr), lam(nullptr), M_x2xp(nullptr), M_xp2x(nullptr), M_f2fp(nullptr),
     M_fp2f(nullptr), modeindex(nullptr), tau_k(nullptr), c1_k(nullptr), c2_k(nullptr),
     _omega_k(nullptr), Lan_s(nullptr), Lan_c(nullptr), random(nullptr), xc(nullptr), xcall(nullptr),
@@ -81,7 +91,7 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
   time_integrate = 1;
 
   ntotal = 0;
-  maxlocal = maxunwrap = maxxc = 0;
+  maxlocal = maxsend = maxunwrap = maxxc = 0;
 
   sizeplan = 0;
 
@@ -90,11 +100,6 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
   integrator = OBABO;
   thermostat = PILE_L;
   barostat = BZP;
-  lj_epsilon = 1;
-  lj_sigma = 1;
-  lj_mass = 1;
-  other_planck = 1;
-  other_mvv2e = 1;
   fmass = 1.0;
   np = universe->nworlds;
   inverse_np = 1.0 / np;
@@ -118,7 +123,8 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
 
   int seed = -1;
 
-  if (domain->dimension != 3) error->universe_all(FLERR, "Fix pimd/langevin requires a 3d system");
+  if (domain->dimension != 3)
+    error->universe_all(FLERR, fmt::format("Fix {} requires a 3d system", style));
 
   for (int i = 0; i < 6; i++) {
     p_flag[i] = 0;
@@ -132,7 +138,7 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
       else if (strcmp(arg[i + 1], "pimd") == 0)
         method = PIMD;
       else
-        error->universe_all(FLERR, "Unknown method parameter for fix pimd/langevin");
+        error->universe_all(FLERR, fmt::format("Unknown method parameter for fix {}", style));
     } else if (strcmp(arg[i], "integrator") == 0) {
       if (strcmp(arg[i + 1], "obabo") == 0)
         integrator = OBABO;
@@ -140,8 +146,9 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
         integrator = BAOAB;
       else
         error->universe_all(FLERR,
-                            "Unknown integrator parameter for fix pimd/langevin. Only obabo and "
-                            "baoab integrators are supported!");
+                            fmt::format("Unknown integrator parameter for fix {}. Only obabo and "
+                                        "baoab integrators are supported!",
+                                        style));
     } else if (strcmp(arg[i], "ensemble") == 0) {
       if (strcmp(arg[i + 1], "nve") == 0) {
         ensemble = NVE;
@@ -161,15 +168,16 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
         pstat_flag = 1;
       } else
         error->universe_all(FLERR,
-                            "Unknown ensemble parameter for fix pimd/langevin. Only nve, nvt, nph, "
-                            "and npt ensembles are supported!");
+                            fmt::format("Unknown ensemble parameter for fix {}. Only nve, nvt, "
+                                        "nph, and npt ensembles are supported!",
+                                        style));
     } else if (strcmp(arg[i], "fmass") == 0) {
       fmass = utils::numeric(FLERR, arg[i + 1], false, lmp);
       if (fmass < 0.0 || fmass > np)
-        error->universe_all(FLERR, "Invalid fmass value for fix pimd/langevin");
+        error->universe_all(FLERR, fmt::format("Invalid fmass value for fix {}", style));
     } else if (strcmp(arg[i], "sp") == 0) {
       sp = utils::numeric(FLERR, arg[i + 1], false, lmp);
-      if (sp < 0.0) error->universe_all(FLERR, "Invalid sp value for fix pimd/langevin");
+      if (sp < 0.0) error->universe_all(FLERR, fmt::format("Invalid sp value for fix {}", style));
     } else if (strcmp(arg[i], "fmmode") == 0) {
       if (strcmp(arg[i + 1], "physical") == 0)
         fmmode = PHYSICAL;
@@ -177,8 +185,9 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
         fmmode = NORMAL;
       else
         error->universe_all(FLERR,
-                            "Unknown fictitious mass mode for fix pimd/langevin. Only physical "
-                            "mass and normal mode mass are supported!");
+                            fmt::format("Unknown fictitious mass mode for fix {}. Only physical "
+                                        "mass and normal mode mass are supported!",
+                                        style));
     } else if (strcmp(arg[i], "scale") == 0) {
       if (method == PIMD)
         error->universe_all(
@@ -187,17 +196,11 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
             "scale parameter if you do want to use method pimd.");
       pilescale = utils::numeric(FLERR, arg[i + 1], false, lmp);
       if (pilescale < 0.0)
-        error->universe_all(FLERR, "Invalid PILE_L scale value for fix pimd/langevin");
+        error->universe_all(FLERR, fmt::format("Invalid PILE_L scale value for fix {}", style));
     } else if (strcmp(arg[i], "temp") == 0) {
       temp = utils::numeric(FLERR, arg[i + 1], false, lmp);
-      if (temp < 0.0) error->universe_all(FLERR, "Invalid temp value for fix pimd/langevin");
-    } else if (strcmp(arg[i], "lj") == 0) {
-      lj_epsilon = utils::numeric(FLERR, arg[i + 1], false, lmp);
-      lj_sigma = utils::numeric(FLERR, arg[i + 2], false, lmp);
-      lj_mass = utils::numeric(FLERR, arg[i + 3], false, lmp);
-      other_planck = utils::numeric(FLERR, arg[i + 4], false, lmp);
-      other_mvv2e = utils::numeric(FLERR, arg[i + 5], false, lmp);
-      i += 4;
+      if (temp < 0.0)
+        error->universe_all(FLERR, fmt::format("Invalid temp value for fix {}", style));
     } else if (strcmp(arg[i], "thermostat") == 0) {
       if (strcmp(arg[i + 1], "PILE_L") == 0) {
         thermostat = PILE_L;
@@ -212,7 +215,7 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
       } else if (strcmp(arg[i + 1], "BZP") == 0) {
         barostat = BZP;
       } else
-        error->universe_all(FLERR, "Unknown barostat parameter for fix pimd/langevin");
+        error->universe_all(FLERR, fmt::format("Unknown barostat parameter for fix {}", style));
     } else if (strcmp(arg[i], "iso") == 0) {
       pstyle = ISO;
       p_flag[0] = p_flag[1] = p_flag[2] = 1;
@@ -242,13 +245,14 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
       pdim++;
     } else if (strcmp(arg[i], "taup") == 0) {
       tau_p = utils::numeric(FLERR, arg[i + 1], false, lmp);
-      if (tau_p <= 0.0) error->universe_all(FLERR, "Invalid tau_p value for fix pimd/langevin");
+      if (tau_p <= 0.0)
+        error->universe_all(FLERR, fmt::format("Invalid tau_p value for fix {}", style));
     } else if (strcmp(arg[i], "fixcom") == 0) {
       if (strcmp(arg[i + 1], "yes") == 0)
         removecomflag = 1;
       else if (strcmp(arg[i + 1], "no") == 0)
         removecomflag = 0;
-    } else {
+    } else if (strcmp(arg[i], "") != 0) {
       error->universe_all(FLERR, fmt::format("Unknown keyword {} for fix {}", arg[i], style));
     }
   }
@@ -343,23 +347,6 @@ FixPIMDLangevin::FixPIMDLangevin(LAMMPS *lmp, int narg, char **arg) :
   if (atom->nmax > maxxc) reallocate_xc();
   memory->create(xcall, ntotal * 3, "FixPIMDLangevin:xcall");
 
-  if (cmode == SINGLE_PROC) {
-    memory->create(bufsorted, ntotal, 3, "FixPIMDLangevin:bufsorted");
-    memory->create(outsorted, ntotal, 3, "FixPIMDLangevin:outsorted");
-    memory->create(bufsortedall, nreplica * ntotal, 3, "FixPIMDLangevin:bufsortedall");
-    memory->create(buftransall, nreplica * ntotal, 3, "FixPIMDLangevin:buftransall");
-    memory->create(counts, nreplica, "FixPIMDLangevin:counts");
-    memory->create(displacements, nreplica, "FixPIMDLangevin:displacements");
-  }
-
-  if ((cmode == MULTI_PROC) && (counts == nullptr)) {
-    memory->create(bufsendall, ntotal, 3, "FixPIMDLangevin:bufsendall");
-    memory->create(bufrecvall, ntotal, 3, "FixPIMDLangevin:bufrecvall");
-    memory->create(tagsendall, ntotal, "FixPIMDLangevin:tagsendall");
-    memory->create(tagrecvall, ntotal, "FixPIMDLangevin:tagrecvall");
-    memory->create(counts, nprocs, "FixPIMDLangevin:counts");
-    memory->create(displacements, nprocs, "FixPIMDLangevin:displacements");
-  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -384,21 +371,11 @@ FixPIMDLangevin::~FixPIMDLangevin()
   memory->destroy(xcall);
   if (cmode == SINGLE_PROC) {
     memory->destroy(bufsorted);
-    memory->destroy(outsorted);
     memory->destroy(bufsortedall);
-    memory->destroy(buftransall);
     memory->destroy(counts);
     memory->destroy(displacements);
   }
 
-  if (cmode == MULTI_PROC) {
-    memory->destroy(bufsendall);
-    memory->destroy(bufrecvall);
-    memory->destroy(tagsendall);
-    memory->destroy(tagrecvall);
-    memory->destroy(counts);
-    memory->destroy(displacements);
-  }
   memory->destroy(M_x2xp);
   memory->destroy(M_xp2x);
   memory->destroy(xc);
@@ -408,6 +385,7 @@ FixPIMDLangevin::~FixPIMDLangevin()
   memory->destroy(tagsend);
   memory->destroy(tagrecv);
   memory->destroy(bufbeads);
+  if (rootworld != MPI_COMM_NULL) MPI_Comm_free(&rootworld);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -427,25 +405,20 @@ int FixPIMDLangevin::setmask()
 void FixPIMDLangevin::init()
 {
   if (atom->map_style == Atom::MAP_NONE)
-    error->all(FLERR, "Fix pimd/langevin requires an atom map, see atom_modify");
+    error->all(FLERR, fmt::format("Fix {} requires an atom map, see atom_modify", style));
+  if (atom->tag_consecutive() == 0)
+    error->all(FLERR, "Atom IDs must be consecutive for fix {}", style);
 
   if (universe->me == 0 && universe->uscreen)
-    fprintf(universe->uscreen, "Fix pimd/langevin: initializing Path-Integral ...\n");
+    utils::print(universe->uscreen, "Fix {}: initializing Path-Integral ...\n", style);
 
   // prepare the constants
 
   masstotal = group->mass(igroup);
 
-  double planck;
-  if (strcmp(update->unit_style, "lj") == 0) {
-    double planck_star = sqrt(lj_epsilon) * sqrt(lj_mass) * lj_sigma * sqrt(other_mvv2e);
-    planck = other_planck / planck_star;
-  } else {
-    planck = force->hplanck;
-  }
-  planck *= sp;
+  double planck = sp * force->hplanck;
   hbar = planck / (MY_2PI);
-  double beta = 1.0 / (force->boltz * temp);
+  beta = 1.0 / (force->boltz * temp);
   double _fbond = 1.0 * np * np / (beta * beta * hbar * hbar);
 
   omega_np = np / (hbar * beta) * sqrt(force->mvv2e);
@@ -453,8 +426,8 @@ void FixPIMDLangevin::init()
   fbond = _fbond * force->mvv2e;
 
   if ((universe->me == 0) && (universe->uscreen))
-    fprintf(universe->uscreen,
-            "Fix pimd/langevin: -P/(beta^2 * hbar^2) = %20.7lE (kcal/mol/A^2)\n\n", fbond);
+    utils::print(universe->uscreen, "Fix {}: -P/(beta^2 * hbar^2) = {:20.7e} (kcal/mol/A^2)\n\n",
+                 style, fbond);
 
   if (integrator == OBABO) {
     dtf = 0.5 * update->dt * force->ftm2v;
@@ -467,7 +440,7 @@ void FixPIMDLangevin::init()
     dtv2 = dtv * dtv;
     dtv3 = THIRD * dtv2 * dtv * force->ftm2v;
   } else {
-    error->universe_all(FLERR, "Unknown integrator parameter for fix pimd/langevin");
+    error->universe_all(FLERR, fmt::format("Unknown integrator parameter for fix {}", style));
   }
 
   comm_init();
@@ -479,14 +452,27 @@ void FixPIMDLangevin::init()
   langevin_init();
 
   c_pe = modify->get_compute_by_id(id_pe);
-  if (!c_pe)
+  if (!c_pe) {
     error->universe_all(
-        FLERR, fmt::format("Could not find fix {} potential energy compute ID {}", style, id_pe));
+        FLERR,
+        fmt::format("Potential energy compute ID {} for fix {} does not exist", id_pe, style));
+  } else {
+    if (c_pe->peflag == 0)
+      error->universe_all(
+          FLERR,
+          fmt::format("Compute ID {} for fix {} does not compute potential energy", id_pe, style));
+  }
 
   c_press = modify->get_compute_by_id(id_press);
-  if (!c_press)
+  if (!c_press) {
     error->universe_all(
         FLERR, fmt::format("Could not find fix {} pressure compute ID {}", style, id_press));
+  } else {
+    if (c_press->pressflag == 0)
+      error->universe_all(
+          FLERR,
+          fmt::format("Compute ID {} for fix {} does not compute pressure", id_press, style));
+  }
 
   t_prim = t_vir = t_cv = p_prim = p_vir = p_cv = p_md = 0.0;
 }
@@ -509,12 +495,16 @@ void FixPIMDLangevin::setup(int vflag)
     else if (cmode == MULTI_PROC)
       nmpimd_transform(bufbeads, x, M_x2xp[universe->iworld]);
   } else if (method == PIMD) {
-    inter_replica_comm(x);
-    spring_force();
+    prepare_coordinates();
+    if (cmode == SINGLE_PROC)
+      spring_force();
+    else if (cmode == MULTI_PROC)
+      error->universe_all(FLERR, "Method pimd only supports a single processor per bead");
   } else {
     error->universe_all(
         FLERR,
-        "Unknown method parameter for fix pimd/langevin. Only nmpimd and pimd are supported!");
+        fmt::format("Unknown method parameter for fix {}. Only nmpimd and pimd are supported!",
+                    style));
   }
   collect_xc();
   compute_spring_energy();
@@ -576,7 +566,8 @@ void FixPIMDLangevin::initial_integrate(int /*vflag*/)
     } else {
       error->universe_all(
           FLERR,
-          "Unknown method parameter for fix pimd/langevin. Only nmpimd and pimd are supported!");
+          fmt::format("Unknown method parameter for fix {}. Only nmpimd and pimd are supported!",
+                      style));
     }
   } else if (integrator == BAOAB) {
     if (pstat_flag) {
@@ -598,7 +589,8 @@ void FixPIMDLangevin::initial_integrate(int /*vflag*/)
     } else {
       error->universe_all(
           FLERR,
-          "Unknown method parameter for fix pimd/langevin. Only nmpimd and pimd are supported!");
+          fmt::format("Unknown method parameter for fix {}. Only nmpimd and pimd are supported!",
+                      style));
     }
     if (tstat_flag) {
       o_step();
@@ -613,12 +605,14 @@ void FixPIMDLangevin::initial_integrate(int /*vflag*/)
     } else {
       error->universe_all(
           FLERR,
-          "Unknown method parameter for fix pimd/langevin. Only nmpimd and pimd are supported!");
+          fmt::format("Unknown method parameter for fix {}. Only nmpimd and pimd are supported!",
+                      style));
     }
   } else {
     error->universe_all(FLERR,
-                        "Unknown integrator parameter for fix pimd/langevin. Only obabo and baoab "
-                        "integrators are supported!");
+                        fmt::format("Unknown integrator parameter for fix {}. Only obabo and baoab "
+                                    "integrators are supported!",
+                                    style));
   }
   collect_xc();
 
@@ -660,8 +654,15 @@ void FixPIMDLangevin::final_integrate()
   } else if (integrator == BAOAB) {
 
   } else {
-    error->universe_all(FLERR, "Unknown integrator parameter for fix pimd/langevin");
+    error->universe_all(FLERR, fmt::format("Unknown integrator parameter for fix {}", style));
   }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixPIMDLangevin::prepare_coordinates()
+{
+  inter_replica_comm(atom->x);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -699,7 +700,7 @@ void FixPIMDLangevin::post_force(int /*flag*/)
     if (mapflag) {
       for (int i = 0; i < nlocal; i++) { domain->unmap(x[i], image[i]); }
     }
-    inter_replica_comm(x);
+    prepare_coordinates();
     spring_force();
     compute_spring_energy();
     compute_t_prim();
@@ -769,16 +770,19 @@ void FixPIMDLangevin::b_step()
   // used for both NMPIMD and PIMD
   // For NMPIMD, force only includes the contribution of external potential.
   // For PIMD, force includes the contributions of external potential and spring force.
-  int n = atom->nlocal;
+  int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   int *type = atom->type;
   double **v = atom->v;
   double **f = atom->f;
 
-  for (int i = 0; i < n; i++) {
-    double dtfm = dtf / mass[type[i]];
-    v[i][0] += dtfm * f[i][0];
-    v[i][1] += dtfm * f[i][1];
-    v[i][2] += dtfm * f[i][2];
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) {
+      double dtfm = dtf / mass[type[i]];
+      v[i][0] += dtfm * f[i][0];
+      v[i][1] += dtfm * f[i][1];
+      v[i][2] += dtfm * f[i][2];
+    }
   }
 }
 
@@ -789,6 +793,7 @@ void FixPIMDLangevin::qc_step()
   // used for NMPIMD
   // evolve the centroid mode
   int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   double **x = atom->x;
   double **v = atom->v;
   double oldlo, oldhi;
@@ -796,9 +801,11 @@ void FixPIMDLangevin::qc_step()
   if (!pstat_flag) {
     if (universe->iworld == 0) {
       for (int i = 0; i < nlocal; i++) {
-        x[i][0] += dtv * v[i][0];
-        x[i][1] += dtv * v[i][1];
-        x[i][2] += dtv * v[i][2];
+        if (mask[i] & groupbit) {
+          x[i][0] += dtv * v[i][0];
+          x[i][1] += dtv * v[i][1];
+          x[i][2] += dtv * v[i][2];
+        }
       }
     }
   } else {
@@ -814,12 +821,14 @@ void FixPIMDLangevin::qc_step()
       }
       if (barostat == BZP) {
         for (int i = 0; i < nlocal; i++) {
-          for (int j = 0; j < 3; j++) {
-            if (p_flag[j]) {
-              x[i][j] = expq[j] * x[i][j] + (expq[j] - expp[j]) / 2. / vw[j] * v[i][j];
-              v[i][j] = expp[j] * v[i][j];
-            } else {
-              x[i][j] += dtv * v[i][j];
+          if (mask[i] & groupbit) {
+            for (int j = 0; j < 3; j++) {
+              if (p_flag[j]) {
+                x[i][j] = expq[j] * x[i][j] + (expq[j] - expp[j]) / 2. / vw[j] * v[i][j];
+                v[i][j] = expp[j] * v[i][j];
+              } else {
+                x[i][j] += dtv * v[i][j];
+              }
             }
           }
         }
@@ -845,6 +854,7 @@ void FixPIMDLangevin::qc_step()
     MPI_Bcast(&domain->boxhi[0], 3, MPI_DOUBLE, 0, universe->uworld);
     domain->set_global_box();
     domain->set_local_box();
+    if (force->kspace) force->kspace->setup();
   }
 }
 
@@ -854,31 +864,34 @@ void FixPIMDLangevin::a_step()
 {
   // used for NMPIMD
   // use analytical solution of harmonic oscillator to evolve the non-centroid modes
-  int n = atom->nlocal;
+  int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   double **x = atom->x;
   double **v = atom->v;
   double x0, x1, x2, v0, v1, v2;    // three components of x[i] and v[i]
 
   if (universe->iworld != 0) {
-    for (int i = 0; i < n; i++) {
-      x0 = x[i][0];
-      x1 = x[i][1];
-      x2 = x[i][2];
-      v0 = v[i][0];
-      v1 = v[i][1];
-      v2 = v[i][2];
-      x[i][0] = Lan_c[universe->iworld] * x0 +
-          1.0 / _omega_k[universe->iworld] * Lan_s[universe->iworld] * v0;
-      x[i][1] = Lan_c[universe->iworld] * x1 +
-          1.0 / _omega_k[universe->iworld] * Lan_s[universe->iworld] * v1;
-      x[i][2] = Lan_c[universe->iworld] * x2 +
-          1.0 / _omega_k[universe->iworld] * Lan_s[universe->iworld] * v2;
-      v[i][0] = -1.0 * _omega_k[universe->iworld] * Lan_s[universe->iworld] * x0 +
-          Lan_c[universe->iworld] * v0;
-      v[i][1] = -1.0 * _omega_k[universe->iworld] * Lan_s[universe->iworld] * x1 +
-          Lan_c[universe->iworld] * v1;
-      v[i][2] = -1.0 * _omega_k[universe->iworld] * Lan_s[universe->iworld] * x2 +
-          Lan_c[universe->iworld] * v2;
+    for (int i = 0; i < nlocal; i++) {
+      if (mask[i] & groupbit) {
+        x0 = x[i][0];
+        x1 = x[i][1];
+        x2 = x[i][2];
+        v0 = v[i][0];
+        v1 = v[i][1];
+        v2 = v[i][2];
+        x[i][0] = Lan_c[universe->iworld] * x0 +
+            1.0 / _omega_k[universe->iworld] * Lan_s[universe->iworld] * v0;
+        x[i][1] = Lan_c[universe->iworld] * x1 +
+            1.0 / _omega_k[universe->iworld] * Lan_s[universe->iworld] * v1;
+        x[i][2] = Lan_c[universe->iworld] * x2 +
+            1.0 / _omega_k[universe->iworld] * Lan_s[universe->iworld] * v2;
+        v[i][0] = -1.0 * _omega_k[universe->iworld] * Lan_s[universe->iworld] * x0 +
+            Lan_c[universe->iworld] * v0;
+        v[i][1] = -1.0 * _omega_k[universe->iworld] * Lan_s[universe->iworld] * x1 +
+            Lan_c[universe->iworld] * v1;
+        v[i][2] = -1.0 * _omega_k[universe->iworld] * Lan_s[universe->iworld] * x2 +
+            Lan_c[universe->iworld] * v2;
+      }
     }
   }
 }
@@ -890,14 +903,17 @@ void FixPIMDLangevin::q_step()
   // used for PIMD
   // evolve all beads
   int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   double **x = atom->x;
   double **v = atom->v;
 
   if (!pstat_flag) {
     for (int i = 0; i < nlocal; i++) {
-      x[i][0] += dtv * v[i][0];
-      x[i][1] += dtv * v[i][1];
-      x[i][2] += dtv * v[i][2];
+      if (mask[i] & groupbit) {
+        x[i][0] += dtv * v[i][0];
+        x[i][1] += dtv * v[i][1];
+        x[i][2] += dtv * v[i][2];
+      }
     }
   }
 }
@@ -908,10 +924,10 @@ void FixPIMDLangevin::baro_init()
 {
   vw[0] = vw[1] = vw[2] = vw[3] = vw[4] = vw[5] = 0.0;
   if (pstyle == ISO) {
-    W = 3 * (atom->natoms) * tau_p * tau_p * np * kt;
+    W = 3 * (group->count(igroup)) * tau_p * tau_p * np * kt;
   }    // consistent with the definition in i-Pi
   else if (pstyle == ANISO) {
-    W = atom->natoms * tau_p * tau_p * np * kt;
+    W = group->count(igroup) * tau_p * tau_p * np * kt;
   }
   Vcoeff = 1.0;
   std::string out = fmt::format("\nInitializing PIMD {:s} barostat...\n", Barostats[barostat]);
@@ -924,6 +940,7 @@ void FixPIMDLangevin::baro_init()
 void FixPIMDLangevin::press_v_step()
 {
   int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   double **f = atom->f;
   double **v = atom->v;
   int *type = atom->type;
@@ -935,8 +952,10 @@ void FixPIMDLangevin::press_v_step()
       if (universe->iworld == 0) {
         double dvw_proc = 0.0, dvw = 0.0;
         for (int i = 0; i < nlocal; i++) {
-          for (int j = 0; j < 3; j++) {
-            dvw_proc += dtv2 * f[i][j] * v[i][j] / W + dtv3 * f[i][j] * f[i][j] / mass[type[i]] / W;
+          if (mask[i] & groupbit) {
+            for (int j = 0; j < 3; j++) {
+              dvw_proc += dtv2 * f[i][j] * v[i][j] / W + dtv3 * f[i][j] * f[i][j] / mass[type[i]] / W;
+            }
           }
         }
         MPI_Allreduce(&dvw_proc, &dvw, 1, MPI_DOUBLE, MPI_SUM, world);
@@ -945,7 +964,7 @@ void FixPIMDLangevin::press_v_step()
       MPI_Barrier(universe->uworld);
       MPI_Bcast(&vw[0], 1, MPI_DOUBLE, 0, universe->uworld);
     } else if (barostat == MTTK) {
-      double mtk_term1 = 2.0 / atom->natoms * totke / 3.0;
+      double mtk_term1 = 2.0 / group->count(igroup) * totke / 3.0;
       vw[0] += 0.5 * dtv * (volume * np * (p_md - p_hydro) + mtk_term1) / W;
     }
   } else if (pstyle == ANISO) {
@@ -957,8 +976,10 @@ void FixPIMDLangevin::press_v_step()
         if (universe->iworld == 0) {
           double dvw_proc = 0.0, dvw = 0.0;
           for (int i = 0; i < nlocal; i++) {
-            dvw_proc +=
-                dtv2 * f[i][ii] * v[i][ii] / W + dtv3 * f[i][ii] * f[i][ii] / mass[type[i]] / W;
+            if (mask[i] & groupbit) {
+              dvw_proc +=
+                  dtv2 * f[i][ii] * v[i][ii] / W + dtv3 * f[i][ii] * f[i][ii] / mass[type[i]] / W;
+            }
           }
           MPI_Allreduce(&dvw_proc, &dvw, 1, MPI_DOUBLE, MPI_SUM, world);
           vw[ii] += dvw;
@@ -1027,8 +1048,9 @@ void FixPIMDLangevin::langevin_init()
     c1 = exp(-gamma * update->dt);
   else
     error->universe_all(FLERR,
-                        "Unknown integrator parameter for fix pimd/langevin. Only obabo and "
-                        "baoab integrators are supported!");
+                        fmt::format("Unknown integrator parameter for fix {}. Only obabo and baoab "
+                                    "integrators are supported!",
+                                    style));
 
   c2 = sqrt(1.0 - c1 * c1);    // note that c1 and c2 here only works for the centroid mode.
 
@@ -1050,8 +1072,9 @@ void FixPIMDLangevin::langevin_init()
           c1_k[i] = exp(-1.0 * update->dt / tau_k[i]);
         else
           error->universe_all(FLERR,
-                              "Unknown integrator parameter for fix pimd/langevin. Only obabo and "
-                              "baoab integrators are supported!");
+                              fmt::format("Unknown integrator parameter for fix {}. Only obabo and "
+                                          "baoab integrators are supported!",
+                                          style));
         c2_k[i] = sqrt(1.0 - c1_k[i] * c1_k[i]);
       }
       for (int i = 0; i < np; i++) {
@@ -1075,26 +1098,31 @@ void FixPIMDLangevin::langevin_init()
 void FixPIMDLangevin::o_step()
 {
   int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   int *type = atom->type;
   double beta_np = 1.0 / force->boltz / Lan_temp * inverse_np * force->mvv2e;
   if (thermostat == PILE_L) {
     if (method == NMPIMD) {
       for (int i = 0; i < nlocal; i++) {
-        atom->v[i][0] = c1_k[universe->iworld] * atom->v[i][0] +
-            c2_k[universe->iworld] * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
-        atom->v[i][1] = c1_k[universe->iworld] * atom->v[i][1] +
-            c2_k[universe->iworld] * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
-        atom->v[i][2] = c1_k[universe->iworld] * atom->v[i][2] +
-            c2_k[universe->iworld] * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
+        if (mask[i] & groupbit) {
+          atom->v[i][0] = c1_k[universe->iworld] * atom->v[i][0] +
+              c2_k[universe->iworld] * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
+          atom->v[i][1] = c1_k[universe->iworld] * atom->v[i][1] +
+              c2_k[universe->iworld] * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
+          atom->v[i][2] = c1_k[universe->iworld] * atom->v[i][2] +
+              c2_k[universe->iworld] * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
+        }
       }
     } else if (method == PIMD) {
       for (int i = 0; i < nlocal; i++) {
-        atom->v[i][0] =
-            c1 * atom->v[i][0] + c2 * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
-        atom->v[i][1] =
-            c1 * atom->v[i][1] + c2 * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
-        atom->v[i][2] =
-            c1 * atom->v[i][2] + c2 * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
+        if (mask[i] & groupbit) {
+          atom->v[i][0] =
+              c1 * atom->v[i][0] + c2 * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
+          atom->v[i][1] =
+              c1 * atom->v[i][1] + c2 * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
+          atom->v[i][2] =
+              c1 * atom->v[i][2] + c2 * sqrt(1.0 / mass[type[i]] / beta_np) * random->gaussian();
+        }
       }
     }
   }
@@ -1174,12 +1202,13 @@ void FixPIMDLangevin::nmpimd_transform(double **src, double **des, double *vecto
     int n = atom->nlocal;
     int m = 0;
 
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < n; i++) {
       for (int d = 0; d < 3; d++) {
         des[i][d] = 0.0;
         for (int j = 0; j < np; j++) { des[i][d] += (src[j][m] * vector[j]); }
         m++;
       }
+    }
   }
 }
 
@@ -1196,10 +1225,7 @@ void FixPIMDLangevin::spring_force()
   int nlocal = atom->nlocal;
   tagint *tagtmp = atom->tag;
 
-  // printf("iworld = %d, x_last = %d, x_next = %d\n", universe->iworld, x_last, x_next);
   int *mask = atom->mask;
-
-  // int idx_tmp = atom->map(1);
 
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
@@ -1233,6 +1259,17 @@ void FixPIMDLangevin::spring_force()
 
 void FixPIMDLangevin::comm_init()
 {
+  if (np != universe->nworlds)
+  error->all(FLERR, "Fix pimd/langevin: np must equal universe->nworlds");
+
+  int nlocal = atom->nlocal;
+  if (cmode == SINGLE_PROC) {
+    memory->create(counts, nreplica, "FixPIMDLangevin:counts");
+    memory->create(displacements, nreplica, "FixPIMDLangevin:displacements");
+    for (int i = 0; i < nreplica; i++) counts[i] = 3*nlocal;
+    displacements[0] = 0;
+    for (int i = 0; i < nreplica - 1; i++) displacements[i + 1] = displacements[i] + counts[i];
+  }
   if (sizeplan) {
     delete[] plansend;
     delete[] planrecv;
@@ -1243,14 +1280,18 @@ void FixPIMDLangevin::comm_init()
   planrecv = new int[sizeplan];
   modeindex = new int[sizeplan];
   for (int i = 0; i < sizeplan; i++) {
-    int isend, irecv;
-    isend = ireplica + i + 1;
-    if (isend >= nreplica) isend -= nreplica;
-    irecv = ireplica - (i + 1);
-    if (irecv < 0) irecv += nreplica;
-    plansend[i] = universe->root_proc[isend];
-    planrecv[i] = universe->root_proc[irecv];
-    modeindex[i] = irecv;
+
+    // send to the (i+1)-th "next" replica, same local rank within that replica
+    plansend[i] = universe->me + comm->nprocs * (i + 1);
+    if (plansend[i] >= universe->nprocs) plansend[i] -= universe->nprocs;
+
+    // receive from the (i+1)-th "previous" replica, same local rank within that replica
+    planrecv[i] = universe->me - comm->nprocs * (i + 1);
+    if (planrecv[i] < 0) planrecv[i] += universe->nprocs;
+
+    // where to store what we receive this round:
+    // this is the replica index you are pulling from in this step
+    modeindex[i] = (universe->iworld + i + 1) % universe->nworlds;
   }
 
   x_next = (universe->iworld + 1 + universe->nworlds) % (universe->nworlds);
@@ -1280,90 +1321,247 @@ void FixPIMDLangevin::reallocate_x_unwrap()
 void FixPIMDLangevin::reallocate()
 {
   maxlocal = atom->nmax;
-  memory->destroy(bufsend);
-  memory->destroy(bufrecv);
-  memory->destroy(tagsend);
-  memory->destroy(tagrecv);
-  memory->destroy(bufbeads);
-  memory->create(bufsend, maxlocal, 3, "FixPIMDLangevin:bufsend");
-  memory->create(bufrecv, maxlocal, 3, "FixPIMDLangevin:bufrecv");
-  memory->create(tagsend, maxlocal, "FixPIMDLangevin:tagsend");
-  memory->create(tagrecv, maxlocal, "FixPIMDLangevin:tagrecv");
-  memory->create(bufbeads, nreplica, maxlocal * 3, "FixPIMDLangevin:bufrecv");
+  ntotal = atom->natoms;
+  if (cmode == SINGLE_PROC) {
+    memory->destroy(bufsorted);
+    memory->destroy(bufsortedall);
+    memory->create(bufsorted, ntotal, 3, "FixPIMDLangevin:bufsorted");
+    memory->create(bufsortedall, nreplica * ntotal, 3, "FixPIMDLangevin:bufsortedall");
+  } else if (cmode == MULTI_PROC) {
+    memory->destroy(bufsend);
+    memory->destroy(bufrecv);
+    memory->destroy(tagsend);
+    memory->destroy(tagrecv);
+    memory->destroy(bufbeads);
+    memory->create(bufsend, maxlocal*3, "FixPIMDLangevin:bufsend");
+    memory->create(bufrecv, maxlocal*3, "FixPIMDLangevin:bufrecv");
+    memory->create(tagsend, maxlocal, "FixPIMDLangevin:tagsend");
+    memory->create(tagrecv, maxlocal, "FixPIMDLangevin:tagrecv");
+    memory->create(bufbeads, nreplica, maxlocal * 3, "FixPIMDLangevin:bufrecv");
+  }
 }
 
 /* ---------------------------------------------------------------------- */
 
 void FixPIMDLangevin::inter_replica_comm(double **ptr)
 {
-  MPI_Request requests[2];
-  MPI_Status statuses[2];
   if (atom->nmax > maxlocal) reallocate();
   int nlocal = atom->nlocal;
   tagint *tag = atom->tag;
   int i, m;
 
-  // copy local values
-  for (i = 0; i < nlocal; i++) {
-    bufbeads[ireplica][3 * i + 0] = ptr[i][0];
-    bufbeads[ireplica][3 * i + 1] = ptr[i][1];
-    bufbeads[ireplica][3 * i + 2] = ptr[i][2];
-  }
-
   // communicate values from the other beads
   if (cmode == SINGLE_PROC) {
     m = 0;
     for (i = 0; i < nlocal; i++) {
-      tagint tagtmp = atom->tag[i];
+      tagint tagtmp = tag[i];
       bufsorted[tagtmp - 1][0] = ptr[i][0];
       bufsorted[tagtmp - 1][1] = ptr[i][1];
       bufsorted[tagtmp - 1][2] = ptr[i][2];
       m++;
     }
-    MPI_Allgather(&m, 1, MPI_INT, counts, 1, MPI_INT, universe->uworld);
-    for (i = 0; i < nreplica; i++) counts[i] *= 3;
-    displacements[0] = 0;
-    for (i = 0; i < nreplica - 1; i++) displacements[i + 1] = displacements[i] + counts[i];
     MPI_Allgatherv(bufsorted[0], 3 * m, MPI_DOUBLE, bufsortedall[0], counts, displacements,
                    MPI_DOUBLE, universe->uworld);
   } else if (cmode == MULTI_PROC) {
-    m = 0;
+    // buffers are (re)allocated as needed in reallocate()
+    // copy local values
     for (i = 0; i < nlocal; i++) {
-      tagsend[m] = tag[i];
-      bufsend[m][0] = ptr[i][0];
-      bufsend[m][1] = ptr[i][1];
-      bufsend[m][2] = ptr[i][2];
-      m++;
+      bufbeads[ireplica][3 * i + 0] = ptr[i][0];
+      bufbeads[ireplica][3 * i + 1] = ptr[i][1];
+      bufbeads[ireplica][3 * i + 2] = ptr[i][2];
     }
-    MPI_Gather(&m, 1, MPI_INT, counts, 1, MPI_INT, 0, world);
-    displacements[0] = 0;
-    for (i = 0; i < nprocs - 1; i++) displacements[i + 1] = displacements[i] + counts[i];
-    MPI_Gatherv(tagsend, m, MPI_LMP_TAGINT, tagsendall, counts, displacements, MPI_LMP_TAGINT, 0,
-                world);
-    for (i = 0; i < nprocs; i++) counts[i] *= 3;
-    for (i = 0; i < nprocs - 1; i++) displacements[i + 1] = displacements[i] + counts[i];
-    MPI_Gatherv(bufsend[0], 3 * m, MPI_DOUBLE, bufsendall[0], counts, displacements, MPI_DOUBLE, 0,
-                world);
+
+    // Loop over replica comm plans
     for (int iplan = 0; iplan < sizeplan; iplan++) {
-      if (me == 0) {
-        MPI_Irecv(bufrecvall[0], 3 * ntotal, MPI_DOUBLE, planrecv[iplan], 0, universe->uworld,
-                  &requests[0]);
-        MPI_Irecv(tagrecvall, ntotal, MPI_LMP_TAGINT, planrecv[iplan], 0, universe->uworld,
-                  &requests[1]);
-        MPI_Send(bufsendall[0], 3 * ntotal, MPI_DOUBLE, plansend[iplan], 0, universe->uworld);
-        MPI_Send(tagsendall, ntotal, MPI_LMP_TAGINT, plansend[iplan], 0, universe->uworld);
-        MPI_Waitall(2, requests, statuses);
+
+      // 1) exchange local counts between the paired ranks in universe->uworld
+      int nsend = 0;
+      MPI_Sendrecv((void*)&nlocal, 1, MPI_INT,
+                  plansend[iplan], TAG_INTER_REPLICA_COUNT,
+                  (void*)&nsend, 1, MPI_INT,
+                  planrecv[iplan], TAG_INTER_REPLICA_COUNT,
+                  universe->uworld, MPI_STATUS_IGNORE);
+
+      // 2) ensure buffers sized for nsend
+      if (nsend > maxsend) {
+        maxsend = nsend + 200;
+        tagsend = (tagint *) memory->srealloc(tagsend, sizeof(tagint) * maxsend,
+                                              "FixPIMDLangevin:tagsend");
+        bufsend = (double *) memory->srealloc(bufsend, sizeof(double) * 3 * maxsend,
+                                              "FixPIMDLangevin:bufsend");
       }
-      MPI_Bcast(tagrecvall, ntotal, MPI_LMP_TAGINT, 0, world);
-      MPI_Bcast(bufrecvall[0], 3 * ntotal, MPI_DOUBLE, 0, world);
-      for (i = 0; i < ntotal; i++) {
-        m = atom->map(tagrecvall[i]);
-        if (m < 0 || m >= nlocal) continue;
-        bufbeads[modeindex[iplan]][3 * m + 0] = bufrecvall[i][0];
-        bufbeads[modeindex[iplan]][3 * m + 1] = bufrecvall[i][1];
-        bufbeads[modeindex[iplan]][3 * m + 2] = bufrecvall[i][2];
+
+      // 3) exchange tags:
+      //    send my local tags (atom->tag[0..nlocal-1])
+      //    receive remote rank's local tags into tagsend[0..nsend-1]
+      MPI_Sendrecv((void*)atom->tag, nlocal, MPI_LMP_TAGINT,
+                  plansend[iplan], TAG_INTER_REPLICA_TAGS,
+                  (void*)tagsend, nsend, MPI_LMP_TAGINT,
+                  planrecv[iplan], TAG_INTER_REPLICA_TAGS,
+                  universe->uworld, MPI_STATUS_IGNORE);
+
+      // 4) pack ptr for the tags the remote rank needs from me
+      //    For each received tag, find my local index and copy ptr[index][0..2]
+      std::vector<int> miss_idx;
+      std::vector<tagint> miss_tag;
+      miss_idx.reserve(nsend);
+      miss_tag.reserve(nsend);
+
+      for (int i = 0; i < nsend; i++) {
+        const int idx = atom->map(tagsend[i]);
+        if (idx >= 0 && idx < nlocal) {
+          bufsend[3*i + 0] = ptr[idx][0];
+          bufsend[3*i + 1] = ptr[idx][1];
+          bufsend[3*i + 2] = ptr[idx][2];
+        } else {
+          miss_idx.push_back(i);   // remember which slot in bufsend needs collect
+          miss_tag.push_back(tagsend[i]);   // remember which tag that slot corresponds to
+        }
+      }
+
+      // 5) collect missing tags within this world (local-only claiming)
+      if (!miss_tag.empty()) {
+        std::vector<tagint> rep_tag;
+        std::vector<double> rep_val;
+        ring_collect(miss_tag, ptr, rep_tag, rep_val);
+
+        // fill missing slots in bufsend by tag lookup (missing is small)
+        // Use a simple O(N^2) search since missing tags expected to be few
+        for (int k = 0; k < (int)miss_tag.size(); k++) {
+          const tagint t = miss_tag[k];
+          int pos = -1;
+          for (int j = 0; j < (int)rep_tag.size(); j++) {
+            if (rep_tag[j] == t) { pos = j; break; }
+          }
+          if (pos < 0) {
+            auto mesg = fmt::format("collect failed: tag {} not returned on world [{}] rank [{}]\n",
+                                    (int)t, universe->iworld, comm->me);
+            error->universe_one(FLERR, mesg);
+          }
+
+          const int i = miss_idx[k];
+          bufsend[3*i + 0] = rep_val[3*pos + 0];
+          bufsend[3*i + 1] = rep_val[3*pos + 1];
+          bufsend[3*i + 2] = rep_val[3*pos + 2];
+        }
+      }
+
+      // 6) exchange packed x/f buffers:
+      //    - send bufsend (3*nsend) to planrecv[iplan]
+      //    - receive bufrecv (3*nlocal) from plansend[iplan]
+      //
+      // This mirrors your reference's direction choices.
+      MPI_Sendrecv((void*)bufsend, 3*nsend, MPI_DOUBLE,
+                  planrecv[iplan], TAG_INTER_REPLICA_VALS,
+                  (void*)bufrecv, 3*nlocal, MPI_DOUBLE,
+                  plansend[iplan], TAG_INTER_REPLICA_VALS,
+                  universe->uworld, MPI_STATUS_IGNORE);
+
+      // 6) store received x/f for this plan into bufbeads[modeindex[iplan]]
+      memcpy(bufbeads[modeindex[iplan]], bufrecv, sizeof(double) * 3 * nlocal);
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixPIMDLangevin::ring_collect(const std::vector<tagint> &miss_tag,
+                                            double **ptr,
+                                            std::vector<tagint> &rep_tag,
+                                            std::vector<double> &rep_val)
+{
+  // ring-collection: collect missing atoms from other ranks in this world
+  // by passing missing tag lists and found values in a ring
+  const int me = comm->me;
+  const int P  = comm->nprocs;
+  const int next = (me + 1) % P;
+  const int prev = (me - 1 + P) % P;
+  const int nlocal = atom->nlocal;
+
+  // Token state for this rank's missing tags
+  std::vector<tagint> tok_missing = miss_tag;
+  std::vector<tagint> tok_found_tags;
+  std::vector<double> tok_found_vals;   // 3 per found tag
+
+  // If missing is tiny as expected, reserve to reduce realloc
+  tok_found_tags.reserve(tok_missing.size());
+  tok_found_vals.reserve(3 * tok_missing.size());
+
+  // Move one hop per iteration; after P hops, your token returns to you.
+  for (int hop = 0; hop < P; hop++) {
+
+    // 1) exchange sizes
+    int sm = (int) tok_missing.size();
+    int sf = (int) tok_found_tags.size();
+    int rm = 0, rf = 0;
+
+    MPI_Sendrecv(&sm, 1, MPI_INT, next, TAG_RING_MISS_COUNT,
+                 &rm, 1, MPI_INT, prev, TAG_RING_MISS_COUNT,
+                 world, MPI_STATUS_IGNORE);
+
+    MPI_Sendrecv(&sf, 1, MPI_INT, next, TAG_RING_MISS_TAGS,
+                 &rf, 1, MPI_INT, prev, TAG_RING_MISS_TAGS,
+                 world, MPI_STATUS_IGNORE);
+
+    // 2) prepare recv buffers
+    std::vector<tagint> in_missing(rm);
+    std::vector<tagint> in_found_tags(rf);
+    std::vector<double> in_found_vals(3 * (size_t)rf);
+
+    // 3) exchange payloads
+    MPI_Sendrecv(tok_missing.data(), sm, MPI_LMP_TAGINT, next, TAG_RING_REP_COUNT,
+                 in_missing.data(), rm, MPI_LMP_TAGINT, prev, TAG_RING_REP_COUNT,
+                 world, MPI_STATUS_IGNORE);
+
+    MPI_Sendrecv(tok_found_tags.data(), sf, MPI_LMP_TAGINT, next, TAG_RING_REP_TAGS,
+                 in_found_tags.data(), rf, MPI_LMP_TAGINT, prev, TAG_RING_REP_TAGS,
+                 world, MPI_STATUS_IGNORE);
+
+    MPI_Sendrecv(tok_found_vals.data(), 3*sf, MPI_DOUBLE, next, TAG_RING_REP_VALS,
+                 in_found_vals.data(), 3*rf, MPI_DOUBLE, prev, TAG_RING_REP_VALS,
+                 world, MPI_STATUS_IGNORE);
+
+    // 4) process received token: claim only if local owner
+    std::vector<tagint> out_missing;
+    out_missing.reserve(in_missing.size());
+
+    for (tagint t : in_missing) {
+      const int idx = atom->map(t);
+
+      // local-only claim (ignore ghosts)
+      // When excecuting this function at the end of initial_integrate,
+      // where the coordinates of local atoms are updated while those of ghost atoms are not,
+      // considering ghost atoms lead to incorrect coordinates.
+      if (idx >= 0 && idx < nlocal) {
+        in_found_tags.push_back(t);
+        in_found_vals.push_back(ptr[idx][0]);
+        in_found_vals.push_back(ptr[idx][1]);
+        in_found_vals.push_back(ptr[idx][2]);
+      } else {
+        out_missing.push_back(t);
       }
     }
+
+    // 5) forward updated token
+    tok_missing.swap(out_missing);
+    tok_found_tags.swap(in_found_tags);
+    tok_found_vals.swap(in_found_vals);
+  }
+
+  // After full ring, the token for this rank should be back here.
+  // Now we have the resolved list for this rank.
+  rep_tag.swap(tok_found_tags);
+  rep_val.swap(tok_found_vals);
+
+  // If anything still missing, it's a real error (tag not present in this world).
+  if (!tok_missing.empty()) {
+    // Print a small sample to help debug
+    const tagint t0 = tok_missing[0];
+    auto mesg = fmt::format(
+      "ring_collect: unresolved {} tags after {} hops on world [{}] rank [{}]. "
+      "Example tag = {}.\n",
+      (int)tok_missing.size(), P, universe->iworld, me, (int)t0);
+    error->universe_one(FLERR, mesg);
   }
 }
 
@@ -1402,7 +1600,9 @@ void FixPIMDLangevin::remove_com_motion()
       }
     }
   } else {
-    error->all(FLERR, "Unknown method for fix pimd/langevin. Only nmpimd and pimd are supported!");
+    error->all(
+        FLERR,
+        fmt::format("Unknown method for fix {}. Only nmpimd and pimd are supported!", style));
   }
 }
 
@@ -1411,10 +1611,13 @@ void FixPIMDLangevin::remove_com_motion()
 void FixPIMDLangevin::compute_xf_vir()
 {
   int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   double xf = 0.0;
   vir_ = 0.0;
   for (int i = 0; i < nlocal; i++) {
-    for (int j = 0; j < 3; j++) { xf += x_unwrap[i][j] * atom->f[i][j]; }
+    if (mask[i] & groupbit) {
+      for (int j = 0; j < 3; j++) { xf += x_unwrap[i][j] * atom->f[i][j]; }
+    }
   }
   MPI_Allreduce(&xf, &vir_, 1, MPI_DOUBLE, MPI_SUM, universe->uworld);
 }
@@ -1424,21 +1627,26 @@ void FixPIMDLangevin::compute_xf_vir()
 void FixPIMDLangevin::compute_cvir()
 {
   int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   double xcf = 0.0;
   centroid_vir = 0.0;
   for (int i = 0; i < nlocal; i++) {
-    for (int j = 0; j < 3; j++) { xcf += (x_unwrap[i][j] - xc[i][j]) * atom->f[i][j]; }
+    if (mask[i] & groupbit) {
+      for (int j = 0; j < 3; j++) { xcf += (x_unwrap[i][j] - xc[i][j]) * atom->f[i][j]; }
+    }
   }
   MPI_Allreduce(&xcf, &centroid_vir, 1, MPI_DOUBLE, MPI_SUM, universe->uworld);
   if (pstyle == ANISO) {
     for (int i = 0; i < 6; i++) c_vir_tensor[i] = 0.0;
     for (int i = 0; i < nlocal; i++) {
-      c_vir_tensor[0] += (x_unwrap[i][0] - xc[i][0]) * atom->f[i][0];
-      c_vir_tensor[1] += (x_unwrap[i][1] - xc[i][1]) * atom->f[i][1];
-      c_vir_tensor[2] += (x_unwrap[i][2] - xc[i][2]) * atom->f[i][2];
-      c_vir_tensor[3] += (x_unwrap[i][0] - xc[i][0]) * atom->f[i][1];
-      c_vir_tensor[4] += (x_unwrap[i][0] - xc[i][0]) * atom->f[i][2];
-      c_vir_tensor[5] += (x_unwrap[i][1] - xc[i][1]) * atom->f[i][2];
+      if (mask[i] & groupbit) {
+        c_vir_tensor[0] += (x_unwrap[i][0] - xc[i][0]) * atom->f[i][0];
+        c_vir_tensor[1] += (x_unwrap[i][1] - xc[i][1]) * atom->f[i][1];
+        c_vir_tensor[2] += (x_unwrap[i][2] - xc[i][2]) * atom->f[i][2];
+        c_vir_tensor[3] += (x_unwrap[i][0] - xc[i][0]) * atom->f[i][1];
+        c_vir_tensor[4] += (x_unwrap[i][0] - xc[i][0]) * atom->f[i][2];
+        c_vir_tensor[5] += (x_unwrap[i][1] - xc[i][1]) * atom->f[i][2];
+      }
     }
     MPI_Allreduce(MPI_IN_PLACE, &c_vir_tensor, 6, MPI_DOUBLE, MPI_SUM, universe->uworld);
   }
@@ -1467,17 +1675,20 @@ void FixPIMDLangevin::compute_vir()
 void FixPIMDLangevin::compute_stress_tensor()
 {
   int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   int *type = atom->type;
   if (universe->iworld == 0) {
     double inv_volume = 1.0 / (domain->xprd * domain->yprd * domain->zprd);
     for (int i = 0; i < 6; i++) ke_tensor[i] = 0.0;
     for (int i = 0; i < nlocal; i++) {
-      ke_tensor[0] += 0.5 * mass[type[i]] * atom->v[i][0] * atom->v[i][0] * force->mvv2e;
-      ke_tensor[1] += 0.5 * mass[type[i]] * atom->v[i][1] * atom->v[i][1] * force->mvv2e;
-      ke_tensor[2] += 0.5 * mass[type[i]] * atom->v[i][2] * atom->v[i][2] * force->mvv2e;
-      ke_tensor[3] += 0.5 * mass[type[i]] * atom->v[i][0] * atom->v[i][1] * force->mvv2e;
-      ke_tensor[4] += 0.5 * mass[type[i]] * atom->v[i][0] * atom->v[i][2] * force->mvv2e;
-      ke_tensor[5] += 0.5 * mass[type[i]] * atom->v[i][1] * atom->v[i][2] * force->mvv2e;
+      if (mask[i] & groupbit) {
+        ke_tensor[0] += 0.5 * mass[type[i]] * atom->v[i][0] * atom->v[i][0] * force->mvv2e;
+        ke_tensor[1] += 0.5 * mass[type[i]] * atom->v[i][1] * atom->v[i][1] * force->mvv2e;
+        ke_tensor[2] += 0.5 * mass[type[i]] * atom->v[i][2] * atom->v[i][2] * force->mvv2e;
+        ke_tensor[3] += 0.5 * mass[type[i]] * atom->v[i][0] * atom->v[i][1] * force->mvv2e;
+        ke_tensor[4] += 0.5 * mass[type[i]] * atom->v[i][0] * atom->v[i][2] * force->mvv2e;
+        ke_tensor[5] += 0.5 * mass[type[i]] * atom->v[i][1] * atom->v[i][2] * force->mvv2e;
+      }
     }
     MPI_Allreduce(MPI_IN_PLACE, &ke_tensor, 6, MPI_DOUBLE, MPI_SUM, world);
     for (int i = 0; i < 6; i++) {
@@ -1495,9 +1706,12 @@ void FixPIMDLangevin::compute_totke()
   double kine = 0.0;
   totke = ke_bead = 0.0;
   int nlocal = atom->nlocal;
+  int *mask = atom->mask;
   int *type = atom->type;
   for (int i = 0; i < nlocal; i++) {
-    for (int j = 0; j < 3; j++) { kine += 0.5 * mass[type[i]] * atom->v[i][j] * atom->v[i][j]; }
+    if (mask[i] & groupbit) {
+      for (int j = 0; j < 3; j++) { kine += 0.5 * mass[type[i]] * atom->v[i][j] * atom->v[i][j]; }
+    }
   }
   kine *= force->mvv2e;
   MPI_Allreduce(&kine, &ke_bead, 1, MPI_DOUBLE, MPI_SUM, world);
@@ -1517,10 +1731,13 @@ void FixPIMDLangevin::compute_spring_energy()
     double *_mass = atom->mass;
     int *type = atom->type;
     int nlocal = atom->nlocal;
+    int *mask = atom->mask;
 
     for (int i = 0; i < nlocal; i++) {
-      spring_energy += 0.5 * _mass[type[i]] * fbond * lam[universe->iworld] *
-          (x[i][0] * x[i][0] + x[i][1] * x[i][1] + x[i][2] * x[i][2]);
+      if (mask[i] & groupbit) {
+        spring_energy += 0.5 * _mass[type[i]] * fbond * lam[universe->iworld] *
+            (x[i][0] * x[i][0] + x[i][1] * x[i][1] + x[i][2] * x[i][2]);
+      }
     }
     MPI_Allreduce(&spring_energy, &se_bead, 1, MPI_DOUBLE, MPI_SUM, world);
     MPI_Allreduce(&se_bead, &total_spring_energy, 1, MPI_DOUBLE, MPI_SUM, universe->uworld);
@@ -1533,7 +1750,8 @@ void FixPIMDLangevin::compute_spring_energy()
   } else {
     error->universe_all(
         FLERR,
-        "Unknown method parameter for fix pimd/langevin. Only nmpimd and pimd are supported!");
+        fmt::format("Unknown method parameter for fix {}. Only nmpimd and pimd are supported!",
+                    style));
   }
 }
 
@@ -1560,7 +1778,7 @@ void FixPIMDLangevin::compute_tote()
 
 void FixPIMDLangevin::compute_t_prim()
 {
-  t_prim = 1.5 * atom->natoms * np * force->boltz * temp - total_spring_energy * inverse_np;
+  t_prim = 1.5 * group->count(igroup) * np * force->boltz * temp - total_spring_energy * inverse_np;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1568,7 +1786,7 @@ void FixPIMDLangevin::compute_t_prim()
 void FixPIMDLangevin::compute_t_vir()
 {
   t_vir = -0.5 * inverse_np * vir_;
-  t_cv = 1.5 * atom->natoms * force->boltz * temp - 0.5 * inverse_np * centroid_vir;
+  t_cv = 1.5 * group->count(igroup) * force->boltz * temp - 0.5 * inverse_np * centroid_vir;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1576,7 +1794,7 @@ void FixPIMDLangevin::compute_t_vir()
 void FixPIMDLangevin::compute_p_prim()
 {
   double inv_volume = 1.0 / (domain->xprd * domain->yprd * domain->zprd);
-  p_prim = atom->natoms * np * force->boltz * temp * inv_volume -
+  p_prim = group->count(igroup) * np * force->boltz * temp * inv_volume -
       1.0 / 1.5 * inv_volume * total_spring_energy;
   p_prim *= force->nktv2p;
 }
@@ -1597,7 +1815,8 @@ void FixPIMDLangevin::compute_p_cv()
   } else {
     error->universe_all(
         FLERR,
-        "Unknown method parameter for fix pimd/langevin. Only nmpimd and pimd are supported!");
+        fmt::format("Unknown method parameter for fix {}. Only nmpimd and pimd are supported!",
+                    style));
   }
 }
 
@@ -1663,7 +1882,7 @@ int FixPIMDLangevin::pack_restart_data(double *list)
 void FixPIMDLangevin::restart(char *buf)
 {
   int n = 0;
-  auto list = (double *) buf;
+  auto *list = (double *) buf;
   for (int i = 0; i < 6; i++) vw[i] = list[n++];
 }
 
@@ -1707,6 +1926,5 @@ double FixPIMDLangevin::compute_vector(int n)
       if (n == 16) return totenthalpy;
     }
   }
-
   return 0.0;
 }

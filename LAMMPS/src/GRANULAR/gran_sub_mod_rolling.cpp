@@ -30,7 +30,10 @@ static constexpr double EPSILON = 1e-10;
    Default rolling friction model
 ------------------------------------------------------------------------- */
 
-GranSubModRolling::GranSubModRolling(GranularModel *gm, LAMMPS *lmp) : GranSubMod(gm, lmp) {}
+GranSubModRolling::GranSubModRolling(GranularModel *gm, LAMMPS *lmp) : GranSubMod(gm, lmp)
+{
+  allow_synchronization = 0;
+}
 
 /* ----------------------------------------------------------------------
    No model
@@ -39,6 +42,7 @@ GranSubModRolling::GranSubModRolling(GranularModel *gm, LAMMPS *lmp) : GranSubMo
 GranSubModRollingNone::GranSubModRollingNone(GranularModel *gm, LAMMPS *lmp) :
     GranSubModRolling(gm, lmp)
 {
+  allow_synchronization = 1;
 }
 
 /* ----------------------------------------------------------------------
@@ -50,6 +54,7 @@ GranSubModRollingSDS::GranSubModRollingSDS(GranularModel *gm, LAMMPS *lmp) :
 {
   num_coeffs = 3;
   size_history = 3;
+  allow_synchronization = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -68,8 +73,19 @@ void GranSubModRollingSDS::coeffs_to_local()
 void GranSubModRollingSDS::calculate_forces()
 {
   int rhist0, rhist1, rhist2, frameupdate;
-  double Frcrit, rolldotn, rollmag, prjmag, magfr, hist_temp[3], scalefac, temp_array[3];
+  double Frcrit, rolldotn, rollmag, magfr, hist_temp[3], temp_array[3];
   double k_inv, magfr_inv;
+
+  double *nx = gm->nx;
+  double *nx_unrotated = gm->nx_unrotated;
+  double *vrl = gm->vrl;
+  double *fr = gm->fr;
+  double dt = gm->dt;
+  double *history = gm->history;
+  int history_update = gm->history_update;
+
+  double Fncrit = gm->normal_model->get_fncrit();
+  Frcrit = mu * Fncrit;
 
   rhist0 = history_index;
   rhist1 = rhist0 + 1;
@@ -77,54 +93,50 @@ void GranSubModRollingSDS::calculate_forces()
 
   Frcrit = mu * gm->normal_model->get_fncrit();
 
-  hist_temp[0] = gm->history[rhist0];
-  hist_temp[1] = gm->history[rhist1];
-  hist_temp[2] = gm->history[rhist2];
+  hist_temp[0] = history[rhist0];
+  hist_temp[1] = history[rhist1];
+  hist_temp[2] = history[rhist2];
 
-  if (gm->history_update) {
-    rolldotn = dot3(hist_temp, gm->nx);
+  if (history_update) {
+    rolldotn = dot3(hist_temp, nx);
 
     frameupdate = (fabs(rolldotn) * k) > (EPSILON * Frcrit);
-    if (frameupdate) {    // rotate into tangential plane
-      rollmag = len3(hist_temp);
-      // projection
-      scale3(rolldotn, gm->nx, temp_array);
-      sub3(hist_temp, temp_array, hist_temp);
+    if (frameupdate) rotate_rescale_vec(hist_temp, nx);
 
-      // also rescale to preserve magnitude
-      prjmag = len3(hist_temp);
-      if (prjmag > 0)
-        scalefac = rollmag / prjmag;
-      else
-        scalefac = 0;
-      scale3(scalefac, hist_temp);
-    }
-    scale3(gm->dt, gm->vrl, temp_array);
+    // update history at half-step
+    scale3(dt, vrl, temp_array);
     add3(hist_temp, temp_array, hist_temp);
+
+    // rotate into tangential plane at full-step for synchronized_verlet
+    if (gm->synchronized_verlet == 1) {
+      rolldotn = dot3(hist_temp, nx_unrotated);
+      frameupdate = (fabs(rolldotn) * k) > (EPSILON * Frcrit);
+      if (frameupdate) rotate_rescale_vec(hist_temp, nx_unrotated);
+    }
   }
 
-  scaleadd3(-k, hist_temp, -gamma, gm->vrl, gm->fr);
+  scaleadd3(-k, hist_temp, -gamma, vrl, fr);
 
   // rescale frictional displacements and forces if needed
-  magfr = len3(gm->fr);
+  magfr = len3(fr);
   if (magfr > Frcrit) {
     rollmag = len3(hist_temp);
     if (rollmag != 0.0) {
       k_inv = 1.0 / k;
       magfr_inv = 1.0 / magfr;
-      scale3(-Frcrit * k_inv * magfr_inv, gm->fr, hist_temp);
-      scale3(-gamma * k_inv, gm->vrl, temp_array);
+      scale3(-Frcrit * k_inv * magfr_inv, fr, hist_temp);
+      scale3(-gamma * k_inv, vrl, temp_array);
       add3(hist_temp, temp_array, hist_temp);
 
-      scale3(Frcrit * magfr_inv, gm->fr);
+      scale3(Frcrit * magfr_inv, fr);
     } else {
-      zero3(gm->fr);
+      zero3(fr);
     }
   }
 
-  if (gm->history_update) {
-    gm->history[rhist0] = hist_temp[0];
-    gm->history[rhist1] = hist_temp[1];
-    gm->history[rhist2] = hist_temp[2];
+  if (history_update) {
+    history[rhist0] = hist_temp[0];
+    history[rhist1] = hist_temp[1];
+    history[rhist2] = hist_temp[2];
   }
 }

@@ -38,7 +38,7 @@ class FixMomentumKokkos : public FixMomentum {
   FixMomentumKokkos(class LAMMPS *, int, char **);
   void end_of_step() override;
  private:
-    GroupKokkos<DeviceType> *groupKK;
+    GroupKokkos *groupKK;
 };
 
 }

@@ -35,7 +35,7 @@ static constexpr double BIG = 1.0e20;
 
 //----------------------------------------------------------------
 
-void abs_max(void *in, void *inout, int * /*len*/, MPI_Datatype * /*type*/)
+static void abs_max(void *in, void *inout, int * /*len*/, MPI_Datatype * /*type*/)
 {
   // r is the already reduced value, n is the new value
 
@@ -50,7 +50,7 @@ void abs_max(void *in, void *inout, int * /*len*/, MPI_Datatype * /*type*/)
   *(double *) inout = m;
 }
 
-void abs_min(void *in, void *inout, int * /*len*/, MPI_Datatype * /*type*/)
+static void abs_min(void *in, void *inout, int * /*len*/, MPI_Datatype * /*type*/)
 {
   // r is the already reduced value, n is the new value
 
@@ -79,33 +79,35 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
   } else if (strcmp(style, "reduce/region") == 0) {
     if (narg < 6) utils::missing_cmd_args(FLERR, "compute reduce/region", error);
     if (!domain->get_region_by_id(arg[3]))
-      error->all(FLERR, "Region {} for compute reduce/region does not exist", arg[3]);
+      error->all(FLERR, 3, "Region {} for compute reduce/region does not exist", arg[3]);
     idregion = utils::strdup(arg[3]);
     iarg = 4;
   }
 
-  if (strcmp(arg[iarg], "sum") == 0)
+  modestr = arg[iarg];
+
+  if (modestr == "sum")
     mode = SUM;
-  else if (strcmp(arg[iarg], "sumsq") == 0)
+  else if (modestr == "sumsq")
     mode = SUMSQ;
-  else if (strcmp(arg[iarg], "sumabs") == 0)
+  else if (modestr == "sumabs")
     mode = SUMABS;
-  else if (strcmp(arg[iarg], "min") == 0)
+  else if (modestr == "min")
     mode = MINN;
-  else if (strcmp(arg[iarg], "max") == 0)
+  else if (modestr == "max")
     mode = MAXX;
-  else if (strcmp(arg[iarg], "ave") == 0)
+  else if (modestr == "ave")
     mode = AVE;
-  else if (strcmp(arg[iarg], "avesq") == 0)
+  else if (modestr == "avesq")
     mode = AVESQ;
-  else if (strcmp(arg[iarg], "aveabs") == 0)
+  else if (modestr == "aveabs")
     mode = AVEABS;
-  else if (strcmp(arg[iarg], "maxabs") == 0)
+  else if (modestr == "maxabs")
     mode = MAXABS;
-  else if (strcmp(arg[iarg], "minabs") == 0)
+  else if (modestr == "minabs")
     mode = MINABS;
   else
-    error->all(FLERR, "Unknown compute {} mode: {}", style, arg[iarg]);
+    error->all(FLERR, iarg, "Unknown compute {} mode: {}", style, arg[iarg]);
   iarg++;
 
   if (mode == SUM || mode == SUMSQ || mode == SUMABS) {
@@ -124,9 +126,12 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
 
   // expand args if any have wildcard character "*"
 
+  int ioffset = iarg;
   int expand = 0;
   char **earg;
-  int nargnew = utils::expand_args(FLERR, narg - iarg, &arg[iarg], 1, earg, lmp);
+  char **oarg = arg;
+  int *amap = nullptr;
+  int nargnew = utils::expand_args(FLERR, narg - iarg, &arg[iarg], 1, earg, lmp, &amap);
 
   if (earg != &arg[iarg]) expand = 1;
   arg = earg;
@@ -140,6 +145,10 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
 
     val.id = "";
     val.val.c = nullptr;
+    if (expand)
+      val.iarg = amap[iarg] + ioffset;
+    else
+      val.iarg = iarg + ioffset;
 
     if (strcmp(arg[iarg], "x") == 0) {
       val.which = ArgInfo::X;
@@ -180,7 +189,7 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
       val.id = argi.get_name();
 
       if ((val.which == ArgInfo::UNKNOWN) || (argi.get_dim() > 1))
-        error->all(FLERR, "Illegal compute {} argument: {}", style, arg[iarg]);
+        error->all(FLERR, val.iarg, "Illegal compute {} argument: {}", style, arg[iarg]);
 
       if (val.which == ArgInfo::NONE) break;
     }
@@ -196,31 +205,43 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
   std::string mycmd = "compute ";
   mycmd += style;
 
+  // get argument offset if optional arguments are present
+  if (nvalues < nargnew) {
+    for (int i = 0; i < narg; ++i) {
+      if (strcmp(oarg[i], arg[nvalues]) == 0) ioffset = i - nvalues;
+    }
+  }
   for (int iarg = nvalues; iarg < nargnew; iarg++) {
+    int errptr = iarg + ioffset;
     if (strcmp(arg[iarg], "replace") == 0) {
-      if (iarg + 3 > narg) utils::missing_cmd_args(FLERR, mycmd + " replace", error);
+      if (iarg + 3 > nargnew) utils::missing_cmd_args(FLERR, mycmd + " replace", error);
       if (mode != MINN && mode != MAXX)
-        error->all(FLERR, "Compute {} replace requires min or max mode", style);
+        error->all(FLERR, errptr, "Compute {} replace requires min or max mode", style);
       int col1 = utils::inumeric(FLERR, arg[iarg + 1], false, lmp) - 1;
       int col2 = utils::inumeric(FLERR, arg[iarg + 2], false, lmp) - 1;
       if ((col1 < 0) || (col1 >= nvalues))
-        error->all(FLERR, "Invalid compute {} replace first column index {}", style, col1);
+        error->all(FLERR, errptr + 1, "Invalid compute {} replace first column index {}", style,
+                   col1);
       if ((col2 < 0) || (col2 >= nvalues))
-        error->all(FLERR, "Invalid compute {} replace second column index {}", style, col2);
-      if (col1 == col2) error->all(FLERR, "Compute {} replace columns must be different");
+        error->all(FLERR, errptr + 2, "Invalid compute {} replace second column index {}", style,
+                   col2);
+      if (col1 == col2) error->all(FLERR, errptr, "Compute {} replace columns must be different");
       if ((replace[col1] >= 0) || (replace[col2] >= 0))
-        error->all(FLERR, "Compute {} replace column already used for another replacement");
+        error->all(FLERR, errptr, "Compute {} replace column already used for another replacement");
       replace[col1] = col2;
       iarg += 2;
     } else if (strcmp(arg[iarg], "inputs") == 0) {
-      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, mycmd + " inputs", error);
+      if (iarg + 2 > nargnew) utils::missing_cmd_args(FLERR, mycmd + " inputs", error);
       if (strcmp(arg[iarg + 1], "peratom") == 0)
         input_mode = PERATOM;
       else if (strcmp(arg[iarg + 1], "local") == 0)
         input_mode = LOCAL;
-      iarg += 2;
+      else
+        error->all(FLERR, errptr + 1, "Unknown compute {} inputs argument: {}", style,
+                   arg[iarg + 1]);
+      iarg += 1;
     } else
-      error->all(FLERR, "Unknown compute {} keyword: {}", style, arg[iarg]);
+      error->all(FLERR, errptr, "Unknown compute {} keyword: {}", style, arg[iarg]);
   }
 
   // delete replace list if not set
@@ -238,78 +259,94 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
   if (expand) {
     for (int i = 0; i < nargnew; i++) delete[] earg[i];
     memory->sfree(earg);
+    memory->sfree(amap);
   }
 
   // setup and error check
 
   for (auto &val : values) {
     if (val.which == ArgInfo::X || val.which == ArgInfo::V || val.which == ArgInfo::F) {
-      if (input_mode == LOCAL) error->all(FLERR, "Compute {} inputs must be all local");
+      if (input_mode == LOCAL)
+        error->all(FLERR, Error::NOPOINTER, "Compute {} inputs must be all local");
 
     } else if (val.which == ArgInfo::COMPUTE) {
       val.val.c = modify->get_compute_by_id(val.id);
       if (!val.val.c)
-        error->all(FLERR, "Compute ID {} for compute {} does not exist", val.id, style);
+        error->all(FLERR, val.iarg, "Compute ID {} for compute {} does not exist", val.id, style);
 
       if (input_mode == PERATOM) {
         if (!val.val.c->peratom_flag)
-          error->all(FLERR, "Compute {} compute {} does not calculate per-atom values", style,
-                     val.id);
+          error->all(FLERR, val.iarg, "Compute {} compute {} does not calculate per-atom values",
+                     style, val.id);
         if (val.argindex == 0 && val.val.c->size_peratom_cols != 0)
-          error->all(FLERR, "Compute {} compute {} does not calculate a per-atom vector", style,
-                     val.id);
+          error->all(FLERR, val.iarg, "Compute {} compute {} does not calculate a per-atom vector",
+                     style, val.id);
         if (val.argindex && val.val.c->size_peratom_cols == 0)
-          error->all(FLERR, "Compute {} compute {} does not calculate a per-atom array", style,
-                     val.id);
+          error->all(FLERR, val.iarg, "Compute {} compute {} does not calculate a per-atom array",
+                     style, val.id);
         if (val.argindex && val.argindex > val.val.c->size_peratom_cols)
-          error->all(FLERR, "Compute {} compute {} array is accessed out-of-range", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} compute {} array is accessed out-of-range{}",
+                     style, val.id, utils::errorurl(20));
 
       } else if (input_mode == LOCAL) {
         if (!val.val.c->local_flag)
-          error->all(FLERR, "Compute {} compute {} does not calculate local values", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} compute {} does not calculate local values",
+                     style, val.id);
         if (val.argindex == 0 && val.val.c->size_local_cols != 0)
-          error->all(FLERR, "Compute {} compute {} does not calculate a local vector", style,
-                     val.id);
+          error->all(FLERR, val.iarg, "Compute {} compute {} does not calculate a local vector",
+                     style, val.id);
         if (val.argindex && val.val.c->size_local_cols == 0)
-          error->all(FLERR, "Compute {} compute {} does not calculate a local array", style,
-                     val.id);
+          error->all(FLERR, val.iarg, "Compute {} compute {} does not calculate a local array",
+                     style, val.id);
         if (val.argindex && val.argindex > val.val.c->size_local_cols)
-          error->all(FLERR, "Compute {} compute {} array is accessed out-of-range", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} compute {} array is accessed out-of-range{}",
+                     style, val.id, utils::errorurl(20));
       }
 
     } else if (val.which == ArgInfo::FIX) {
       val.val.f = modify->get_fix_by_id(val.id);
-      if (!val.val.f) error->all(FLERR, "Fix ID {} for compute {} does not exist", val.id, style);
+      if (!val.val.f)
+        error->all(FLERR, val.iarg, "Fix ID {} for compute {} does not exist", val.id, style);
 
       if (input_mode == PERATOM) {
         if (!val.val.f->peratom_flag)
-          error->all(FLERR, "Compute {} fix {} does not calculate per-atom values", style, val.id);
-        if (val.argindex == 0 && (val.val.f->size_peratom_cols != 0))
-          error->all(FLERR, "Compute {} fix {} does not calculate a per-atom vector", style,
+          error->all(FLERR, val.iarg, "Compute {} fix {} does not calculate per-atom values", style,
                      val.id);
+        if (val.argindex == 0 && (val.val.f->size_peratom_cols != 0))
+          error->all(FLERR, val.iarg, "Compute {} fix {} does not calculate a per-atom vector",
+                     style, val.id);
         if (val.argindex && (val.val.f->size_peratom_cols == 0))
-          error->all(FLERR, "Compute {} fix {} does not calculate a per-atom array", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} fix {} does not calculate a per-atom array",
+                     style, val.id);
         if (val.argindex && (val.argindex > val.val.f->size_peratom_cols))
-          error->all(FLERR, "Compute {} fix {} array is accessed out-of-range", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} fix {} array is accessed out-of-range{}", style,
+                     val.id, utils::errorurl(20));
 
       } else if (input_mode == LOCAL) {
         if (!val.val.f->local_flag)
-          error->all(FLERR, "Compute {} fix {} does not calculate local values", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} fix {} does not calculate local values", style,
+                     val.id);
         if (val.argindex == 0 && (val.val.f->size_local_cols != 0))
-          error->all(FLERR, "Compute {} fix {} does not calculate a local vector", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} fix {} does not calculate a local vector", style,
+                     val.id);
         if (val.argindex && (val.val.f->size_local_cols == 0))
-          error->all(FLERR, "Compute {} fix {} does not calculate a local array", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} fix {} does not calculate a local array", style,
+                     val.id);
         if (val.argindex && (val.argindex > val.val.f->size_local_cols))
-          error->all(FLERR, "Compute {} fix {} array is accessed out-of-range", style, val.id);
+          error->all(FLERR, val.iarg, "Compute {} fix {} array is accessed out-of-range{}", style,
+                     val.id, utils::errorurl(20));
       }
 
     } else if (val.which == ArgInfo::VARIABLE) {
-      if (input_mode == LOCAL) error->all(FLERR, "Compute {} inputs must be all local");
+      if (input_mode == LOCAL)
+        error->all(FLERR, Error::NOPOINTER, "Compute {} inputs must be all local");
       val.val.v = input->variable->find(val.id.c_str());
       if (val.val.v < 0)
-        error->all(FLERR, "Variable name {} for compute {} does not exist", val.id, style);
+        error->all(FLERR, val.iarg, "Variable name {} for compute {} does not exist", val.id,
+                   style);
       if (input->variable->atomstyle(val.val.v) == 0)
-        error->all(FLERR, "Compute {} variable {} is not atom-style variable", style, val.id);
+        error->all(FLERR, val.iarg, "Compute {} variable {} is not atom-style variable", style,
+                   val.id);
     }
   }
 
@@ -337,6 +374,7 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
   }
 
   maxatom = 0;
+  thermo_modify_colname = 1;
   varatom = nullptr;
 }
 
@@ -365,16 +403,20 @@ void ComputeReduce::init()
     if (val.which == ArgInfo::COMPUTE) {
       val.val.c = modify->get_compute_by_id(val.id);
       if (!val.val.c)
-        error->all(FLERR, "Compute ID {} for compute {} does not exist", val.id, style);
+        error->all(FLERR, Error::NOLASTLINE, "Compute ID {} for compute {} does not exist", val.id,
+                   style);
 
     } else if (val.which == ArgInfo::FIX) {
       val.val.f = modify->get_fix_by_id(val.id);
-      if (!val.val.f) error->all(FLERR, "Fix ID {} for compute {} does not exist", val.id, style);
+      if (!val.val.f)
+        error->all(FLERR, Error::NOLASTLINE, "Fix ID {} for compute {} does not exist", val.id,
+                   style);
 
     } else if (val.which == ArgInfo::VARIABLE) {
       val.val.v = input->variable->find(val.id.c_str());
       if (val.val.v < 0)
-        error->all(FLERR, "Variable name {} for compute {} does not exist", val.id, style);
+        error->all(FLERR, Error::NOLASTLINE, "Variable name {} for compute {} does not exist",
+                   val.id, style);
     }
   }
 
@@ -382,7 +424,9 @@ void ComputeReduce::init()
 
   if (idregion) {
     region = domain->get_region_by_id(idregion);
-    if (!region) error->all(FLERR, "Region {} for compute reduce/region does not exist", idregion);
+    if (!region)
+      error->all(FLERR, Error::NOLASTLINE, "Region {} for compute reduce/region does not exist",
+                 idregion);
   }
 }
 
@@ -586,7 +630,9 @@ double ComputeReduce::compute_one(int m, int flag)
 
   } else if (val.which == ArgInfo::FIX) {
     if (update->ntimestep % val.val.f->peratom_freq)
-      error->all(FLERR, "Fix {} used in compute {} not computed at compatible time", val.id, style);
+      error->all(FLERR, Error::NOLASTLINE,
+                 "Fix {} used in compute {} not computed at compatible time{}", val.id, style,
+                 utils::errorurl(7));
 
     if (input_mode == PERATOM) {
       if (aidx == 0) {
@@ -643,6 +689,26 @@ double ComputeReduce::compute_one(int m, int flag)
   }
 
   return one;
+}
+
+/* ---------------------------------------------------------------------- */
+
+std::string ComputeReduce::get_thermo_colname(int m) {
+  if (replace && replace[m] >= 0) {
+    auto &val1 = values[m];
+    auto &val2 = values[replace[m]];
+    std::string val1string = fmt::format("c_{}", val1.id);
+    if (val1.argindex) val1string += fmt::format("[{}]", val1.argindex);
+    std::string val2string = fmt::format("c_{}", val2.id);
+    if (val2.argindex) val2string += fmt::format("[{}]", val2.argindex);
+    return fmt::format("c_{}:{}<-{}({})", id, val1string, modestr, val2string);
+  }
+
+  if (m == -1) m = 0; // scalar
+  auto &val = values[m];
+  std::string valstring = fmt::format("c_{}", val.id);
+  if (val.argindex) valstring += fmt::format("[{}]", val.argindex);
+  return fmt::format("c_{}:{}({})", id, modestr, valstring);
 }
 
 /* ---------------------------------------------------------------------- */

@@ -1,21 +1,18 @@
-//@HEADER
-// ************************************************************************
-//
-//                        Kokkos v. 4.0
-//       Copyright (2022) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
-//
-// Under the terms of Contract DE-NA0003525 with NTESS,
-// the U.S. Government retains certain rights in this software.
-//
-// Part of Kokkos, under the Apache License v2.0 with LLVM Exceptions.
-// See https://kokkos.org/LICENSE for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//@HEADER
+// SPDX-FileCopyrightText: Copyright Contributors to the Kokkos project
 
+#include <Kokkos_Macros.hpp>
+#ifdef KOKKOS_ENABLE_EXPERIMENTAL_CXX20_MODULES
+import kokkos.core;
+#else
 #include <Kokkos_Core.hpp>
+#endif
 #include <Kokkos_Pair.hpp>
+#include <Kokkos_TypeInfo.hpp>
+
+#include <desul/atomics.hpp>
+
+#include <iostream>
 
 namespace TestAtomicOperations {
 
@@ -151,8 +148,7 @@ struct ModAtomicTest {
   template <class T>
   KOKKOS_FUNCTION static auto atomic_op(T* ptr_op, T* ptr_fetch_op,
                                         T* ptr_op_fetch, T update) {
-    // Kokkos::atomic_mod(ptr_op, update);
-    (void)Kokkos::atomic_fetch_mod(ptr_op, update);
+    Kokkos::atomic_mod(ptr_op, update);
     T old_val = Kokkos::atomic_fetch_mod(ptr_fetch_op, update);
     T new_val = Kokkos::atomic_mod_fetch(ptr_op_fetch, update);
     return Kokkos::pair<T, T>(old_val, new_val);
@@ -200,8 +196,7 @@ struct XorAtomicTest {
   template <class T>
   KOKKOS_FUNCTION static auto atomic_op(T* ptr_op, T* ptr_fetch_op,
                                         T* ptr_op_fetch, T update) {
-    // Kokkos::atomic_xor(ptr_op, update);
-    (void)Kokkos::atomic_fetch_xor(ptr_op, update);
+    Kokkos::atomic_xor(ptr_op, update);
     T old_val = Kokkos::atomic_fetch_xor(ptr_fetch_op, update);
     T new_val = Kokkos::atomic_xor_fetch(ptr_op_fetch, update);
     return Kokkos::pair<T, T>(old_val, new_val);
@@ -217,8 +212,7 @@ struct NandAtomicTest {
   template <class T>
   KOKKOS_FUNCTION static auto atomic_op(T* ptr_op, T* ptr_fetch_op,
                                         T* ptr_op_fetch, T update) {
-    // Kokkos::atomic_nand(ptr_op, update);
-    (void)Kokkos::atomic_fetch_nand(ptr_op, update);
+    Kokkos::atomic_nand(ptr_op, update);
     T old_val = Kokkos::atomic_fetch_nand(ptr_fetch_op, update);
     T new_val = Kokkos::atomic_nand_fetch(ptr_op_fetch, update);
     return Kokkos::pair<T, T>(old_val, new_val);
@@ -234,8 +228,7 @@ struct LShiftAtomicTest {
   template <class T>
   KOKKOS_FUNCTION static auto atomic_op(T* ptr_op, T* ptr_fetch_op,
                                         T* ptr_op_fetch, T update) {
-    // Kokkos::atomic_lshift(ptr_op, update);
-    (void)Kokkos::atomic_fetch_lshift(ptr_op, update);
+    Kokkos::atomic_lshift(ptr_op, update);
     T old_val = Kokkos::atomic_fetch_lshift(ptr_fetch_op, update);
     T new_val = Kokkos::atomic_lshift_fetch(ptr_op_fetch, update);
     return Kokkos::pair<T, T>(old_val, new_val);
@@ -251,8 +244,7 @@ struct RShiftAtomicTest {
   template <class T>
   KOKKOS_FUNCTION static auto atomic_op(T* ptr_op, T* ptr_fetch_op,
                                         T* ptr_op_fetch, T update) {
-    // Kokkos::atomic_rshift(ptr_op, update); not implemented
-    (void)Kokkos::atomic_fetch_rshift(ptr_op, update);
+    Kokkos::atomic_rshift(ptr_op, update);
     T old_val = Kokkos::atomic_fetch_rshift(ptr_fetch_op, update);
     T new_val = Kokkos::atomic_rshift_fetch(ptr_op_fetch, update);
     return Kokkos::pair<T, T>(old_val, new_val);
@@ -351,19 +343,22 @@ bool atomic_op_test(T old_val, T update) {
       },
       result);
   if ((result & 1) != 0)
-    printf("atomic_%s failed with type %s\n", Op::name(), typeid(T).name());
+    std::cerr << "atomic_" << Op::name() << " failed with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
   if ((result & 2) != 0)
-    printf("atomic_fetch_%s failed with type %s\n", Op::name(),
-           typeid(T).name());
+    std::cerr << "atomic_fetch_" << Op::name() << " failed with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
   if ((result & 4) != 0)
-    printf("atomic_%s_fetch failed with type %s\n", Op::name(),
-           typeid(T).name());
+    std::cerr << "atomic_" << Op::name() << "_fetch failed with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
   if ((result & 8) != 0)
-    printf("atomic_fetch_%s did not return old value with type %s\n",
-           Op::name(), typeid(T).name());
+    std::cerr << "atomic_fetch_" << Op::name()
+              << " did not return old value with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
   if ((result & 16) != 0)
-    printf("atomic_%s_fetch did not return updated value with type %s\n",
-           Op::name(), typeid(T).name());
+    std::cerr << "atomic_" << Op::name() << "_fetch"
+              << " did not return updated value with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
 
   return result == 0;
 }
@@ -408,19 +403,22 @@ bool atomic_op_test_rel(T old_val, T update) {
       },
       result);
   if ((result & 1) != 0)
-    printf("atomic_%s failed with type %s\n", Op::name(), typeid(T).name());
+    std::cerr << "atomic_" << Op::name() << " failed with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
   if ((result & 2) != 0)
-    printf("atomic_fetch_%s failed with type %s\n", Op::name(),
-           typeid(T).name());
+    std::cerr << "atomic_fetch_" << Op::name() << " failed with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
   if ((result & 4) != 0)
-    printf("atomic_%s_fetch failed with type %s\n", Op::name(),
-           typeid(T).name());
+    std::cerr << "atomic_" << Op::name() << "_fetch failed with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
   if ((result & 8) != 0)
-    printf("atomic_fetch_%s did not return old value with type %s\n",
-           Op::name(), typeid(T).name());
+    std::cerr << "atomic_fetch_" << Op::name()
+              << " did not return old value with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
   if ((result & 16) != 0)
-    printf("atomic_%s_fetch did not return updated value with type %s\n",
-           Op::name(), typeid(T).name());
+    std::cerr << "atomic_" << Op::name() << "_fetch"
+              << " did not return updated value with type "
+              << Kokkos::Impl::TypeInfo<T>::name() << '\n';
 
   return result == 0;
 }
@@ -475,6 +473,7 @@ bool AtomicOperationsTestIntegralType(int old_val_in, int update_in, int test) {
       return atomic_op_test<DecAtomicTest, T, ExecSpace>(old_val, update);
     case 15:
       return atomic_op_test<LoadStoreAtomicTest, T, ExecSpace>(old_val, update);
+    default: Kokkos::abort("unreachable");
   }
 
   return true;
@@ -490,6 +489,7 @@ bool AtomicOperationsTestUnsignedIntegralType(int old_val_in, int update_in,
       return atomic_op_test<IncModAtomicTest, T, ExecSpace>(old_val, update);
     case 2:
       return atomic_op_test<DecModAtomicTest, T, ExecSpace>(old_val, update);
+    default: Kokkos::abort("unreachable");
   }
 
   return true;
@@ -522,6 +522,7 @@ bool AtomicOperationsTestNonIntegralType(int old_val_in, int update_in,
 #endif
     case 6:
       return atomic_op_test<LoadStoreAtomicTest, T, ExecSpace>(old_val, update);
+    default: Kokkos::abort("unreachable");
   }
 
   return true;

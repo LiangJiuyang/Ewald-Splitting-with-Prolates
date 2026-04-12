@@ -304,8 +304,8 @@ output.  This option can only be used with the *ave running* setting.
 
 The *format* keyword sets the numeric format of each value when it is
 printed to a file via the *file* keyword.  Note that all values are
-floating point quantities.  The default format is %g.  You can specify
-a higher precision if desired (e.g., %20.16g).
+floating point quantities.  The default format is " %g".  You can specify
+a higher precision if desired (e.g., " %20.16g").
 
 The *title1* and *title2* and *title3* keywords allow specification of
 the strings that will be printed as the first 2 or 3 lines of the
@@ -345,9 +345,7 @@ Restart, fix_modify, output, run start/stop, minimize info
 .. versionadded:: 4May2022
 
 No information about this fix is written to :doc:`binary restart files
-<restart>`.  The :doc:`fix_modify colname <fix_modify>` option can be
-used to change the name of the column in the output file.  When writing
-a YAML format file this name will be in the list of keywords.
+<restart>`.
 
 This fix produces a global scalar or global vector or global array
 which can be accessed by various :doc:`output commands <Howto_output>`.
@@ -380,7 +378,7 @@ the :doc:`run <run>` command.  This fix is not invoked during
 
 Restrictions
 """"""""""""
- none
+none
 
 Related commands
 """"""""""""""""

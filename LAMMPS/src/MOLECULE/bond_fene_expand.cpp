@@ -23,6 +23,7 @@
 #include "update.h"
 
 #include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 using MathConst::MY_CUBEROOT2;
@@ -147,7 +148,7 @@ void BondFENEExpand::allocate()
 
 void BondFENEExpand::coeff(int narg, char **arg)
 {
-  if (narg != 6) error->all(FLERR, "Incorrect args for bond coefficients");
+  if (narg != 6) error->all(FLERR, "Incorrect args for bond coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
   int ilo, ihi;
@@ -170,7 +171,7 @@ void BondFENEExpand::coeff(int narg, char **arg)
     count++;
   }
 
-  if (count == 0) error->all(FLERR, "Incorrect args for bond coefficients");
+  if (count == 0) error->all(FLERR, "Incorrect args for bond coefficients" + utils::errorurl(21));
 }
 
 /* ----------------------------------------------------------------------

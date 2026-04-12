@@ -20,9 +20,9 @@ To run with 4 threads, you can type this:
    lmp -in in.lj.lmp -k on t 4 -sf kk
 
 Alternately, you can also install a package with LAMMPS-GUI included and
-open the LAMMPS-GUI app (the package includes the command line version
+open the LAMMPS-GUI app (the package includes the command-line version
 of LAMMPS as well) and open the input file in the GUI and run it from
-there.  For details on LAMMPS-GUI, see :doc:`Howto_lammps_gui`.
+there.  For details on LAMMPS-GUI, see https://lammps-gui.lammps.org/
 
 ----------
 
@@ -64,9 +64,9 @@ with MPI using something like:
 
 MPI parallelization will work for *all* functionality in LAMMPS and in
 many cases the MPI parallelization is more efficient than
-multi-threading since LAMMPS was designed from ground up for MPI
+multi-threading since LAMMPS was designed from the ground up for MPI
 parallelization using domain decomposition.  Multi-threading is only
 available for selected styles and implemented on top of the MPI
 parallelization.  Multi-threading is most useful for systems with large
-load imbalances when using domain decomposition and a smaller number
-of threads (<= 8).
+load imbalances when using domain decomposition and a smaller number of
+threads (<= 8).

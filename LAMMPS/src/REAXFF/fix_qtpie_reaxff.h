@@ -69,6 +69,7 @@ class FixQtpieReaxFF : public Fix {
   double **s_hist, **t_hist;
   int nprev;
 
+  // NOLINTBEGIN
   typedef struct {
     int n, m;
     int *firstnbr;
@@ -76,6 +77,7 @@ class FixQtpieReaxFF : public Fix {
     int *jlist;
     double *val;
   } sparse_matrix;
+  // NOLINTEND
 
   sparse_matrix H;
   double *Hdia_inv;
@@ -90,11 +92,15 @@ class FixQtpieReaxFF : public Fix {
   char *pertype_option;    // argument to determine how per-type info is obtained
   char *gauss_file;        // input file for gaussian orbital exponents
   double *gauss_exp;       // array of gaussian orbital exponents for each atom type
-  double dist_cutoff;      // separation distance beyond which to neglect overlap integrals
+  double **prefactor;      // factor used in computation of overlap integrals
+  double **expfactor;      // factor used in exponential term of overlap integrals
+  double dist_cutoff_sq;   // separation distance squared beyond which overlap integrals are neglected
+  double scale;            // scaling factor for electric polarization effects
 
   void pertype_parameters(char *);
   void init_shielding();
   void init_taper();
+  void init_olap();
   void allocate_storage();
   void deallocate_storage();
   void reallocate_storage();
@@ -128,9 +134,8 @@ class FixQtpieReaxFF : public Fix {
   void vector_sum(double *, double, double *, double, double *, int);
   void vector_add(double *, double, double *, int);
 
-  void calc_chi_eff();
+  virtual void calc_chi_eff();
   double find_min_exp(const double*, const int);
-  double distance(const double*, const double*);
 
   int matvecs_s, matvecs_t;    // Iteration count for each system
 };

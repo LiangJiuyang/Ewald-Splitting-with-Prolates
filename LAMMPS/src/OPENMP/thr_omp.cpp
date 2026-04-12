@@ -47,7 +47,8 @@ ThrOMP::ThrOMP(LAMMPS *ptr, int style) : lmp(ptr), fix(nullptr), thr_style(style
 {
   // register fix omp with this class
   fix = static_cast<FixOMP *>(lmp->modify->get_fix_by_id("package_omp"));
-  if (!fix) lmp->error->all(FLERR, "The 'package omp' command is required for /omp styles");
+  if (!fix) lmp->error->all(FLERR, Error::NOLASTLINE,
+                            "The 'package omp' command is required for /omp styles");
 #if defined(_OPENMP)
   omp_set_num_threads(lmp->comm->nthreads);
 #endif
@@ -210,7 +211,7 @@ void ThrOMP::reduce_thr(void *style, const int eflag, const int vflag,
     }
 
     if (evflag) {
-      auto  const pair = (Pair *)style;
+      auto *const   pair = (Pair *)style;
 
 #if defined(_OPENMP)
 #pragma omp critical

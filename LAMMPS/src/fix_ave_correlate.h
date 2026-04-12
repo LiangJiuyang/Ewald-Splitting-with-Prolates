@@ -21,6 +21,7 @@ FixStyle(ave/correlate,FixAveCorrelate);
 #define LMP_FIX_AVE_CORRELATE_H
 
 #include "fix.h"
+#include "safe_pointers.h"
 
 namespace LAMMPS_NS {
 
@@ -38,6 +39,7 @@ class FixAveCorrelate : public Fix {
   struct value_t {
     int which;         // type of data: COMPUTE, FIX, VARIABLE
     int argindex;      // 1-based index if data is vector, else 0
+    int iarg;          // argument index in original argument list
     std::string id;    // compute/fix/variable ID
     union {
       class Compute *c;
@@ -49,7 +51,7 @@ class FixAveCorrelate : public Fix {
 
   int nvalues, nrepeat, nfreq;
   bigint nvalid, nvalid_last;
-  FILE *fp;
+  SafeFilePtr fp;
 
   int type, ave, startstep, overwrite;
   double prefactor;

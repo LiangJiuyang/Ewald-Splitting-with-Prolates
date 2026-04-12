@@ -104,7 +104,7 @@ int dhseqr_(char *job, char *compz, integer *n, integer *ilo, integer *ihi, doub
         i__2[1] = 1, a__1[1] = compz;
         s_lmp_cat(ch__1, a__1, i__2, &c__2, (ftnlen)2);
         nmin = ilaenv_(&c__12, (char *)"DHSEQR", ch__1, n, ilo, ihi, lwork, (ftnlen)6, (ftnlen)2);
-        nmin = max(11, nmin);
+        nmin = max(15, nmin);
         if (*n > nmin) {
             dlaqr0_(&wantt, &wantz, n, ilo, ihi, &h__[h_offset], ldh, &wr[1], &wi[1], ilo, ihi,
                     &z__[z_offset], ldz, &work[1], lwork, info);

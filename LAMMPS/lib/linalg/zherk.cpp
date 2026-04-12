@@ -249,12 +249,11 @@ int zherk_(char *uplo, char *trans, integer *n, integer *k, doublereal *alpha, d
                 rtemp = 0.;
                 i__2 = *k;
                 for (l = 1; l <= i__2; ++l) {
-                    d_lmp_cnjg(&z__3, &a[l + j * a_dim1]);
+                    d_lmp_cnjg(&z__2, &a[l + j * a_dim1]);
                     i__3 = l + j * a_dim1;
-                    z__2.r = z__3.r * a[i__3].r - z__3.i * a[i__3].i,
-                    z__2.i = z__3.r * a[i__3].i + z__3.i * a[i__3].r;
-                    z__1.r = rtemp + z__2.r, z__1.i = z__2.i;
-                    rtemp = z__1.r;
+                    z__1.r = z__2.r * a[i__3].r - z__2.i * a[i__3].i,
+                    z__1.i = z__2.r * a[i__3].i + z__2.i * a[i__3].r;
+                    rtemp += z__1.r;
                 }
                 if (*beta == 0.) {
                     i__2 = j + j * c_dim1;
@@ -273,12 +272,11 @@ int zherk_(char *uplo, char *trans, integer *n, integer *k, doublereal *alpha, d
                 rtemp = 0.;
                 i__2 = *k;
                 for (l = 1; l <= i__2; ++l) {
-                    d_lmp_cnjg(&z__3, &a[l + j * a_dim1]);
+                    d_lmp_cnjg(&z__2, &a[l + j * a_dim1]);
                     i__3 = l + j * a_dim1;
-                    z__2.r = z__3.r * a[i__3].r - z__3.i * a[i__3].i,
-                    z__2.i = z__3.r * a[i__3].i + z__3.i * a[i__3].r;
-                    z__1.r = rtemp + z__2.r, z__1.i = z__2.i;
-                    rtemp = z__1.r;
+                    z__1.r = z__2.r * a[i__3].r - z__2.i * a[i__3].i,
+                    z__1.i = z__2.r * a[i__3].i + z__2.i * a[i__3].r;
+                    rtemp += z__1.r;
                 }
                 if (*beta == 0.) {
                     i__2 = j + j * c_dim1;

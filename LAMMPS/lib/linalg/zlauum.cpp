@@ -55,20 +55,18 @@ int zlauum_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
                 i__3 = nb, i__4 = *n - i__ + 1;
                 ib = min(i__3, i__4);
                 i__3 = i__ - 1;
-                ztrmm_((char *)"Right", (char *)"Upper", (char *)"Conjugate transpose", (char *)"Non-unit", &i__3, &ib, &c_b1,
-                       &a[i__ + i__ * a_dim1], lda, &a[i__ * a_dim1 + 1], lda, (ftnlen)5, (ftnlen)5,
-                       (ftnlen)19, (ftnlen)8);
-                zlauu2_((char *)"Upper", &ib, &a[i__ + i__ * a_dim1], lda, info, (ftnlen)5);
+                ztrmm_((char *)"R", (char *)"U", (char *)"C", (char *)"N", &i__3, &ib, &c_b1, &a[i__ + i__ * a_dim1], lda,
+                       &a[i__ * a_dim1 + 1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
+                zlauu2_((char *)"U", &ib, &a[i__ + i__ * a_dim1], lda, info, (ftnlen)1);
                 if (i__ + ib <= *n) {
                     i__3 = i__ - 1;
                     i__4 = *n - i__ - ib + 1;
-                    zgemm_((char *)"No transpose", (char *)"Conjugate transpose", &i__3, &ib, &i__4, &c_b1,
-                           &a[(i__ + ib) * a_dim1 + 1], lda, &a[i__ + (i__ + ib) * a_dim1], lda,
-                           &c_b1, &a[i__ * a_dim1 + 1], lda, (ftnlen)12, (ftnlen)19);
+                    zgemm_((char *)"N", (char *)"C", &i__3, &ib, &i__4, &c_b1, &a[(i__ + ib) * a_dim1 + 1], lda,
+                           &a[i__ + (i__ + ib) * a_dim1], lda, &c_b1, &a[i__ * a_dim1 + 1], lda,
+                           (ftnlen)1, (ftnlen)1);
                     i__3 = *n - i__ - ib + 1;
-                    zherk_((char *)"Upper", (char *)"No transpose", &ib, &i__3, &c_b21,
-                           &a[i__ + (i__ + ib) * a_dim1], lda, &c_b21, &a[i__ + i__ * a_dim1], lda,
-                           (ftnlen)5, (ftnlen)12);
+                    zherk_((char *)"U", (char *)"N", &ib, &i__3, &c_b21, &a[i__ + (i__ + ib) * a_dim1], lda, &c_b21,
+                           &a[i__ + i__ * a_dim1], lda, (ftnlen)1, (ftnlen)1);
                 }
             }
         } else {
@@ -78,20 +76,18 @@ int zlauum_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
                 i__3 = nb, i__4 = *n - i__ + 1;
                 ib = min(i__3, i__4);
                 i__3 = i__ - 1;
-                ztrmm_((char *)"Left", (char *)"Lower", (char *)"Conjugate transpose", (char *)"Non-unit", &ib, &i__3, &c_b1,
-                       &a[i__ + i__ * a_dim1], lda, &a[i__ + a_dim1], lda, (ftnlen)4, (ftnlen)5,
-                       (ftnlen)19, (ftnlen)8);
-                zlauu2_((char *)"Lower", &ib, &a[i__ + i__ * a_dim1], lda, info, (ftnlen)5);
+                ztrmm_((char *)"L", (char *)"L", (char *)"C", (char *)"N", &ib, &i__3, &c_b1, &a[i__ + i__ * a_dim1], lda,
+                       &a[i__ + a_dim1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
+                zlauu2_((char *)"L", &ib, &a[i__ + i__ * a_dim1], lda, info, (ftnlen)1);
                 if (i__ + ib <= *n) {
                     i__3 = i__ - 1;
                     i__4 = *n - i__ - ib + 1;
-                    zgemm_((char *)"Conjugate transpose", (char *)"No transpose", &ib, &i__3, &i__4, &c_b1,
-                           &a[i__ + ib + i__ * a_dim1], lda, &a[i__ + ib + a_dim1], lda, &c_b1,
-                           &a[i__ + a_dim1], lda, (ftnlen)19, (ftnlen)12);
+                    zgemm_((char *)"C", (char *)"N", &ib, &i__3, &i__4, &c_b1, &a[i__ + ib + i__ * a_dim1], lda,
+                           &a[i__ + ib + a_dim1], lda, &c_b1, &a[i__ + a_dim1], lda, (ftnlen)1,
+                           (ftnlen)1);
                     i__3 = *n - i__ - ib + 1;
-                    zherk_((char *)"Lower", (char *)"Conjugate transpose", &ib, &i__3, &c_b21,
-                           &a[i__ + ib + i__ * a_dim1], lda, &c_b21, &a[i__ + i__ * a_dim1], lda,
-                           (ftnlen)5, (ftnlen)19);
+                    zherk_((char *)"L", (char *)"C", &ib, &i__3, &c_b21, &a[i__ + ib + i__ * a_dim1], lda, &c_b21,
+                           &a[i__ + i__ * a_dim1], lda, (ftnlen)1, (ftnlen)1);
                 }
             }
         }

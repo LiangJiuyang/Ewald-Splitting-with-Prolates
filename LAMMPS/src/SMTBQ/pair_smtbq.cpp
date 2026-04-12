@@ -47,6 +47,7 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "math_const.h"
 #include "math_extra.h"
 #include "math_special.h"
@@ -306,7 +307,9 @@ void PairSMTBQ::init_style()
 
 double PairSMTBQ::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
   return cutmax;
 }
 
@@ -3509,6 +3512,7 @@ void PairSMTBQ::add_pages(int howmany)
 }
 
 /* ---------------------------------------------------------------------- */
+// NOLINTBEGIN
 
 void PairSMTBQ::CheckEnergyVSForce()
 {
@@ -3570,7 +3574,6 @@ void PairSMTBQ::CheckEnergyVSForce()
           coord[j]=3.5;
           NameFile=(const char *)"energyandForceOxOxUnderOverCoord.txt";
         }
-
 
       ofstream fichierOxOx(NameFile, ios::out | ios::trunc) ;
 
@@ -4009,6 +4012,7 @@ void PairSMTBQ::css(double &s, double nn1, double nn2, double alpha, double beta
   memory->destroy(a);
   memory->destroy(b);
 }
+// NOLINTEND
 /* -------------------------------------------------------------------------------
    coeffs
    ------------------------------------------------------------------------------- */

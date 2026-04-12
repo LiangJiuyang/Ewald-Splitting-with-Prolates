@@ -36,7 +36,7 @@ FixMomentumKokkos<DeviceType>::FixMomentumKokkos(LAMMPS *lmp, int narg, char **a
 {
   kokkosable = 1;
   atomKK = (AtomKokkos *) atom;
-  groupKK = (GroupKokkos<DeviceType> *)group;
+  groupKK = (GroupKokkos *)group;
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
   datamask_read = EMPTY_MASK;
   datamask_modify = EMPTY_MASK;
@@ -50,7 +50,7 @@ static double get_kinetic_energy(
     MPI_Comm world,
     int groupbit,
     int nlocal,
-    typename ArrayTypes<DeviceType>::t_v_array_randomread v,
+    typename ArrayTypes<DeviceType>::t_kkfloat_1d_3_randomread v,
     typename ArrayTypes<DeviceType>::t_int_1d_randomread mask)
 {
   using AT = ArrayTypes<DeviceType>;
@@ -58,7 +58,7 @@ static double get_kinetic_energy(
   double ke=0.0;
   if (atomKK->rmass) {
     atomKK->sync(execution_space, RMASS_MASK);
-    typename AT::t_float_1d_randomread rmass = atomKK->k_rmass.view<DeviceType>();
+    typename AT::t_kkfloat_1d_randomread rmass = atomKK->k_rmass.view<DeviceType>();
     Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal),
      LAMMPS_LAMBDA(int i, double& update) {
       if (mask(i) & groupbit)
@@ -69,7 +69,7 @@ static double get_kinetic_energy(
     // D.I. : why is there no MASS_MASK ?
     atomKK->sync(execution_space, TYPE_MASK);
     typename AT::t_int_1d_randomread type = atomKK->k_type.view<DeviceType>();
-    typename AT::t_float_1d_randomread mass = atomKK->k_mass.view<DeviceType>();
+    typename AT::t_kkfloat_1d_randomread mass = atomKK->k_mass.view<DeviceType>();
     Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal),
      LAMMPS_LAMBDA(int i, double& update) {
       if (mask(i) & groupbit)
@@ -87,14 +87,14 @@ void FixMomentumKokkos<DeviceType>::end_of_step()
 {
   atomKK->sync(execution_space, V_MASK | MASK_MASK);
 
-  typename AT::t_v_array v = atomKK->k_v.view<DeviceType>();
+  typename AT::t_kkfloat_1d_3 v = atomKK->k_v.view<DeviceType>();
   typename AT::t_int_1d_randomread mask = atomKK->k_mask.view<DeviceType>();
 
   const int nlocal = atom->nlocal;
   double ekin_old,ekin_new;
   ekin_old = ekin_new = 0.0;
 
-  if (dynamic) masstotal = groupKK->mass(igroup);
+  if (dynamic) masstotal = groupKK->mass_kk<DeviceType>(igroup);
 
   // do nothing if group is empty, i.e. mass is zero;
 
@@ -109,7 +109,7 @@ void FixMomentumKokkos<DeviceType>::end_of_step()
   auto groupbit2 = groupbit;
   if (linear) {
     double vcm[3];
-    groupKK->vcm(igroup,masstotal,vcm);
+    groupKK->vcm_kk<DeviceType>(igroup,masstotal,vcm);
 
     // adjust velocities by vcm to zero linear momentum
     // only adjust a component if flag is set
@@ -131,9 +131,9 @@ void FixMomentumKokkos<DeviceType>::end_of_step()
 
   if (angular) {
     double xcm[3],angmom[3],omega[3],inertia[3][3];
-    groupKK->xcm(igroup,masstotal,xcm);
-    groupKK->angmom(igroup,xcm,angmom);
-    groupKK->inertia(igroup,xcm,inertia);
+    groupKK->xcm_kk<DeviceType>(igroup,masstotal,xcm);
+    groupKK->angmom_kk<DeviceType>(igroup,xcm,angmom);
+    groupKK->inertia_kk<DeviceType>(igroup,xcm,inertia);
     group->omega(angmom,inertia,omega);
 
     // adjust velocities to zero omega
@@ -141,7 +141,7 @@ void FixMomentumKokkos<DeviceType>::end_of_step()
     // must use unwrapped coords to compute r_i correctly
 
     atomKK->sync(execution_space, X_MASK | IMAGE_MASK);
-    typename AT::t_x_array_randomread x = atomKK->k_x.view<DeviceType>();
+    typename AT::t_kkfloat_1d_3_lr_randomread x = atomKK->k_x.view<DeviceType>();
     typename AT::t_imageint_1d_randomread image = atomKK->k_image.view<DeviceType>();
     int nlocal = atom->nlocal;
 

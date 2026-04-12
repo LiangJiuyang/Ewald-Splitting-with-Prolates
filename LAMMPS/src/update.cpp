@@ -99,6 +99,13 @@ Update::Update(LAMMPS *lmp) :
 
 Update::~Update()
 {
+  // restore default styles to avoid segfaults from plugins
+  char *str = (char *) "verlet";
+  create_integrate(1, &str, 1);
+
+  str = (char *) "cg";
+  create_minimize(1, &str, 1);
+
   delete[] unit_style;
 
   delete[] integrate_style;
@@ -308,7 +315,7 @@ void Update::set_units(const char *style)
     neighbor->skin = 0.1;
 
   } else
-    error->all(FLERR, "Illegal units command");
+    error->all(FLERR, "Unknown units style {}", style);
 
   delete[] unit_style;
   unit_style = utils::strdup(style);
@@ -325,7 +332,7 @@ void Update::set_units(const char *style)
 
 void Update::create_integrate(int narg, char **arg, int trysuffix)
 {
-  if (narg < 1) error->all(FLERR, "Illegal run_style command");
+  if (narg < 1) utils::missing_cmd_args(FLERR, "run_style", error);
 
   delete[] integrate_style;
   delete integrate;
@@ -390,14 +397,14 @@ void Update::new_integrate(char *style, int narg, char **arg, int trysuffix, int
     return;
   }
 
-  error->all(FLERR, "Illegal integrate style");
+  error->all(FLERR, "Unknown integrate style {}", style);
 }
 
 /* ---------------------------------------------------------------------- */
 
 void Update::create_minimize(int narg, char **arg, int trysuffix)
 {
-  if (narg < 1) error->all(FLERR, "Illegal minimize_style command");
+  if (narg < 1) utils::missing_cmd_args(FLERR, "minimize_style", error);
 
   delete[] minimize_style;
   delete minimize;
@@ -457,7 +464,7 @@ void Update::new_minimize(char *style, int /* narg */, char ** /* arg */, int tr
     return;
   }
 
-  error->all(FLERR, "Illegal minimize style");
+  error->all(FLERR, "Unknown minimize style {}", style);
 }
 
 /* ----------------------------------------------------------------------

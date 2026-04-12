@@ -1,7 +1,7 @@
 # LAMMPS multiple-machine -*- Makefile -*-
 
 SHELL = /bin/bash
-PYTHON = python
+PYTHON = $(word 3,$(shell type python3))
 DYN_LIB = -ldl
 
 #.IGNORE:
@@ -38,7 +38,7 @@ endif
 
 # Package variables
 
-# PACKAGE    = all packages
+# PACKAGE    = all supported packages
 # PACKBASIC  = a few core packages
 # PACKMOST   = most packages that do not require additional libs
 # PACKLIB    = all packages that require an additional lib
@@ -54,7 +54,6 @@ PACKAGE = \
 	adios \
 	amoeba \
 	asphere \
-	awpmd \
 	bocs \
 	body \
 	bpm \
@@ -63,8 +62,6 @@ PACKAGE = \
 	cg-spica \
 	class2 \
 	colloid \
-	colvars \
-	compress \
 	coreshell \
 	diffraction \
 	dipole \
@@ -81,52 +78,33 @@ PACKAGE = \
 	extra-molecule \
 	extra-pair \
 	fep \
-	gpu \
+	graphics \
 	granular \
-	h5md \
 	intel \
 	interlayer \
-	kim \
-	kokkos \
 	latboltz \
-	lepton \
-	machdyn \
 	manifold \
 	manybody \
 	mc \
-	mdi \
 	meam \
 	mesont \
 	mgpt \
 	misc \
-	ml-hdnnp \
-	ml-pace \
-	ml-pod \
-	ml-quip \
 	ml-rann \
 	ml-snap \
 	ml-uf3 \
 	mofff \
-	molfile \
-	netcdf \
 	openmp \
 	opt \
 	orient \
 	peri \
-	plugin \
-	plumed \
-	poems \
 	ptm \
-	python \
 	qeq \
-	qmmm \
 	qtb \
 	reaction \
 	reaxff \
 	replica \
-	rheo \
 	rigid \
-	scafacos \
 	shock \
 	smtbq \
 	sph \
@@ -134,19 +112,15 @@ PACKAGE = \
 	srd \
 	tally \
 	uef \
-	voronoi \
-	vtk \
 	yaff \
-	atc \
 	dielectric \
-	electrode \
 	ml-iap \
 	phonon
 
 # NOTE: the last four packages must remain at the end since
 # they depend on other packages to be installed first.
 
-PACKBASIC = molecule kspace manybody rigid
+PACKBASIC = molecule kspace manybody rigid graphics
 
 PACKMOST = \
 	kspace \
@@ -177,6 +151,7 @@ PACKMOST = \
 	extra-molecule \
 	extra-pair \
 	fep \
+	graphics \
 	granular \
 	interlayer \
 	manybody \
@@ -209,57 +184,13 @@ PACKMOST = \
 # NOTE ^^^^^: the last three packages must remain at the end since
 # they depend on other packages to be installed first.
 
-PACKLIB = \
-	compress \
-	gpu \
-	kim \
-	kokkos \
-	lepton \
-	poems \
-	python \
-	voronoi \
-	adios \
-	atc \
-	awpmd \
-	colvars \
-	h5md \
-	ml-hdnnp \
-	latboltz \
-	lepton \
-	mdi \
-	molfile \
-	netcdf \
-	ml-pace \
-	ml-pod \
-	plumed \
-	qmmm \
-	ml-quip \
-	rheo \
-	scafacos \
-	machdyn \
-	vtk \
-	electrode
+PACKLIB = adios latboltz
 
-PACKSYS = compress latboltz python
+PACKSYS = latboltz
 
-PACKINT = atc awpmd colvars electrode gpu kokkos lepton ml-pod poems
+PACKINT =
 
-PACKEXT = \
-	adios \
-	h5md \
-	kim \
-	machdyn \
-	ml-hdnnp \
-	ml-pace \
-	ml-quip \
-	molfile \
-	netcdf \
-	plumed \
-	qmmm \
-	rheo \
-	scafacos \
-	voronoi \
-	vtk \
+PACKEXT = adios
 
 # Helper GNU make function for conversion to upper case without using shell commands
 uppercase_TABLE:=a,A b,B c,C d,D e,E f,F g,G h,H i,I j,J k,K l,L m,M n,N o,O p,P q,Q r,R s,S t,T u,U v,V w,W x,X y,Y z,Z
@@ -276,7 +207,6 @@ LIBDIR = $(@:lib-%=%)
 # List of all targets
 
 help:
-	@echo ''
 	@echo 'make clean-all           delete all object files'
 	@echo 'make clean-machine       delete object files for one machine'
 	@echo 'make mpi-stubs           build dummy MPI library in STUBS'
@@ -295,17 +225,11 @@ help:
 	@echo 'make no-basic                remove a few commonly used pkgs'
 	@echo 'make yes-most                install most pkgs w/o libs'
 	@echo 'make no-most                 remove most pkgs w/o libs'
-	@echo 'make yes-lib       install all pkgs with libs (included or ext)'
-	@echo 'make no-lib        remove all pkgs with libs (included or ext)'
-	@echo 'make yes-ext                 install all pkgs with external libs'
-	@echo 'make no-ext                  remove all pkgs with external libs'
 	@echo ''
 	@echo 'make package-update (pu) replace src files with updated package files'
 	@echo 'make package-overwrite   replace package files with src files'
 	@echo 'make package-diff (pd)   diff src files against package files'
 	@echo ''
-	@echo 'make lib-package         help for download/build/install a package library'
-	@echo 'make lib-package args="..."    download/build/install a package library'
 	@echo 'make purge               purge obsolete copies of source files'
 	@echo ''
 	@echo 'make machine             build LAMMPS for machine with static library'
@@ -480,7 +404,7 @@ tar:
 	@cd STUBS; $(MAKE)
 	@echo "Created $(ROOT)_src.tar.gz"
 
-check: check-whitespace check-permissions check-homepage check-errordocs check-docs check-version
+check: check-whitespace check-permissions check-homepage check-errordocs check-fmtlib check-docs check-version
 
 check-whitespace:
 	$(PYTHON) ../tools/coding_standard/whitespace.py ..
@@ -506,19 +430,23 @@ check-errordocs:
 fix-errordocs:
 	$(PYTHON) ../tools/coding_standard/errordocs.py .. -f
 
+check-fmtlib:
+	$(PYTHON) ../tools/coding_standard/fmtlib.py ..
+
+fix-fmtlib:
+	$(PYTHON) ../tools/coding_standard/fmtlib.py .. -f
+
 check-docs:
 	$(MAKE) $(MFLAGS) -C ../doc anchor_check style_check package_check role_check
 
 check-version:
 	$(PYTHON) ../tools/coding_standard/versiontags.py .. || echo
 
-
 format-src:
 	clang-format -i --verbose --style=file *.cpp *.h */*.cpp */*.h
 
 format-tests:
 	clang-format -i --verbose --style=file ../unittest/*/*.cpp ../unittest/*/*.h
-
 
 # Package management
 
@@ -638,10 +566,8 @@ lib-%:
 	  echo "Installing lib $(@:lib-%=%)"; \
 	  ( cd ../lib/$(LIBDIR); $(PYTHON) Install.py $(args) ); \
 	else \
-	  echo "Install script for lib $(@:lib-%=%) does not exist"; \
+	  echo "Install script for lib $(@:lib-%=%) does not exist. Please use CMake."; \
 	fi; touch main.cpp
-
-lib-colvars: lib-lepton
 
 # status = list src files that differ from package files
 # installed = list of installed packages

@@ -186,7 +186,7 @@ Linear Peridynamic Solid (LPS) Model
 We summarize the linear peridynamic solid (LPS) material model. For more
 on this model, the reader is referred to :ref:`(Silling 2007)
 <Silling2007_2>`.  This model is a nonlocal analogue to a classical
-linear elastic isotropic material. The elastic properties of a a
+linear elastic isotropic material. The elastic properties of a
 classical linear elastic isotropic material are determined by (for
 example) the bulk and shear moduli. For the LPS model, the elastic
 properties are analogously determined by the bulk and shear moduli,
@@ -197,7 +197,7 @@ The LPS model has a force scalar state
 .. math::
 
    \underline{t} = \frac{3K\theta}{m}\underline{\omega}\,\underline{x} +
-   \alpha \underline{\omega}\,\underline{e}^{\rm d}, \qquad\qquad\textrm{(3)}
+   \alpha \underline{\omega}\,\underline{e}^\mathrm{d}, \qquad\qquad\textrm{(3)}
 
 with :math:`K` the bulk modulus and :math:`\alpha` related to the shear
 modulus :math:`G` as
@@ -242,14 +242,14 @@ scalar state are defined, respectively, as
 
 .. math::
 
-   \underline{e}^{\rm i}=\frac{\theta \underline{x}}{3}, \qquad
-   \underline{e}^{\rm d} = \underline{e}- \underline{e}^{\rm i},
+   \underline{e}^\mathrm{i}=\frac{\theta \underline{x}}{3}, \qquad
+   \underline{e}^\mathrm{d} = \underline{e}- \underline{e}^\mathrm{i},
 
 
 where the arguments of the state functions and the vectors on which they
 operate are omitted for simplicity. We note that the LPS model is linear
 in the dilatation :math:`\theta`, and in the deviatoric part of the
-extension :math:`\underline{e}^{\rm d}`.
+extension :math:`\underline{e}^\mathrm{d}`.
 
 .. note::
 
@@ -558,7 +558,7 @@ both the position and velocity of the particle are stored
 explicitly. The velocity-Verlet scheme is generally expressed in three
 steps. In :ref:`Algorithm 1 <algvelverlet>`, :math:`\rho_i` denotes the
 mass density of a particle and :math:`\widetilde{\textbf{f}}_i^n`
-denotes the the net force density on particle :math:`i` at timestep
+denotes the net force density on particle :math:`i` at timestep
 :math:`n`. The LAMMPS command :doc:`fix nve <fix_nve>` performs a
 velocity-Verlet integration.
 
@@ -738,8 +738,8 @@ command.
 
 This can be done, for example, by using the built-in visualizer of the
 :doc:`dump image or dump movie <dump_image>` command to create snapshot
-images or a movie. Below are example command lines for using dump image
-with the :ref:`example listed below <periexample>` and a set of images
+images or a movie. Below are example command for using dump image with
+the :ref:`example listed below <periexample>` and a set of images
 created for steps 300, 600, and 2000 this way.
 
 .. code-block:: LAMMPS
@@ -818,7 +818,7 @@ the LAMMPS :doc:`boundary <boundary>` command has been set. If a
 particle drifts outside the simulation box during the course of a
 simulation, it is called *lost*.
 
-As an option of the :doc:`themo_modify <thermo_modify>` command of
+As an option of the :doc:`thermo_modify <thermo_modify>` command of
 LAMMPS, the lost keyword determines whether LAMMPS checks for lost atoms
 each time it computes thermodynamics and what it does if atoms are
 lost. If the value is *ignore*, LAMMPS does not check for lost atoms. If

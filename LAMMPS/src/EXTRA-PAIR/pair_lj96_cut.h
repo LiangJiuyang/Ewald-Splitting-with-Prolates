@@ -42,6 +42,7 @@ class PairLJ96Cut : public Pair {
   void write_data_all(FILE *) override;
   double single(int, int, int, int, double, double, double, double &) override;
   void born_matrix(int, int, int, int, double, double, double, double &, double &) override;
+  void *extract(const char *, int &) override;
 
   void compute_inner() override;
   void compute_middle() override;
@@ -54,7 +55,7 @@ class PairLJ96Cut : public Pair {
   double **lj1, **lj2, **lj3, **lj4, **offset;
   double *cut_respa;
 
-  void allocate();
+  virtual void allocate();
 };
 
 }    // namespace LAMMPS_NS

@@ -36,7 +36,7 @@ class FixRecenterKokkos : public FixRecenter {
     FixRecenterKokkos(class LAMMPS *, int, char **);
     void initial_integrate(int) override;
   private:
-    GroupKokkos<DeviceType> *groupKK;
+    GroupKokkos *groupKK;
 };
 
 } // namespace LAMMPS_NS

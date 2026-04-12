@@ -24,7 +24,6 @@
 #include "angle.h"
 #include "atom.h"
 #include "bond.h"
-#include "comm.h"
 #include "domain.h"
 #include "error.h"
 #include "fft3d_wrap.h"
@@ -35,18 +34,15 @@
 #include "memory.h"
 #include "neighbor.h"
 #include "pair.h"
-#include "update.h"
 #include "remap_wrap.h"
 
-#include <iostream>
 #include <cmath>
 #include <cstring>
-#include <fstream>
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
 using namespace MathSpecial;
- 
+
 static constexpr int MAXORDER = 7;
 static constexpr int OFFSET = 16384;
 static constexpr double LARGE = 10000.0;
@@ -154,11 +150,12 @@ PPPM::PPPM(LAMMPS *lmp) : KSpace(lmp),
 
 void PPPM::settings(int narg, char **arg)
 {
-  if (narg < 1) error->all(FLERR,"Illegal kspace_style {} command", force->kspace_style);
+  if (narg < 1)
+    utils::missing_cmd_args(FLERR,fmt::format("kspace_style {}", force->kspace_style), error);
 
   accuracy_relative = fabs(utils::numeric(FLERR,arg[0],false,lmp));
   if (accuracy_relative > 1.0)
-    error->all(FLERR, "Invalid relative accuracy {:g} for kspace_style {}",
+    error->all(FLERR, 1, "Invalid relative accuracy {:g} for kspace_style {}",
                accuracy_relative, force->kspace_style);
 }
 
@@ -224,7 +221,7 @@ void PPPM::init()
   pair_check();
 
   int itmp = 0;
-  auto p_cutoff = (double *) force->pair->extract("cut_coul",itmp);
+  auto *p_cutoff = (double *) force->pair->extract("cut_coul",itmp);
   if (p_cutoff == nullptr)
     error->all(FLERR,"KSpace style is incompatible with Pair style");
   cutoff = *p_cutoff;
@@ -237,7 +234,7 @@ void PPPM::init()
   if (tip4pflag) {
     if (me == 0) utils::logmesg(lmp,"  extracting TIP4P info from pair style\n");
 
-    auto p_qdist = (double *) force->pair->extract("qdist",itmp);
+    auto *p_qdist = (double *) force->pair->extract("qdist",itmp);
     int *p_typeO = (int *) force->pair->extract("typeO",itmp);
     int *p_typeH = (int *) force->pair->extract("typeH",itmp);
     int *p_typeA = (int *) force->pair->extract("typeA",itmp);
@@ -585,26 +582,6 @@ void PPPM::reset_grid()
 }
 
 /* ----------------------------------------------------------------------
-   Output time performance for each step
-------------------------------------------------------------------------- */
-
-void writeTimePPPMText(double** Time, int rows, int cols, const std::string& filename) {
-    std::ofstream file(filename);
-    if (!file) {
-        std::cerr << "Cannot open file : " << filename << std::endl;
-        return;
-    }
-    //file << rows << " " << cols << "\n";
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            file << Time[i][j] << " ";
-        }
-        file << "\n";
-    }
-    file.close();
-}
-
-/* ----------------------------------------------------------------------
    compute the PPPM long-range force, energy, virial
 ------------------------------------------------------------------------- */
 
@@ -648,38 +625,17 @@ void PPPM::compute(int eflag, int vflag)
 
   // find grid points for all my particles
   // map my particle charge onto my local 3d density grid
-  MPI_Barrier(world);
-  double start_time = MPI_Wtime();
 
   particle_map();
   make_rho();
-  
-  MPI_Barrier(world);
-  double end_time = MPI_Wtime();
-  if(comm->me==0)
-    printf("CPU cost for spreading to grid is %lf\n",1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][0]= 1000*(end_time-start_time);
-  }
 
   // all procs communicate density values from their ghost cells
   //   to fully sum contribution in their 3d bricks
   // remap from 3d decomposition to FFT decomposition
-  
-  MPI_Barrier(world);
-  start_time = MPI_Wtime();
 
   gc->reverse_comm(Grid3d::KSPACE,this,REVERSE_RHO,1,sizeof(FFT_SCALAR),
                    gc_buf1,gc_buf2,MPI_FFT_SCALAR);
   brick2fft();
-  
-  MPI_Barrier(world);
-  end_time = MPI_Wtime();
-  if(comm->me==0)
-    printf("CPU cost for FFT remap is %lf\n",1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][1]= 1000*(end_time-start_time);
-  }
 
   // compute potential gradient on my FFT grid and
   //   portion of e_long on this proc's FFT grid
@@ -690,9 +646,6 @@ void PPPM::compute(int eflag, int vflag)
 
   // all procs communicate E-field values
   // to fill ghost cells surrounding their 3d bricks
-  
-  MPI_Barrier(world);
-  start_time = MPI_Wtime();
 
   if (differentiation_flag == 1)
     gc->forward_comm(Grid3d::KSPACE,this,FORWARD_AD,1,sizeof(FFT_SCALAR),
@@ -711,29 +664,10 @@ void PPPM::compute(int eflag, int vflag)
       gc->forward_comm(Grid3d::KSPACE,this,FORWARD_IK_PERATOM,7,sizeof(FFT_SCALAR),
                        gc_buf1,gc_buf2,MPI_FFT_SCALAR);
   }
-  
-  MPI_Barrier(world);
-  end_time = MPI_Wtime();
-  if(comm->me==0)
-    printf("CPU cost for communicating E-field values is %lf\n", 1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][5]= 1000*(end_time-start_time);
-  }
 
   // calculate the force on my particles
-  
-  MPI_Barrier(world);
-  start_time = MPI_Wtime();
 
   fieldforce();
-  
-  MPI_Barrier(world);
-  end_time = MPI_Wtime();
-  if(comm->me == 0)
-    printf("CPU cost for interpolation is %lf\n", 1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][6]= 1000*(end_time-start_time);
-  }
 
   // extra per-atom energy/virial communication
 
@@ -795,12 +729,6 @@ void PPPM::compute(int eflag, int vflag)
   // convert atoms back from lamda to box coords
 
   if (triclinic) domain->lamda2x(atom->nlocal);
-
-  if(update->ntimestep == 1000){
-    if(comm->me == 0)
-      writeTimePPPMText(Time, 1000, 7, "TimePPPM.txt");
-  }
-
 }
 
 /* ----------------------------------------------------------------------
@@ -826,10 +754,6 @@ void PPPM::allocate()
 
   if (differentiation_flag) npergrid = 1;
   else npergrid = 3;
-
-  // Time performance test
-
-  memory->create2d_offset(Time,1000,0,6,"pppm:rho1d"); 
 
   memory->create(gc_buf1,npergrid*ngc_buf1,"pppm:gc_buf1");
   memory->create(gc_buf2,npergrid*ngc_buf2,"pppm:gc_buf2");
@@ -913,17 +837,17 @@ void PPPM::allocate()
   fft1 = new FFT3d(lmp,world,nx_pppm,ny_pppm,nz_pppm,
                    nxlo_fft,nxhi_fft,nylo_fft,nyhi_fft,nzlo_fft,nzhi_fft,
                    nxlo_fft,nxhi_fft,nylo_fft,nyhi_fft,nzlo_fft,nzhi_fft,
-                   0,0,&tmp,collective_flag);
+                   0,0,&tmp,collective_flag,nonblocking_flag);
 
   fft2 = new FFT3d(lmp,world,nx_pppm,ny_pppm,nz_pppm,
                    nxlo_fft,nxhi_fft,nylo_fft,nyhi_fft,nzlo_fft,nzhi_fft,
                    nxlo_in,nxhi_in,nylo_in,nyhi_in,nzlo_in,nzhi_in,
-                   0,0,&tmp,collective_flag);
+                   0,0,&tmp,collective_flag,nonblocking_flag);
 
   remap = new Remap(lmp,world,
                     nxlo_in,nxhi_in,nylo_in,nyhi_in,nzlo_in,nzhi_in,
                     nxlo_fft,nxhi_fft,nylo_fft,nyhi_fft,nzlo_fft,nzhi_fft,
-                    1,0,0,FFT_PRECISION,collective_flag);
+                    1,0,0,FFT_PRECISION,collective_flag,nonblocking_flag);
 }
 
 /* ----------------------------------------------------------------------
@@ -1458,20 +1382,12 @@ void PPPM::set_grid_local()
   // npey_fft,npez_fft = # of procs in y,z dims
   // if nprocs is small enough, proc can own 1 or more entire xy planes,
   //   else proc owns 2d sub-blocks of yz plane
-  //   NOTE: commented out lines support this
-  //     need to ensure fft3d.cpp and remap.cpp support 2D planes
   // me_y,me_z = which proc (0-npe_fft-1) I am in y,z dimensions
   // nlo_fft,nhi_fft = lower/upper limit of the section
   //   of the global FFT mesh that I own in x-pencil decomposition
 
-  int npey_fft,npez_fft;
-
-  //if (nz_pppm >= nprocs) {
-  //  npey_fft = 1;
-  //  npez_fft = nprocs;
-  //} else procs2grid2d(nprocs,ny_pppm,nz_pppm,&npey_fft,&npez_fft);
-
-  procs2grid2d(nprocs,ny_pppm,nz_pppm,&npey_fft,&npez_fft);
+  int npey_fft = 1, npez_fft = nprocs;
+  procs2grid2d(nprocs, ny_pppm, nz_pppm, npey_fft, npez_fft);
 
   int me_y = me % npey_fft;
   int me_z = me / npey_fft;
@@ -1533,9 +1449,6 @@ void PPPM::compute_gf_ik()
 
   const int nbx = static_cast<int> ((g_ewald*xprd/(MY_PI*nx_pppm)) *
                                     pow(-log(EPS_HOC),0.25));
-  
-  printf("The nbx is %d. nx_pppm = %d\n", nbx, nx_pppm);
-
   const int nby = static_cast<int> ((g_ewald*yprd/(MY_PI*ny_pppm)) *
                                     pow(-log(EPS_HOC),0.25));
   const int nbz = static_cast<int> ((g_ewald*zprd_slab/(MY_PI*nz_pppm)) *
@@ -1544,46 +1457,46 @@ void PPPM::compute_gf_ik()
 
   n = 0;
   for (m = nzlo_fft; m <= nzhi_fft; m++) {
-    mper = m - nz_pppm*(2*m/nz_pppm); // mz
+    mper = m - nz_pppm*(2*m/nz_pppm);
     snz = square(sin(0.5*unitkz*mper*zprd_slab/nz_pppm));
 
     for (l = nylo_fft; l <= nyhi_fft; l++) {
-      lper = l - ny_pppm*(2*l/ny_pppm); // my
+      lper = l - ny_pppm*(2*l/ny_pppm);
       sny = square(sin(0.5*unitky*lper*yprd/ny_pppm));
 
       for (k = nxlo_fft; k <= nxhi_fft; k++) {
-        kper = k - nx_pppm*(2*k/nx_pppm); // mx
+        kper = k - nx_pppm*(2*k/nx_pppm);
         snx = square(sin(0.5*unitkx*kper*xprd/nx_pppm));
 
-        sqk = square(unitkx*kper) + square(unitky*lper) + square(unitkz*mper); // k^2
+        sqk = square(unitkx*kper) + square(unitky*lper) + square(unitkz*mper);
 
         if (sqk != 0.0) {
-          numerator = 12.5663706/sqk; // 4*pi/k^2
-          denominator = gf_denom(snx,sny,snz); //  (\sum U^\tilde^2)^2
+          numerator = 12.5663706/sqk;
+          denominator = gf_denom(snx,sny,snz);
           sum1 = 0.0;
 
           for (nx = -nbx; nx <= nbx; nx++) {
             qx = unitkx*(kper+nx_pppm*nx);
-            sx = exp(-0.25*square(qx/g_ewald)); // exp(-k_x^2/4*alpha^2)
+            sx = exp(-0.25*square(qx/g_ewald));
             argx = 0.5*qx*xprd/nx_pppm;
             wx = powsinxx(argx,twoorder);
 
             for (ny = -nby; ny <= nby; ny++) {
               qy = unitky*(lper+ny_pppm*ny);
-              sy = exp(-0.25*square(qy/g_ewald)); // exp(-k_y^2/4*alpha^2)
+              sy = exp(-0.25*square(qy/g_ewald));
               argy = 0.5*qy*yprd/ny_pppm;
               wy = powsinxx(argy,twoorder);
 
               for (nz = -nbz; nz <= nbz; nz++) {
                 qz = unitkz*(mper+nz_pppm*nz);
-                sz = exp(-0.25*square(qz/g_ewald)); // exp(-k_z^2/4*alpha^2)
+                sz = exp(-0.25*square(qz/g_ewald));
                 argz = 0.5*qz*zprd_slab/nz_pppm;
                 wz = powsinxx(argz,twoorder);
 
-                dot1 = unitkx*kper*qx + unitky*lper*qy + unitkz*mper*qz; // k * (k+m)
-                dot2 = qx*qx+qy*qy+qz*qz; // (k+m)^2
+                dot1 = unitkx*kper*qx + unitky*lper*qy + unitkz*mper*qz;
+                dot2 = qx*qx+qy*qy+qz*qz;
                 sum1 += (dot1/dot2) * sx*sy*sz * wx*wy*wz;
-              } 
+              }
             }
           }
           greensfn[n++] = numerator*sum1/denominator;
@@ -1770,11 +1683,11 @@ void PPPM::compute_gf_ad()
   prey *= ny_pppm/yprd;
   prez *= nz_pppm/zprd_slab;
   sf_coeff[0] *= prex;
-  sf_coeff[1] *= prex*2; // this accounts for the factor of nx=2 in (10) of V. Ballenegger et al. 2011 
+  sf_coeff[1] *= prex*2;
   sf_coeff[2] *= prey;
-  sf_coeff[3] *= prey*2; // this accounts for the factor of ny=2 in (10) of V. Ballenegger et al. 2011
+  sf_coeff[3] *= prey*2;
   sf_coeff[4] *= prez;
-  sf_coeff[5] *= prez*2; // this accounts for the factor of nz=2 in (10) of V. Ballenegger et al. 2011
+  sf_coeff[5] *= prez*2;
 
   // communicate values with other procs
 
@@ -1798,13 +1711,13 @@ void PPPM::compute_sf_precoeff()
 
   n = 0;
   for (m = nzlo_fft; m <= nzhi_fft; m++) {
-    mper = m - nz_pppm*(2*m/nz_pppm); // kz
+    mper = m - nz_pppm*(2*m/nz_pppm);
 
     for (l = nylo_fft; l <= nyhi_fft; l++) {
-      lper = l - ny_pppm*(2*l/ny_pppm); // ky
+      lper = l - ny_pppm*(2*l/ny_pppm);
 
       for (k = nxlo_fft; k <= nxhi_fft; k++) {
-        kper = k - nx_pppm*(2*k/nx_pppm); // kx
+        kper = k - nx_pppm*(2*k/nx_pppm);
 
         sum1 = sum2 = sum3 = sum4 = sum5 = sum6 = 0.0;
         for (i = 0; i < 5; i++) {
@@ -1816,7 +1729,7 @@ void PPPM::compute_sf_precoeff()
           wx1[i] = powsinxx(0.5*qx1/nx_pppm,order);
           wx2[i] = powsinxx(0.5*qx2/nx_pppm,order);
 
-          qy0 = MY_2PI*(lper+ny_pppm*(i-2)); 
+          qy0 = MY_2PI*(lper+ny_pppm*(i-2));
           qy1 = MY_2PI*(lper+ny_pppm*(i-1));
           qy2 = MY_2PI*(lper+ny_pppm*(i  ));
           wy0[i] = powsinxx(0.5*qy0/ny_pppm,order);
@@ -1882,7 +1795,7 @@ void PPPM::particle_map()
   int flag = 0;
 
   if (!std::isfinite(boxlo[0]) || !std::isfinite(boxlo[1]) || !std::isfinite(boxlo[2]))
-    error->one(FLERR,"Non-numeric box dimensions - simulation unstable");
+    error->one(FLERR,"Non-numeric box dimensions - simulation unstable" + utils::errorurl(6));
 
   for (int i = 0; i < nlocal; i++) {
 
@@ -1908,12 +1821,8 @@ void PPPM::particle_map()
         nz+nlower < nzlo_out || nz+nupper > nzhi_out)
       flag = 1;
   }
-  
-  if(update->ntimestep == 1){
-    if(comm->me==0||comm->me==1)
-      printf("The number of nx, nlower, nxlo_out, nupper, and nxhi_out are %d,  %d,   %d,   %d,  %d\n", nx, nlower, nxlo_out, nupper, nxhi_out);
-  }
-  if (flag) error->one(FLERR,"Out of range atoms - cannot compute PPPM");
+
+  if (flag) error->one(FLERR, Error::NOLASTLINE, "Out of range atoms - cannot compute PPPM" + utils::errorurl(4));
 }
 
 /* ----------------------------------------------------------------------
@@ -2010,9 +1919,6 @@ void PPPM::poisson_ik()
   double eng;
 
   // transform charge density (r -> k)
-  
-  MPI_Barrier(world);
-  double start_time = MPI_Wtime();
 
   n = 0;
   for (i = 0; i < nfft; i++) {
@@ -2021,19 +1927,8 @@ void PPPM::poisson_ik()
   }
 
   fft1->compute(work1,work1,FFT3d::FORWARD);
-  
-  MPI_Barrier(world);
-  double end_time = MPI_Wtime();
-  if(comm->me == 0)
-    printf("CPU cost for forward FFT is %lf\n", 1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][2]= 1000*(end_time-start_time);
-  }
 
   // global energy and virial contribution
-  
-  MPI_Barrier(world);
-  start_time = MPI_Wtime();
 
   bigint ngridtotal = (bigint) nx_pppm * ny_pppm * nz_pppm;
   double scaleinv = 1.0/ngridtotal;
@@ -2066,14 +1961,6 @@ void PPPM::poisson_ik()
     work1[n++] *= scaleinv * greensfn[i];
     work1[n++] *= scaleinv * greensfn[i];
   }
-  
-  MPI_Barrier(world);
-  end_time = MPI_Wtime();
-  if(comm->me==0)
-    printf("CPU cost for diagonal scaling is %lf\n", 1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][3]= 1000*(end_time-start_time);
-  }
 
   // extra FFTs for per-atom energy/virial
 
@@ -2091,9 +1978,6 @@ void PPPM::poisson_ik()
   // copy it into inner portion of vdx,vdy,vdz arrays
 
   // x direction gradient
- 
-  MPI_Barrier(world);
-  start_time = MPI_Wtime();
 
   n = 0;
   for (k = nzlo_fft; k <= nzhi_fft; k++)
@@ -2155,14 +2039,6 @@ void PPPM::poisson_ik()
         vdz_brick[k][j][i] = work2[n];
         n += 2;
       }
-  
-  MPI_Barrier(world);
-  end_time = MPI_Wtime();
-  if(comm->me==0)
-    printf("CPU cost for IFFT is %lf\n", 1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][4]= 1000*(end_time-start_time);
-  }
 }
 
 /* ----------------------------------------------------------------------
@@ -2245,9 +2121,6 @@ void PPPM::poisson_ad()
   double eng;
 
   // transform charge density (r -> k)
-  
-  MPI_Barrier(world);
-  double start_time = MPI_Wtime();
 
   n = 0;
   for (i = 0; i < nfft; i++) {
@@ -2256,19 +2129,8 @@ void PPPM::poisson_ad()
   }
 
   fft1->compute(work1,work1,FFT3d::FORWARD);
-  
-  MPI_Barrier(world);
-  double end_time = MPI_Wtime();
-  if(comm->me == 0)
-    printf("CPU cost for forward FFT is %lf\n", 1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][2]= 1000*(end_time-start_time);
-  }
 
   // global energy and virial contribution
-  
-  MPI_Barrier(world);
-  start_time = MPI_Wtime();
 
   bigint ngridtotal = (bigint) nx_pppm * ny_pppm * nz_pppm;
   double scaleinv = 1.0/ngridtotal;
@@ -2301,19 +2163,8 @@ void PPPM::poisson_ad()
     work1[n++] *= scaleinv * greensfn[i];
     work1[n++] *= scaleinv * greensfn[i];
   }
-  
-  MPI_Barrier(world);
-  end_time = MPI_Wtime();
-  if(comm->me==0)
-    printf("CPU cost for diagonal scaling is %lf\n", 1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][3]= 1000*(end_time-start_time);
-  }
 
   // extra FFTs for per-atom energy/virial
- 
-  MPI_Barrier(world);
-  start_time = MPI_Wtime();
 
   if (vflag_atom) poisson_peratom();
 
@@ -2333,14 +2184,6 @@ void PPPM::poisson_ad()
         u_brick[k][j][i] = work2[n];
         n += 2;
       }
-  
-  MPI_Barrier(world);
-  end_time = MPI_Wtime();
-  if(comm->me==0)
-    printf("CPU cost for IFFT is %lf\n", 1000*(end_time-start_time));
-  if(update->ntimestep >= 1 && update->ntimestep <= 1000) {
-    if (comm->me == 0) Time[update->ntimestep-1][4]= 1000*(end_time-start_time);
-  }
 }
 
 /* ----------------------------------------------------------------------
@@ -2619,21 +2462,18 @@ void PPPM::fieldforce_ad()
     sf = sf_coeff[0]*sin(2*MY_PI*s1);
     sf += sf_coeff[1]*sin(4*MY_PI*s1);
     sf *= 2*q[i]*q[i];
-    f[i][0] += qfactor*(ekx*q[i]);
-    //f[i][0] += qfactor*(ekx*q[i] - sf);
+    f[i][0] += qfactor*(ekx*q[i] - sf);
 
     sf = sf_coeff[2]*sin(2*MY_PI*s2);
     sf += sf_coeff[3]*sin(4*MY_PI*s2);
     sf *= 2*q[i]*q[i];
-    f[i][1] += qfactor*(eky*q[i]);
-    //f[i][1] += qfactor*(eky*q[i] - sf);
+    f[i][1] += qfactor*(eky*q[i] - sf);
 
 
     sf = sf_coeff[4]*sin(2*MY_PI*s3);
     sf += sf_coeff[5]*sin(4*MY_PI*s3);
     sf *= 2*q[i]*q[i];
-    if (slabflag != 2) f[i][2] += qfactor*(ekz*q[i]);
-    //if (slabflag != 2) f[i][2] += qfactor*(ekz*q[i] - sf);
+    if (slabflag != 2) f[i][2] += qfactor*(ekz*q[i] - sf);
   }
 }
 
@@ -2708,7 +2548,7 @@ void PPPM::fieldforce_peratom()
 
 void PPPM::pack_forward_grid(int flag, void *vbuf, int nlist, int *list)
 {
-  auto buf = (FFT_SCALAR *) vbuf;
+  auto *buf = (FFT_SCALAR *) vbuf;
 
   int n = 0;
 
@@ -2768,7 +2608,7 @@ void PPPM::pack_forward_grid(int flag, void *vbuf, int nlist, int *list)
 
 void PPPM::unpack_forward_grid(int flag, void *vbuf, int nlist, int *list)
 {
-  auto buf = (FFT_SCALAR *) vbuf;
+  auto *buf = (FFT_SCALAR *) vbuf;
 
   int n = 0;
 
@@ -2828,7 +2668,7 @@ void PPPM::unpack_forward_grid(int flag, void *vbuf, int nlist, int *list)
 
 void PPPM::pack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
 {
-  auto buf = (FFT_SCALAR *) vbuf;
+  auto *buf = (FFT_SCALAR *) vbuf;
 
   if (flag == REVERSE_RHO) {
     FFT_SCALAR *src = &density_brick[nzlo_out][nylo_out][nxlo_out];
@@ -2843,7 +2683,7 @@ void PPPM::pack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
 
 void PPPM::unpack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
 {
-  auto buf = (FFT_SCALAR *) vbuf;
+  auto *buf = (FFT_SCALAR *) vbuf;
 
   if (flag == REVERSE_RHO) {
     FFT_SCALAR *dest = &density_brick[nzlo_out][nylo_out][nxlo_out];
@@ -2856,7 +2696,7 @@ void PPPM::unpack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
    map nprocs to NX by NY grid as PX by PY procs - return optimal px,py
 ------------------------------------------------------------------------- */
 
-void PPPM::procs2grid2d(int nprocs, int nx, int ny, int *px, int *py)
+void PPPM::procs2grid2d(int nprocs, int nx, int ny, int &px, int &py)
 {
   // loop thru all possible factorizations of nprocs
   // surf = surface area of largest proc sub-domain
@@ -2877,13 +2717,12 @@ void PPPM::procs2grid2d(int nprocs, int nx, int ny, int *px, int *py)
       boxy = ny/ipy;
       if (ny % ipy) boxy++;
       surf = boxx + boxy;
-      if (surf < bestsurf ||
-          (surf == bestsurf && boxx*boxy > bestboxx*bestboxy)) {
+      if ((surf < bestsurf) || ((surf == bestsurf) && (boxx*boxy > bestboxx*bestboxy))) {
         bestsurf = surf;
         bestboxx = boxx;
         bestboxy = boxy;
-        *px = ipx;
-        *py = ipy;
+        px = ipx;
+        py = ipy;
       }
     }
     ipx++;

@@ -30,6 +30,7 @@
 #include "error.h"
 #include "fix.h"
 #include "force.h"
+#include "info.h"
 #include "math_const.h"
 #include "memory.h"
 #include "modify.h"
@@ -49,7 +50,7 @@ static constexpr int MAXLINE = 1024;
 #define isOneFluid(_site) ( (_site) == oneFluidParameter )
 
 static const char cite_pair_multi_lucy_rx[] =
-  "pair_style multi/lucy/rx command: doi:10.1063/1.4942520\n\n"
+  "pair_style multi/lucy/rx command: https://doi.org/10.1063/1.4942520\n\n"
   "@Article{Moore16,\n"
   " author = {J. D. Moore and B. C. Barnes and S. Izvekov and M. Lisal and M. S. Sellers and D. E. Taylor and J. K. Brennan},\n"
   " title = {A Coarse-Grain Force Field for {RDX}:  {D}ensity Dependent and Energy Conserving},\n"
@@ -461,7 +462,9 @@ void PairMultiLucyRX::coeff(int narg, char **arg)
 
 double PairMultiLucyRX::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status:\n" + Info::get_pair_coeff_status(lmp));
 
   tabindex[j][i] = tabindex[i][j];
 
@@ -754,7 +757,7 @@ void PairMultiLucyRX::spline(double *x, double *y, int n,
 {
   int i,k;
   double p,qn,sig,un;
-  auto u = new double[n];
+  auto *u = new double[n];
 
   if (yp1 > 0.99e30) y2[0] = u[0] = 0.0;
   else {

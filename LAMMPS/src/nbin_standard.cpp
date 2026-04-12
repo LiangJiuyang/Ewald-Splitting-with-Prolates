@@ -116,7 +116,6 @@ void NBinStandard::setup_bins(int style)
 
   // optimal bin size is roughly 1/2 the cutoff
   // for BIN style, binsize = 1/2 of max neighbor cutoff
-  // for MULTI_OLD style, binsize = 1/2 of min neighbor cutoff
   // special case of all cutoffs = 0.0, binsize = box size
 
   double binsize_optimal;
@@ -130,7 +129,7 @@ void NBinStandard::setup_bins(int style)
 
   if (bbox[0]*binsizeinv > MAXSMALLINT || bbox[1]*binsizeinv > MAXSMALLINT ||
       bbox[2]*binsizeinv > MAXSMALLINT)
-    error->all(FLERR,"Domain too large for neighbor bins");
+    error->all(FLERR,"Domain too large for neighbor bins" + utils::errorurl(17));
 
   // create actual bins
   // always have one bin even if cutoff > bbox
@@ -162,7 +161,7 @@ void NBinStandard::setup_bins(int style)
   if (binsize_optimal*bininvx > CUT2BIN_RATIO ||
       binsize_optimal*bininvy > CUT2BIN_RATIO ||
       binsize_optimal*bininvz > CUT2BIN_RATIO)
-    error->all(FLERR,"Cannot use neighbor bins - box size << cutoff");
+    error->all(FLERR,"Cannot use neighbor bins - box size << cutoff" + utils::errorurl(15));
 
   // mbinlo/hi = lowest and highest global bins my ghost atoms could be in
   // coord = lowest and highest values of coords for my ghost atoms
@@ -210,7 +209,7 @@ void NBinStandard::setup_bins(int style)
   mbinz = mbinzhi - mbinzlo + 1;
 
   bigint bbin = ((bigint) mbinx) * ((bigint) mbiny) * ((bigint) mbinz) + 1;
-  if (bbin > MAXSMALLINT) error->one(FLERR,"Too many neighbor bins");
+  if (bbin > MAXSMALLINT) error->one(FLERR,"Too many neighbor bins" + utils::errorurl(9));
   mbins = bbin;
 }
 

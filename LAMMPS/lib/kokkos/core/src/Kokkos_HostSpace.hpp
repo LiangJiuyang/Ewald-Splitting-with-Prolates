@@ -1,18 +1,5 @@
-//@HEADER
-// ************************************************************************
-//
-//                        Kokkos v. 4.0
-//       Copyright (2022) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
-//
-// Under the terms of Contract DE-NA0003525 with NTESS,
-// the U.S. Government retains certain rights in this software.
-//
-// Part of Kokkos, under the Apache License v2.0 with LLVM Exceptions.
-// See https://kokkos.org/LICENSE for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//@HEADER
+// SPDX-FileCopyrightText: Copyright Contributors to the Kokkos project
 
 #ifndef KOKKOS_IMPL_PUBLIC_INCLUDE
 #include <Kokkos_Macros.hpp>
@@ -63,34 +50,7 @@ class HostSpace {
   //! This memory space preferred device_type
   using device_type = Kokkos::Device<execution_space, memory_space>;
 
-  HostSpace()                     = default;
-  HostSpace(HostSpace&& rhs)      = default;
-  HostSpace(const HostSpace& rhs) = default;
-  HostSpace& operator=(HostSpace&&) = default;
-  HostSpace& operator=(const HostSpace&) = default;
-  ~HostSpace()                           = default;
-
-#ifdef KOKKOS_ENABLE_DEPRECATED_CODE_4
-  /**\brief  Non-default memory space instance to choose allocation mechansim,
-   * if available */
-
-#if defined(KOKKOS_COMPILER_GNU) && KOKKOS_COMPILER_GNU < 1100
-  // We see deprecation warnings even when not using the deprecated
-  // HostSpace constructor below when using gcc before release 11.
-  enum
-#else
-  enum KOKKOS_DEPRECATED
-#endif
-      AllocationMechanism {
-        STD_MALLOC,
-        POSIX_MEMALIGN,
-        POSIX_MMAP,
-        INTEL_MM_ALLOC
-      };
-
-  KOKKOS_DEPRECATED
-  explicit HostSpace(const AllocationMechanism&);
-#endif
+  HostSpace() = default;
 
   /**\brief  Allocate untracked memory in the space */
   template <typename ExecutionSpace>
@@ -183,18 +143,6 @@ namespace Kokkos {
 
 namespace Impl {
 
-template <>
-struct DeepCopy<HostSpace, HostSpace, DefaultHostExecutionSpace> {
-  DeepCopy(void* dst, const void* src, size_t n) {
-    hostspace_parallel_deepcopy(dst, src, n);
-  }
-
-  DeepCopy(const DefaultHostExecutionSpace& exec, void* dst, const void* src,
-           size_t n) {
-    hostspace_parallel_deepcopy_async(exec, dst, src, n);
-  }
-};
-
 template <class ExecutionSpace>
 struct DeepCopy<HostSpace, HostSpace, ExecutionSpace> {
   DeepCopy(void* dst, const void* src, size_t n) {
@@ -202,10 +150,15 @@ struct DeepCopy<HostSpace, HostSpace, ExecutionSpace> {
   }
 
   DeepCopy(const ExecutionSpace& exec, void* dst, const void* src, size_t n) {
-    exec.fence(
-        "Kokkos::Impl::DeepCopy<HostSpace, HostSpace, "
-        "ExecutionSpace>::DeepCopy: fence before copy");
-    hostspace_parallel_deepcopy_async(dst, src, n);
+    if constexpr (!Kokkos::SpaceAccessibility<ExecutionSpace,
+                                              Kokkos::HostSpace>::accessible) {
+      exec.fence(
+          "Kokkos::Impl::DeepCopy<HostSpace, HostSpace, "
+          "ExecutionSpace>::DeepCopy: fence before copy");
+      hostspace_parallel_deepcopy_async(dst, src, n);
+    } else {
+      hostspace_parallel_deepcopy_async(exec, dst, src, n);
+    }
   }
 };
 

@@ -9,6 +9,7 @@ OPT.
 .. table_from_list::
    :columns: 5
 
+   * :doc:`esp <kspace_style>`
    * :doc:`ewald (o) <kspace_style>`
    * :doc:`ewald/disp <kspace_style>`
    * :doc:`ewald/disp/dipole <kspace_style>`
@@ -31,3 +32,5 @@ OPT.
    * :doc:`pppm/dielectric <kspace_style>`
    * :doc:`pppm/electrode (i) <kspace_style>`
    * :doc:`scafacos <kspace_style>`
+   * :doc:`zero <kspace_style>`
+

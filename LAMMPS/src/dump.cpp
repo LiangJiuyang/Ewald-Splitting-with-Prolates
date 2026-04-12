@@ -47,7 +47,7 @@ enum { ASCEND, DESCEND };
 Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) :
     Pointers(lmp), multiname(nullptr), idrefresh(nullptr), irefresh(nullptr), skipvar(nullptr),
     format(nullptr), format_default(nullptr), format_line_user(nullptr), format_float_user(nullptr),
-    format_int_user(nullptr), format_bigint_user(nullptr), format_column_user(nullptr), fp(nullptr),
+    format_int_user(nullptr), format_bigint_user(nullptr), format_column_user(nullptr),
     nameslist(nullptr), buf(nullptr), sbuf(nullptr), ids(nullptr), bufsort(nullptr),
     idsort(nullptr), index(nullptr), proclist(nullptr), xpbc(nullptr), vpbc(nullptr),
     imagepbc(nullptr), irregular(nullptr)
@@ -58,7 +58,7 @@ Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) :
   id = utils::strdup(arg[0]);
 
   igroup = group->find(arg[1]);
-  groupbit = group->bitmask[igroup];
+  groupbit = group->get_bitmask_by_id(FLERR, arg[1], fmt::format("dump {}", arg[2]));
 
   style = utils::strdup(arg[2]);
 
@@ -73,6 +73,7 @@ Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) :
 
   clearstep = 0;
   sort_flag = 0;
+  sortcol = 0;
   balance_flag = 0;
   append_flag = 0;
   buffer_allow = 0;
@@ -109,6 +110,7 @@ Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) :
   compressed = 0;
   binary = 0;
   multifile = 0;
+  multifile_override = 0;
   size_one = 0;
 
   multiproc = 0;
@@ -181,17 +183,6 @@ Dump::~Dump()
     for (int idx = 0; idx < numfiles; ++idx) delete[] nameslist[idx];
     delete[] nameslist;
   }
-
-  // XTC style sets fp to a null pointer since it closes file in its destructor
-
-  if (multifile == 0 && fp != nullptr) {
-    if (compressed) {
-      if (filewriter) platform::pclose(fp);
-    } else {
-      if (filewriter) fclose(fp);
-    }
-    fp = nullptr;
-  }
 }
 
 // clang-format off
@@ -222,14 +213,15 @@ void Dump::init()
 
   if (sort_flag) {
     if (multiproc > 1)
-      error->all(FLERR,
+      error->all(FLERR, Error::NOLASTLINE,
                  "Cannot sort dump when 'nfile' or 'fileper' keywords have non-default values");
     if (sortcol == 0 && atom->tag_enable == 0)
-      error->all(FLERR,"Cannot sort dump on atom IDs with no atom IDs defined");
+      error->all(FLERR, Error::NOLASTLINE,
+                 "Cannot sort dump on atom IDs with no atom IDs defined");
     if (sortcol && sortcol > size_one)
-      error->all(FLERR,"Dump sort column index {} is invalid", sortcol);
+      error->all(FLERR, Error::NOLASTLINE, "Dump sort column index {} is invalid", sortcol);
     if ((sortcol != 0) && (has_id == 0) && (me == 0))
-      error->warning(FLERR,"Dump {} includes no atom IDs and is not sorted by ID. "
+      error->warning(FLERR, "Dump {} includes no atom IDs and is not sorted by ID. "
                      "This may complicate post-processing tasks or visualization", id);
     if (nprocs > 1 && irregular == nullptr)
       irregular = new Irregular(lmp);
@@ -289,16 +281,18 @@ void Dump::init()
 
   if (refreshflag) {
     irefresh = modify->get_compute_by_id(idrefresh);
-    if (!irefresh) error->all(FLERR,"Dump could not find refresh compute ID {}", idrefresh);
+    if (!irefresh)
+      error->all(FLERR, Error::NOLASTLINE, "Dump could not find refresh compute ID {}", idrefresh);
   }
 
   // if skipflag, check skip variable
 
   if (skipflag) {
     skipindex = input->variable->find(skipvar);
-    if (skipindex < 0) error->all(FLERR,"Dump skip variable not found");
+    if (skipindex < 0)
+      error->all(FLERR, Error::NOLASTLINE, "Dump skip variable {} not found", skipvar);
     if (!input->variable->equalstyle(skipindex))
-      error->all(FLERR,"Variable for dump skip is invalid style");
+      error->all(FLERR, Error::NOLASTLINE, "Variable {} for dump skip is invalid style", skipvar);
   }
 
   // preallocation for PBC copies if requested
@@ -310,6 +304,7 @@ void Dump::init()
 
 int Dump::count()
 {
+  // group all
   if (igroup == 0) return atom->nlocal;
 
   int *mask = atom->mask;
@@ -388,7 +383,7 @@ void Dump::write()
 
   if (nmax*size_one > maxbuf) {
     if ((bigint) nmax * size_one > MAXSMALLINT)
-      error->all(FLERR,"Too much per-proc info for dump");
+      error->all(FLERR, Error::NOLASTLINE, "Too much per-proc data for dump");
     maxbuf = nmax * size_one;
     memory->destroy(buf);
     memory->create(buf,maxbuf,"dump:buf");
@@ -408,9 +403,9 @@ void Dump::write()
     int nlocal = atom->nlocal;
     if (nlocal > maxpbc) pbc_allocate();
     if (nlocal) {
-      memcpy(&xpbc[0][0],&atom->x[0][0],3*nlocal*sizeof(double));
-      memcpy(&vpbc[0][0],&atom->v[0][0],3*nlocal*sizeof(double));
-      memcpy(imagepbc,atom->image,nlocal*sizeof(imageint));
+      memcpy(&xpbc[0][0],&atom->x[0][0],(sizeof(double)*3*nlocal)&MEMCPYMASK);
+      memcpy(&vpbc[0][0],&atom->v[0][0],(sizeof(double)*3*nlocal)&MEMCPYMASK);
+      memcpy(imagepbc,atom->image,(nlocal*sizeof(imageint))&MEMCPYMASK);
     }
     xhold = atom->x;
     vhold = atom->v;
@@ -456,7 +451,8 @@ void Dump::write()
     nsme = convert_string(nme,buf);
     int nsmin,nsmax;
     MPI_Allreduce(&nsme,&nsmin,1,MPI_INT,MPI_MIN,world);
-    if (nsmin < 0) error->all(FLERR,"Too much buffered per-proc info for dump");
+    if (nsmin < 0)
+      error->all(FLERR, Error::NOLASTLINE, "Too much buffered per-proc data for dump");
     if (multiproc != nprocs)
       MPI_Allreduce(&nsme,&nsmax,1,MPI_INT,MPI_MAX,world);
     else nsmax = nsme;
@@ -470,7 +466,8 @@ void Dump::write()
   // ping each proc in my cluster, receive its data, write data to file
   // else wait for ping from fileproc, send my data to fileproc
 
-  int tmp,nlines,nchars;
+  int tmp = 0;
+  int nlines,nchars;
   MPI_Status status;
   MPI_Request request;
 
@@ -533,18 +530,12 @@ void Dump::write()
 
   if (filewriter && fp != nullptr) write_footer();
 
-  if (fp && ferror(fp)) error->one(FLERR,"Error writing dump {}: {}", id, utils::getsyserror());
+  if (fp && ferror(fp))
+    error->one(FLERR, Error::NOLASTLINE, "Error writing dump {}: {}", id, utils::getsyserror());
 
-  // if file per timestep, close file if I am filewriter
+  // if file per timestep, close open files
 
-  if (multifile) {
-    if (compressed) {
-      if (filewriter && fp != nullptr) platform::pclose(fp);
-    } else {
-      if (filewriter && fp != nullptr) fclose(fp);
-    }
-    fp = nullptr;
-  }
+  if (multifile) fp = nullptr;  // implicitly closes file
 }
 
 /* ----------------------------------------------------------------------
@@ -586,6 +577,7 @@ void Dump::openfile()
 
   if (filewriter) {
     if (compressed) {
+      fp.set_pclose();
       fp = platform::compressed_write(filecurrent);
     } else if (binary) {
       fp = fopen(filecurrent,"wb");
@@ -595,8 +587,11 @@ void Dump::openfile()
       fp = fopen(filecurrent,"w");
     }
 
-    if (fp == nullptr) error->one(FLERR,"Cannot open dump file");
-  } else fp = nullptr;
+    if (fp == nullptr) {
+      error->one(FLERR, Error::NOLASTLINE, "Cannot open dump file {}: {}",
+                 filecurrent, utils::getsyserror());
+    }
+  }
 
   // delete string with timestep replaced
 
@@ -860,7 +855,7 @@ int Dump::idcompare(const int i, const int j, void *ptr)
 
 int Dump::bufcompare(const int i, const int j, void *ptr)
 {
-  auto dptr = (Dump *) ptr;
+  auto *dptr = (Dump *) ptr;
   double *bufsort     = dptr->bufsort;
   const int size_one  = dptr->size_one;
   const int sortcolm1 = dptr->sortcolm1;
@@ -881,7 +876,7 @@ int Dump::bufcompare(const int i, const int j, void *ptr)
 
 int Dump::bufcompare_reverse(const int i, const int j, void *ptr)
 {
-  auto dptr = (Dump *) ptr;
+  auto *dptr = (Dump *) ptr;
   double *bufsort     = dptr->bufsort;
   const int size_one  = dptr->size_one;
   const int sortcolm1 = dptr->sortcolm1;
@@ -957,7 +952,7 @@ void Dump::balance()
   // post recvs first
 
   int nswap = 0;
-  auto request = new MPI_Request[nprocs];
+  auto *request = new MPI_Request[nprocs];
 
   // find which proc starting atom belongs to
 
@@ -1067,7 +1062,7 @@ void Dump::modify_params(int narg, char **arg)
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "dump_modify buffer", error);
       buffer_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
       if (buffer_flag && buffer_allow == 0)
-        error->all(FLERR,"Dump_modify buffer yes not allowed for this style");
+        error->all(FLERR, iarg + 2, "Dump_modify buffer yes not allowed for this style");
       iarg += 2;
 
     } else if (strcmp(arg[iarg],"colname") == 0) {
@@ -1090,7 +1085,7 @@ void Dump::modify_params(int narg, char **arg)
           }
         }
         if ((icol < 0) || (icol >= (int)keyword_user.size()))
-          error->all(FLERR, "Incorrect dump_modify arguments: {} {} {}",
+          error->all(FLERR, Error::NOPOINTER, "Incorrect dump_modify arguments: {} {} {}",
                      arg[iarg], arg[iarg+1], arg[iarg+2]);
         keyword_user[icol] = arg[iarg+2];
         iarg += 3;
@@ -1135,7 +1130,8 @@ void Dump::modify_params(int narg, char **arg)
         delta = 0.0;
       } else {
         delta = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-        if (delta <= 0.0) error->all(FLERR, "Invalid dump_modify every/time argument: {}", delta);
+        if (delta <= 0.0)
+          error->all(FLERR, iarg + 1, "Invalid dump_modify every/time argument: {}", delta);
       }
       output->mode_dump[idump] = 1;
       output->every_time_dump[idump] = delta;
@@ -1145,9 +1141,9 @@ void Dump::modify_params(int narg, char **arg)
     } else if (strcmp(arg[iarg],"fileper") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "dump_modify fileper", error);
       if (!multiproc)
-        error->all(FLERR,"Cannot use dump_modify fileper without % in dump file name");
+        error->all(FLERR, iarg, "Cannot use dump_modify fileper without % in dump file name");
       int nper = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-      if (nper <= 0) error->all(FLERR, "Invalid dump_modify fileper argument: {}", nper);
+      if (nper <= 0) error->all(FLERR, iarg + 1, "Invalid dump_modify fileper argument: {}", nper);
 
       multiproc = nprocs/nper;
       if (nprocs % nper) multiproc++;
@@ -1205,7 +1201,8 @@ void Dump::modify_params(int narg, char **arg)
         iarg += 3;
       } else {   // pass other format options to child classes
         int n = modify_param(narg-iarg,&arg[iarg]);
-        if (n == 0) error->all(FLERR,"Unknown dump_modify format keyword: {}", arg[iarg+1]);
+        if (n == 0)
+          error->all(FLERR, iarg + 1, "Unknown dump_modify format keyword: {}", arg[iarg+1]);
         iarg += n;
       }
 
@@ -1217,7 +1214,7 @@ void Dump::modify_params(int narg, char **arg)
     } else if (strcmp(arg[iarg],"maxfiles") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "dump_modify maxfiles", error);
       if (!multifile)
-        error->all(FLERR,"Cannot use dump_modify maxfiles without * in dump file name");
+        error->all(FLERR, "Cannot use dump_modify maxfiles without * in dump file name");
       // wipe out existing storage
       if (maxfiles > 0) {
         for (int idx=0; idx < numfiles; ++idx)
@@ -1297,7 +1294,7 @@ void Dump::modify_params(int narg, char **arg)
         sort_flag = 1;
         sortcol = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
         sortorder = ASCEND;
-        if (sortcol == 0) error->all(FLERR, "Invalid dump_modify sort argument: {}", sortcol);
+        if (sortcol == 0) error->all(FLERR, iarg+2,"Invalid dump_modify sort argument: {}", sortcol);
         if (sortcol < 0) {
           sortorder = DESCEND;
           sortcol = -sortcol;
@@ -1318,7 +1315,7 @@ void Dump::modify_params(int narg, char **arg)
 
     } else {
       int n = modify_param(narg-iarg,&arg[iarg]);
-      if (n == 0) error->all(FLERR,"Unknown dump_modify keyword: {}", arg[iarg]);
+      if (n == 0) error->all(FLERR,iarg+1,"Unknown dump_modify keyword: {}", arg[iarg]);
       iarg += n;
     }
   }

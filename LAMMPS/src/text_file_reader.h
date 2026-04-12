@@ -26,6 +26,7 @@
 
 namespace LAMMPS_NS {
 class TextFileReader {
+ private:
   std::string filetype;
   bool closefp;
   int bufsize;
@@ -59,7 +60,7 @@ class FileReaderException : public std::exception {
  public:
   FileReaderException(const std::string &msg) : message(msg) {}
 
-  const char *what() const noexcept override { return message.c_str(); }
+  [[nodiscard]] const char *what() const noexcept override { return message.c_str(); }
 };
 
 class EOFException : public FileReaderException {

@@ -34,6 +34,7 @@
 #include "suffix.h"
 
 #include <cmath>
+#include <cstring>
 
 #include "omp_compat.h"
 
@@ -356,7 +357,7 @@ void PPPMIntel::particle_map(IntelBuffers<flt_t,acc_t> *buffers)
   int flag = 0;
 
   if (!std::isfinite(boxlo[0]) || !std::isfinite(boxlo[1]) || !std::isfinite(boxlo[2]))
-    error->one(FLERR,"Non-numeric box dimensions - simulation unstable");
+    error->one(FLERR,"Non-numeric box dimensions - simulation unstable" + utils::errorurl(6));
 
   #if defined(_OPENMP)
   #pragma omp parallel LMP_DEFAULT_NONE \
@@ -404,7 +405,7 @@ void PPPMIntel::particle_map(IntelBuffers<flt_t,acc_t> *buffers)
     }
   }
 
-  if (flag) error->one(FLERR,"Out of range atoms - cannot compute PPPM");
+  if (flag) error->one(FLERR, Error::NOLASTLINE, "Out of range atoms - cannot compute PPPM" + utils::errorurl(4));
 }
 
 

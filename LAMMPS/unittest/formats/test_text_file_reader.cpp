@@ -11,8 +11,6 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "info.h"
-#include "input.h"
 #include "text_file_reader.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -92,7 +90,7 @@ TEST_F(TextFileReaderTest, buffer)
     test_files();
     auto *reader = new TextFileReader("text_reader_two.file", "test");
     reader->set_bufsize(4096);
-    auto *line   = reader->next_line();
+    reader->next_line();
     ASSERT_THROW({ reader->set_bufsize(20); }, FileReaderException);
     delete reader;
 }

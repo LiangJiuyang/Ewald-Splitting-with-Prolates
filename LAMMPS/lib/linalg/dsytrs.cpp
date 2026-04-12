@@ -103,8 +103,8 @@ int dsytrs_(char *uplo, integer *n, integer *nrhs, doublereal *a, integer *lda, 
         }
         if (ipiv[k] > 0) {
             i__1 = k - 1;
-            dgemv_((char *)"Transpose", &i__1, nrhs, &c_b7, &b[b_offset], ldb, &a[k * a_dim1 + 1], &c__1,
-                   &c_b19, &b[k + b_dim1], ldb, (ftnlen)9);
+            dgemv_((char *)"T", &i__1, nrhs, &c_b7, &b[b_offset], ldb, &a[k * a_dim1 + 1], &c__1, &c_b19,
+                   &b[k + b_dim1], ldb, (ftnlen)1);
             kp = ipiv[k];
             if (kp != k) {
                 dswap_(nrhs, &b[k + b_dim1], ldb, &b[kp + b_dim1], ldb);
@@ -112,11 +112,11 @@ int dsytrs_(char *uplo, integer *n, integer *nrhs, doublereal *a, integer *lda, 
             ++k;
         } else {
             i__1 = k - 1;
-            dgemv_((char *)"Transpose", &i__1, nrhs, &c_b7, &b[b_offset], ldb, &a[k * a_dim1 + 1], &c__1,
-                   &c_b19, &b[k + b_dim1], ldb, (ftnlen)9);
+            dgemv_((char *)"T", &i__1, nrhs, &c_b7, &b[b_offset], ldb, &a[k * a_dim1 + 1], &c__1, &c_b19,
+                   &b[k + b_dim1], ldb, (ftnlen)1);
             i__1 = k - 1;
-            dgemv_((char *)"Transpose", &i__1, nrhs, &c_b7, &b[b_offset], ldb, &a[(k + 1) * a_dim1 + 1],
-                   &c__1, &c_b19, &b[k + 1 + b_dim1], ldb, (ftnlen)9);
+            dgemv_((char *)"T", &i__1, nrhs, &c_b7, &b[b_offset], ldb, &a[(k + 1) * a_dim1 + 1], &c__1,
+                   &c_b19, &b[k + 1 + b_dim1], ldb, (ftnlen)1);
             kp = -ipiv[k];
             if (kp != k) {
                 dswap_(nrhs, &b[k + b_dim1], ldb, &b[kp + b_dim1], ldb);
@@ -180,8 +180,8 @@ int dsytrs_(char *uplo, integer *n, integer *nrhs, doublereal *a, integer *lda, 
         if (ipiv[k] > 0) {
             if (k < *n) {
                 i__1 = *n - k;
-                dgemv_((char *)"Transpose", &i__1, nrhs, &c_b7, &b[k + 1 + b_dim1], ldb,
-                       &a[k + 1 + k * a_dim1], &c__1, &c_b19, &b[k + b_dim1], ldb, (ftnlen)9);
+                dgemv_((char *)"T", &i__1, nrhs, &c_b7, &b[k + 1 + b_dim1], ldb, &a[k + 1 + k * a_dim1],
+                       &c__1, &c_b19, &b[k + b_dim1], ldb, (ftnlen)1);
             }
             kp = ipiv[k];
             if (kp != k) {
@@ -191,12 +191,12 @@ int dsytrs_(char *uplo, integer *n, integer *nrhs, doublereal *a, integer *lda, 
         } else {
             if (k < *n) {
                 i__1 = *n - k;
-                dgemv_((char *)"Transpose", &i__1, nrhs, &c_b7, &b[k + 1 + b_dim1], ldb,
-                       &a[k + 1 + k * a_dim1], &c__1, &c_b19, &b[k + b_dim1], ldb, (ftnlen)9);
+                dgemv_((char *)"T", &i__1, nrhs, &c_b7, &b[k + 1 + b_dim1], ldb, &a[k + 1 + k * a_dim1],
+                       &c__1, &c_b19, &b[k + b_dim1], ldb, (ftnlen)1);
                 i__1 = *n - k;
-                dgemv_((char *)"Transpose", &i__1, nrhs, &c_b7, &b[k + 1 + b_dim1], ldb,
+                dgemv_((char *)"T", &i__1, nrhs, &c_b7, &b[k + 1 + b_dim1], ldb,
                        &a[k + 1 + (k - 1) * a_dim1], &c__1, &c_b19, &b[k - 1 + b_dim1], ldb,
-                       (ftnlen)9);
+                       (ftnlen)1);
             }
             kp = -ipiv[k];
             if (kp != k) {

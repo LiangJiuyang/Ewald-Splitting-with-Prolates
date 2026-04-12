@@ -49,6 +49,7 @@ int dgesdd_(char *jobz, integer *m, integer *n, doublereal *a, integer *lda, dou
         xerbla_(char *, integer *, ftnlen),
         dorgbr_(char *, integer *, integer *, integer *, doublereal *, integer *, doublereal *,
                 doublereal *, integer *, integer *, ftnlen);
+    extern logical disnan_(doublereal *);
     doublereal bignum;
     extern int dormbr_(char *, char *, char *, integer *, integer *, integer *, doublereal *,
                        integer *, doublereal *, doublereal *, integer *, doublereal *, integer *,
@@ -60,6 +61,7 @@ int dgesdd_(char *jobz, integer *m, integer *n, doublereal *a, integer *lda, dou
     integer ldwrkl, ldwrkr, minwrk, ldwrku, maxwrk, ldwkvt;
     doublereal smlnum;
     logical wntqas, lquery;
+    extern doublereal droundup_lwork__(integer *);
     integer lwork_dgebrd_mm__, lwork_dgebrd_mn__, lwork_dgebrd_nn__, lwork_dgelqf_mn__,
         lwork_dgeqrf_mn__;
     a_dim1 = *lda;
@@ -335,7 +337,7 @@ int dgesdd_(char *jobz, integer *m, integer *n, doublereal *a, integer *lda, dou
             }
         }
         maxwrk = max(maxwrk, minwrk);
-        work[1] = (doublereal)maxwrk;
+        work[1] = droundup_lwork__(&maxwrk);
         if (*lwork < minwrk && !lquery) {
             *info = -12;
         }
@@ -354,6 +356,10 @@ int dgesdd_(char *jobz, integer *m, integer *n, doublereal *a, integer *lda, dou
     smlnum = sqrt(dlamch_((char *)"S", (ftnlen)1)) / eps;
     bignum = 1. / smlnum;
     anrm = dlange_((char *)"M", m, n, &a[a_offset], lda, dum, (ftnlen)1);
+    if (disnan_(&anrm)) {
+        *info = -4;
+        return 0;
+    }
     iscl = 0;
     if (anrm > 0. && anrm < smlnum) {
         iscl = 1;
@@ -780,7 +786,7 @@ int dgesdd_(char *jobz, integer *m, integer *n, doublereal *a, integer *lda, dou
                     (ftnlen)1);
         }
     }
-    work[1] = (doublereal)maxwrk;
+    work[1] = droundup_lwork__(&maxwrk);
     return 0;
 }
 #ifdef __cplusplus

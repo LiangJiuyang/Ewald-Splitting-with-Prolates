@@ -34,7 +34,7 @@
 using namespace LAMMPS_NS;
 
 static const char cite_pair_gayberne[] =
-  "pair gayberne command: doi:10.1063/1.3058435\n\n"
+  "pair gayberne command: https://doi.org/10.1063/1.3058435\n\n"
   "@Article{Brown09,\n"
   " author =  {W. M. Brown and M. K. Petersen and S. J. Plimpton and G. S. Grest},\n"
   " title =   {Liquid Crystal Nanodroplets in Solution},\n"
@@ -292,7 +292,7 @@ void PairGayBerne::settings(int narg, char **arg)
 void PairGayBerne::coeff(int narg, char **arg)
 {
   if (narg < 10 || narg > 11)
-    error->all(FLERR,"Incorrect args for pair coefficients");
+    error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
@@ -336,7 +336,7 @@ void PairGayBerne::coeff(int narg, char **arg)
     }
   }
 
-  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 }
 
 

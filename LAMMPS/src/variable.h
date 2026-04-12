@@ -15,6 +15,7 @@
 #define LMP_VARIABLE_H
 
 #include "pointers.h"
+#include "safe_pointers.h"
 
 namespace LAMMPS_NS {
 class Region;
@@ -49,6 +50,7 @@ class Variable : protected Pointers {
   void compute_atom(int, int, double *, int, int);
   int compute_vector(int, double **);
   void internal_set(int, double);
+  int internal_create(char *, double);
 
   tagint int_between_brackets(char *&, int);
   double evaluate_boolean(char *);
@@ -87,6 +89,7 @@ class Variable : protected Pointers {
   int *num;                    // # of values for each variable
   int *which;                  // next available value for each variable
   int *pad;                    // 1 = pad loop/uloop variables with 0s, 0 = no pad
+  int *pyindex;                // indices to Python funcs for python-style vars
   class VarReader **reader;    // variable that reads from file
   char ***data;                // str value of each variable's values
   double *dvalue;              // single numeric value for internal variables
@@ -123,9 +126,13 @@ class Variable : protected Pointers {
     Tree *first, *second;    // ptrs further down tree for first 2 args
     Tree **extra;            // ptrs further down tree for nextra args
 
+    int pyvar;               // index of Python variable invoked as py_name()
+    int argcount;            // # of args to associated Python function
+    int *argvars;            // indices of internal variables for each arg
+
     Tree() :
         array(nullptr), iarray(nullptr), barray(nullptr), selfalloc(0), ivalue(0), nextra(0),
-        region(nullptr), first(nullptr), second(nullptr), extra(nullptr)
+        region(nullptr), first(nullptr), second(nullptr), extra(nullptr), argvars(nullptr)
     {
     }
   };
@@ -170,7 +177,7 @@ class VarReader : protected Pointers {
 
  private:
   int me, style;
-  FILE *fp;
+  SafeFilePtr fp;
   char *buffer;
 };
 

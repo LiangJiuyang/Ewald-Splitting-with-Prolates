@@ -28,7 +28,7 @@ int zpotri_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
     if (*n == 0) {
         return 0;
     }
-    ztrtri_(uplo, (char *)"Non-unit", n, &a[a_offset], lda, info, (ftnlen)1, (ftnlen)8);
+    ztrtri_(uplo, (char *)"N", n, &a[a_offset], lda, info, (ftnlen)1, (ftnlen)1);
     if (*info > 0) {
         return 0;
     }

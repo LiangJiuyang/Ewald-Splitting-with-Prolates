@@ -24,11 +24,13 @@
 #include "domain.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "kspace.h"
 #include "math_const.h"
 #include "math_special.h"
 #include "memory.h"
 #include "neighbor.h"
+#include "safe_pointers.h"
 #include "suffix.h"
 #include "update.h"
 
@@ -85,9 +87,11 @@ Pair::Pair(LAMMPS *lmp) :
   nextra = 0;
   single_extra = 0;
 
-  ewaldflag = pppmflag = psflag = msmflag = dispersionflag = tip4pflag = dipoleflag = spinflag = 0;
+  ewaldflag = pppmflag = espflag = msmflag = dispersionflag = tip4pflag = dipoleflag = spinflag = 0;
   reinitflag = 1;
   centroidstressflag = CENTROID_SAME;
+
+  atomic_energy_enable = 0;
 
   // pair_modify settings
 
@@ -166,7 +170,7 @@ void Pair::modify_params(int narg, char **arg)
       if (strcmp(arg[iarg+1],"geometric") == 0) mix_flag = GEOMETRIC;
       else if (strcmp(arg[iarg+1],"arithmetic") == 0) mix_flag = ARITHMETIC;
       else if (strcmp(arg[iarg+1],"sixthpower") == 0) mix_flag = SIXTHPOWER;
-      else error->all(FLERR,"Unknown pair_modify mix argument: {}", arg[iarg+1]);
+      else error->all(FLERR, iarg + 1, "Unknown pair_modify mix argument: {}", arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"shift") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "pair_modify shift", error);
@@ -176,13 +180,17 @@ void Pair::modify_params(int narg, char **arg)
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "pair_modify table", error);
       ncoultablebits = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
       if (ncoultablebits > (int)sizeof(float)*CHAR_BIT)
-        error->all(FLERR,"Too many total bits for bitmapped lookup table");
+        error->all(FLERR, iarg + 1, "Too many total bits for bitmapped Coulomb lookup table");
+      if (ncoultablebits && (ncoultablebits < 8))
+        error->all(FLERR, iarg + 1, "Too few total bits for bitmapped Coulomb lookup table");
       iarg += 2;
     } else if (strcmp(arg[iarg],"table/disp") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "pair_modify table/disp", error);
       ndisptablebits = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
       if (ndisptablebits > (int)sizeof(float)*CHAR_BIT)
-        error->all(FLERR,"Too many total bits for bitmapped lookup table");
+        error->all(FLERR, iarg + 1, "Too many total bits for bitmapped Dispersion lookup table");
+      if (ndisptablebits && (ndisptablebits < 8))
+        error->all(FLERR, iarg + 1, "Too few total bits for bitmapped Dispersion lookup table");
       iarg += 2;
     } else if (strcmp(arg[iarg],"tabinner") == 0) {
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "pair_modify tabinner", error);
@@ -207,7 +215,7 @@ void Pair::modify_params(int narg, char **arg)
       if (iarg+2 > narg) utils::missing_cmd_args(FLERR, "pair_modify neigh/trim", error);
       trim_flag = utils::logical(FLERR,arg[iarg+1],false,lmp);
       iarg += 2;
-    } else error->all(FLERR,"Unknown pair_modify keyword: {}", arg[iarg]);
+    } else error->all(FLERR, iarg, "Unknown pair_modify keyword: {}", arg[iarg]);
   }
 }
 
@@ -218,9 +226,9 @@ void Pair::init()
   int i,j;
 
   if (offset_flag && tail_flag)
-    error->all(FLERR,"Cannot have both pair_modify shift and tail set to yes");
+    error->all(FLERR, Error::NOLASTLINE, "Cannot have both pair_modify shift and tail set to yes");
   if (tail_flag && domain->dimension == 2)
-    error->all(FLERR,"Cannot use pair tail corrections with 2d simulations");
+    error->all(FLERR, Error::NOLASTLINE, "Cannot use pair tail corrections with 2d simulations");
   if (tail_flag && domain->nonperiodic && comm->me == 0)
     error->warning(FLERR,"Using pair tail corrections with non-periodic system");
   if (!compute_flag && tail_flag && comm->me == 0)
@@ -247,10 +255,15 @@ void Pair::init()
   // I,I coeffs must be set
   // init_one() will check if I,J is set explicitly or inferred by mixing
 
-  if (!allocated) error->all(FLERR,"All pair coeffs are not set");
-
-  for (i = 1; i <= atom->ntypes; i++)
-    if (setflag[i][i] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (!allocated) {
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status:\n" + Info::get_pair_coeff_status(lmp));
+  } else {
+    for (i = 1; i <= atom->ntypes; i++)
+      if (setflag[i][i] == 0)
+        error->all(FLERR, Error::NOLASTLINE,
+                   "All pair coeffs are not set. Status:\n" + Info::get_pair_coeff_status(lmp));
+  }
 
   // style-specific initialization
 
@@ -311,7 +324,8 @@ void Pair::reinit()
   // generalize this error message if reinit() is used by more than fix adapt
 
   if (!reinitflag)
-    error->all(FLERR,"Fix adapt interface to this pair style not supported");
+    error->all(FLERR, Error::NOLASTLINE,
+               "Fix adapt interface to pair style {} is not supported", force->pair_style);
 
   etail = ptail = 0.0;
 
@@ -363,21 +377,17 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
   double qqrd2e = force->qqrd2e;
 
   if (force->kspace == nullptr)
-    error->all(FLERR,"Pair style requires a KSpace style");
+    error->all(FLERR, Error::NOLASTLINE,
+               "Pair style {} requires a KSpace style", force->pair_style);
   double g_ewald = force->kspace->g_ewald;
-  
+
   double *force_poly_coeff = force->kspace->force_poly_coeff;
   int num_of_force_poly = force->kspace->num_of_force_poly;
   double *energy_poly_coeff = force->kspace->energy_poly_coeff;
   int num_of_energy_poly = force->kspace->num_of_energy_poly;
-  
-  //printf("num_of_force_poly: %d\n", num_of_force_poly);
-  //printf("num_of_energy_poly: %d\n", num_of_energy_poly);
-  //printf("force_poly_coeff: %f\n", force_poly_coeff[0]);
-  //printf("energy_poly_coeff: %f\n", energy_poly_coeff[0]);
 
   double cut_coulsq = cut_coul * cut_coul;
- 
+
   tabinnersq = tabinner*tabinner;
   init_bitmap(tabinner,cut_coul,ncoultablebits,
               masklo,maskhi,ncoulmask,ncoulshiftbits);
@@ -418,38 +428,43 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
   for (int i = 0; i < ntable; i++) {
     rsq_lookup.i = i << ncoulshiftbits;
     rsq_lookup.i |= masklo;
-    if (rsq_lookup.f < tabinnersq) {
+    if ((double)rsq_lookup.f < tabinnersq) {
       rsq_lookup.i = i << ncoulshiftbits;
       rsq_lookup.i |= maskhi;
     }
-    r = sqrtf(rsq_lookup.f);
+    r = sqrt((double)rsq_lookup.f);
     if (msmflag) {
       egamma = 1.0 - (r/cut_coul)*force->kspace->gamma(r/cut_coul);
-      fgamma = 1.0 + (rsq_lookup.f/cut_coulsq)*
+      fgamma = 1.0 + ((double)rsq_lookup.f/cut_coulsq)*
         force->kspace->dgamma(r/cut_coul);
-    } else {
+    } else if (espflag) {
+      // This block is currently empty and does not perform any operations.
+    }
+    else {
       grij = g_ewald * r;
       expm2 = exp(-grij*grij);
       derfc = erfc(grij);
     }
+
     if (cut_respa == nullptr) {
-      rtable[i] = rsq_lookup.f;
+      rtable[i] = (double)rsq_lookup.f;
       ctable[i] = qqrd2e/r;
       if (msmflag) {
         ftable[i] = qqrd2e/r * fgamma;
         etable[i] = qqrd2e/r * egamma;
-      } else if (psflag) {
+      } else if (espflag) {
+        double r_coul = 2.0 * r/cut_coul - 1.0;
         double force_poly_appx = force_poly_coeff[0];
         double force_poly_r = 1.0;
         for(int ii=1; ii<num_of_force_poly; ii++){
-            force_poly_r *= r/cut_coul;
+            force_poly_r *= r_coul;
             force_poly_appx += force_poly_coeff[ii] * force_poly_r;
         }
         ftable[i] = qqrd2e * force_poly_appx / r;
         double energy_poly_appx = energy_poly_coeff[0];
         double energy_poly_r = 1.0;
         for(int ii=1; ii<num_of_energy_poly; ii++){
-            energy_poly_r *= r/cut_coul;
+            energy_poly_r *= r_coul;
             energy_poly_appx += energy_poly_coeff[ii] * energy_poly_r;
         }
         etable[i] = qqrd2e * energy_poly_appx / r;
@@ -458,20 +473,20 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
         etable[i] = qqrd2e/r * derfc;
       }
     } else {
-      rtable[i] = rsq_lookup.f;
+      rtable[i] = (double)rsq_lookup.f;
       ctable[i] = 0.0;
       ptable[i] = qqrd2e/r;
       if (msmflag) {
         ftable[i] = qqrd2e/r * (fgamma - 1.0);
         etable[i] = qqrd2e/r * egamma;
         vtable[i] = qqrd2e/r * fgamma;
-      } else { 
+      } else {
         ftable[i] = qqrd2e/r * (derfc + MY_ISPI4*grij*expm2 - 1.0);
         etable[i] = qqrd2e/r * derfc;
         vtable[i] = qqrd2e/r * (derfc + MY_ISPI4*grij*expm2);
       }
-      if (rsq_lookup.f > cut_respa[2]*cut_respa[2]) {
-        if (rsq_lookup.f < cut_respa[3]*cut_respa[3]) {
+      if ((double)rsq_lookup.f > cut_respa[2]*cut_respa[2]) {
+        if ((double)rsq_lookup.f < cut_respa[3]*cut_respa[3]) {
           rsw = (r - cut_respa[2])/(cut_respa[3] - cut_respa[2]);
           ftable[i] += qqrd2e/r * rsw*rsw*(3.0 - 2.0*rsw);
           ctable[i] = qqrd2e/r * rsw*rsw*(3.0 - 2.0*rsw);
@@ -485,7 +500,7 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
     minrsq_lookup.f = MIN(minrsq_lookup.f,rsq_lookup.f);
   }
 
-  tabinnersq = minrsq_lookup.f;
+  tabinnersq = (double)minrsq_lookup.f;
 
   int ntablem1 = ntable - 1;
 
@@ -532,12 +547,12 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
   rsq_lookup.i = itablemax << ncoulshiftbits;
   rsq_lookup.i |= maskhi;
 
-  if (rsq_lookup.f < cut_coulsq) {
+  if ((double)rsq_lookup.f < cut_coulsq) {
     rsq_lookup.f = cut_coulsq;
-    r = sqrtf(rsq_lookup.f);
+    r = sqrt((double)rsq_lookup.f);
     if (msmflag) {
       egamma = 1.0 - (r/cut_coul)*force->kspace->gamma(r/cut_coul);
-      fgamma = 1.0 + (rsq_lookup.f/cut_coulsq)*
+      fgamma = 1.0 + ((double)rsq_lookup.f/cut_coulsq)*
         force->kspace->dgamma(r/cut_coul);
     } else {
       grij = g_ewald * r;
@@ -549,19 +564,20 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
       if (msmflag) {
         f_tmp = qqrd2e/r * fgamma;
         e_tmp = qqrd2e/r * egamma;
-      } else if (psflag) {
+      } else if (espflag) {
+        double r_coul = 2.0 * r/cut_coul - 1.0;
         double force_poly_appx = force_poly_coeff[0];
         double force_poly_r = 1.0;
         for(int ii=1; ii<num_of_force_poly; ii++){
-            force_poly_r *= r/cut_coul;
+            force_poly_r *= r_coul;
             force_poly_appx += force_poly_coeff[ii] * force_poly_r;
         }
         f_tmp = qqrd2e * force_poly_appx / r;
         double energy_poly_appx = energy_poly_coeff[0];
         double energy_poly_r = 1.0;
         for(int ii=1; ii<num_of_energy_poly; ii++){
-            energy_poly_r *= r/cut_coul;
-            energy_poly_appx += energy_poly_coeff[ii] * energy_poly_r; 
+            energy_poly_r *= r_coul;
+            energy_poly_appx += energy_poly_coeff[ii] * energy_poly_r;
         }
         e_tmp = qqrd2e * energy_poly_appx / r;
         } else {
@@ -580,8 +596,8 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
         e_tmp = qqrd2e/r * derfc;
         v_tmp = qqrd2e/r * (derfc + MY_ISPI4*grij*expm2);
       }
-      if (rsq_lookup.f > cut_respa[2]*cut_respa[2]) {
-        if (rsq_lookup.f < cut_respa[3]*cut_respa[3]) {
+      if ((double)rsq_lookup.f > cut_respa[2]*cut_respa[2]) {
+        if ((double)rsq_lookup.f < cut_respa[3]*cut_respa[3]) {
           rsw = (r - cut_respa[2])/(cut_respa[3] - cut_respa[2]);
           f_tmp += qqrd2e/r * rsw*rsw*(3.0 - 2.0*rsw);
           c_tmp = qqrd2e/r * rsw*rsw*(3.0 - 2.0*rsw);
@@ -593,7 +609,7 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
       }
     }
 
-    drtable[itablemax] = 1.0/(rsq_lookup.f - rtable[itablemax]);
+    drtable[itablemax] = 1.0/((double)rsq_lookup.f - rtable[itablemax]);
     dftable[itablemax] = f_tmp - ftable[itablemax];
     dctable[itablemax] = c_tmp - ctable[itablemax];
     detable[itablemax] = e_tmp - etable[itablemax];
@@ -644,22 +660,22 @@ void Pair::init_tables_disp(double cut_lj_global)
   for (int i = 0; i < ntable; i++) {
     rsq_lookup.i = i << ndispshiftbits;
     rsq_lookup.i |= masklo;
-    if (rsq_lookup.f < tabinnerdispsq) {
+    if ((double)rsq_lookup.f < tabinnerdispsq) {
       rsq_lookup.i = i << ndispshiftbits;
       rsq_lookup.i |= maskhi;
     }
-    rsq = rsq_lookup.f;
+    rsq = (double)rsq_lookup.f;
     double x2 = g2*rsq, a2 = 1.0/x2;
     x2 = a2*exp(-x2);
 
-    rdisptable[i] = rsq_lookup.f;
+    rdisptable[i] = (double)rsq_lookup.f;
     fdisptable[i] = g8*(((6.0*a2+6.0)*a2+3.0)*a2+1.0)*x2*rsq;
     edisptable[i] = g6*((a2+1.0)*a2+0.5)*x2;
 
     minrsq_lookup.f = MIN(minrsq_lookup.f,rsq_lookup.f);
   }
 
-  tabinnerdispsq = minrsq_lookup.f;
+  tabinnerdispsq = (double)minrsq_lookup.f;
 
   int ntablem1 = ntable - 1;
 
@@ -692,7 +708,7 @@ void Pair::init_tables_disp(double cut_lj_global)
   rsq_lookup.i = itablemax << ndispshiftbits;
   rsq_lookup.i |= maskhi;
 
-  if (rsq_lookup.f < (cut_lj_globalsq = cut_lj_global * cut_lj_global)) {
+  if ((double)rsq_lookup.f < (cut_lj_globalsq = cut_lj_global * cut_lj_global)) {
     rsq_lookup.f = cut_lj_globalsq;
 
     double x2 = g2*rsq, a2 = 1.0/x2;
@@ -700,7 +716,7 @@ void Pair::init_tables_disp(double cut_lj_global)
     f_tmp = g8*(((6.0*a2+6.0)*a2+3.0)*a2+1.0)*x2*rsq;
     e_tmp = g6*((a2+1.0)*a2+0.5)*x2;
 
-    drdisptable[itablemax] = 1.0/(rsq_lookup.f - rdisptable[itablemax]);
+    drdisptable[itablemax] = 1.0/((double)rsq_lookup.f - rdisptable[itablemax]);
     dfdisptable[itablemax] = f_tmp - fdisptable[itablemax];
     dedisptable[itablemax] = e_tmp - edisptable[itablemax];
   }
@@ -750,10 +766,11 @@ double Pair::mix_energy(double eps1, double eps2, double sig1, double sig2)
     return sqrt(eps1*eps2);
   else if (mix_flag == ARITHMETIC)
     return sqrt(eps1*eps2);
-  else if (mix_flag == SIXTHPOWER)
-    return (2.0 * sqrt(eps1*eps2) * powint(sig1, 3) * powint(sig2, 3)
-            / (powint(sig1, 6) + powint(sig2, 6)));
-  else did_mix = false;
+  else if (mix_flag == SIXTHPOWER) {
+    if ((sig1 != 0.0) && (sig2 != 0.0))
+      return (2.0 * sqrt(eps1*eps2) * powint(sig1, 3) * powint(sig2, 3)
+              / (powint(sig1, 6) + powint(sig2, 6)));
+  } else did_mix = false;
   return 0.0;
 }
 
@@ -774,9 +791,9 @@ double Pair::mix_distance(double sig1, double sig2)
 
 /* ---------------------------------------------------------------------- */
 
-void Pair::compute_dummy(int eflag, int vflag)
+void Pair::compute_dummy(int eflag, int vflag, int alloc)
 {
-  ev_init(eflag,vflag);
+  ev_init(eflag,vflag,alloc);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -804,7 +821,7 @@ void Pair::write_restart(FILE *)
 void Pair::add_tally_callback(Compute *ptr)
 {
   if (lmp->kokkos)
-    error->all(FLERR,"Cannot yet use compute tally with Kokkos");
+    error->all(FLERR, Error::NOLASTLINE, "Cannot yet use compute tally with Kokkos");
 
   int i,found=-1;
 
@@ -862,7 +879,8 @@ void Pair::map_element2type(int narg, char **arg, bool update_setflag)
   // elements = list of element names
 
   if (narg != ntypes)
-    error->all(FLERR, "Number of element to type mappings does not match number of atom types");
+    error->all(FLERR, Error::NOLASTLINE,
+               "Number of element to type mappings does not match number of atom types");
 
   if (elements) {
     for (i = 0; i < nelements; i++) delete[] elements[i];
@@ -904,7 +922,8 @@ void Pair::map_element2type(int narg, char **arg, bool update_setflag)
       }
     }
 
-    if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+    if (count == 0)
+      error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
   }
 }
 
@@ -912,16 +931,17 @@ void Pair::map_element2type(int narg, char **arg, bool update_setflag)
    setup for energy, virial computation
    see integrate::ev_set() for bitwise settings of eflag/vflag
    set the following flags, values are otherwise set to 0:
-     eflag_global != 0 if ENERGY_GLOBAL bit of eflag set
-     eflag_atom   != 0 if ENERGY_ATOM bit of eflag set
+     eflag_global != 0 if ENERGY_GLOBAL bit of eflag is set
+     eflag_atom   != 0 if ENERGY_ATOM bit of eflag is set
      eflag_either != 0 if eflag_global or eflag_atom is set
-     vflag_global != 0 if VIRIAL_PAIR bit of vflag set, OR
+     eflag_only   != 0 if ENERGY_GLOBAL and ENERGY_ONLY bits of eflag are set
+     vflag_global != 0 if VIRIAL_PAIR bit of vflag is set, OR
                        if VIRIAL_FDOTR bit of vflag is set but no_virial_fdotr = 1
-     vflag_fdotr  != 0 if VIRIAL_FDOTR bit of vflag set and no_virial_fdotr = 0
-     vflag_atom   != 0 if VIRIAL_ATOM bit of vflag set, OR
-                       if VIRIAL_CENTROID bit of vflag set
+     vflag_fdotr  != 0 if VIRIAL_FDOTR bit of vflag is set and no_virial_fdotr = 0
+     vflag_atom   != 0 if VIRIAL_ATOM bit of vflag is set, OR
+                       if VIRIAL_CENTROID bit of vflag is set
                        and centroidstressflag != CENTROID_AVAIL
-     cvflag_atom  != 0 if VIRIAL_CENTROID bit of vflag set
+     cvflag_atom  != 0 if VIRIAL_CENTROID bit of vflag is set
                        and centroidstressflag = CENTROID_AVAIL
      vflag_either != 0 if any of vflag_global, vflag_atom, cvflag_atom is set
      evflag       != 0 if eflag_either or vflag_either is set
@@ -935,9 +955,10 @@ void Pair::ev_setup(int eflag, int vflag, int alloc)
 {
   int i,n;
 
-  eflag_either = eflag;
+  eflag_either = eflag & (ENERGY_GLOBAL | ENERGY_ATOM);
   eflag_global = eflag & ENERGY_GLOBAL;
   eflag_atom = eflag & ENERGY_ATOM;
+  eflag_only = eflag_global ? (eflag & ENERGY_ONLY) : 0;
 
   vflag_global = vflag & VIRIAL_PAIR;
   if (vflag & VIRIAL_FDOTR && no_virial_fdotr_compute == 1) vflag_global = 1;
@@ -1011,7 +1032,6 @@ void Pair::ev_setup(int eflag, int vflag, int alloc)
       cvatom[i][6] = 0.0;
       cvatom[i][7] = 0.0;
       cvatom[i][8] = 0.0;
-      cvatom[i][9] = 0.0;
     }
   }
 
@@ -1038,6 +1058,7 @@ void Pair::ev_unset()
   eflag_either = 0;
   eflag_global = 0;
   eflag_atom = 0;
+  eflag_only = 0;
 
   vflag_either = 0;
   vflag_global = 0;
@@ -1829,16 +1850,18 @@ void Pair::virial_fdotr_compute()
 
 void Pair::write_file(int narg, char **arg)
 {
-  if (narg != 8 && narg != 10) error->all(FLERR,"Illegal pair_write command");
+  if (narg != 8 && narg != 10)
+    error->all(FLERR,"Illegal pair_write command");
   if (single_enable == 0)
-    error->all(FLERR,"Pair style does not support pair_write");
+    error->all(FLERR, Error::NOLASTLINE,
+               "Pair style {} does not support pair_write", force->pair_style);
 
   // parse arguments
 
   int itype = utils::expand_type_int(FLERR, arg[0], Atom::ATOM, lmp);
   int jtype = utils::expand_type_int(FLERR, arg[1], Atom::ATOM, lmp);
   if (itype < 1 || itype > atom->ntypes || jtype < 1 || jtype > atom->ntypes)
-    error->all(FLERR,"Invalid atom types in pair_write command");
+    error->all(FLERR, "Invalid atom types in pair_write command");
 
   int n = utils::inumeric(FLERR,arg[2],false,lmp);
 
@@ -1846,20 +1869,20 @@ void Pair::write_file(int narg, char **arg)
   if (strcmp(arg[3],"r") == 0) style = RLINEAR;
   else if (strcmp(arg[3],"rsq") == 0) style = RSQ;
   else if (strcmp(arg[3],"bitmap") == 0) style = BMP;
-  else error->all(FLERR,"Invalid style in pair_write command");
+  else error->all(FLERR, 3, "Invalid style {} in pair_write command", arg[3]);
 
   if (n < 2) error->all(FLERR, "Must have at least 2 table values");
 
   double inner = utils::numeric(FLERR, arg[4], false, lmp);
   double outer = utils::numeric(FLERR, arg[5], false, lmp);
   if (inner <= 0.0 || inner >= outer)
-    error->all(FLERR,"Invalid cutoffs in pair_write command");
+    error->all(FLERR,"Invalid cutoffs ({} - {}) in pair_write command", inner, outer);
 
   // open file in append mode if exists
   // add line with DATE: and UNITS: tag when creating new file
   // print header in format used by pair_style table
 
-  FILE *fp = nullptr;
+  SafeFilePtr fp;
   if (comm->me == 0) {
     std::string table_file = arg[6];
 
@@ -1871,9 +1894,8 @@ void Pair::write_file(int narg, char **arg)
     if (platform::file_is_readable(table_file)) {
       std::string units = utils::get_potential_units(table_file, "table");
       if (!units.empty() && (units != update->unit_style)) {
-        error->one(FLERR,"Trying to append to a table file "
-                                     "with UNITS: {} while units are {}",
-                                     units, update->unit_style);
+        error->one(FLERR,"Trying to append to a table file with UNITS: {} while units are {}",
+                   units, update->unit_style);
       }
       std::string date = utils::get_potential_date(table_file, "table");
       utils::logmesg(lmp,"Appending to table file {} with DATE: {}\n", table_file, date);
@@ -1882,17 +1904,19 @@ void Pair::write_file(int narg, char **arg)
       utils::logmesg(lmp,"Creating table file {} with DATE: {}\n",
                      table_file, utils::current_date());
       fp = fopen(table_file.c_str(),"w");
-      if (fp) fmt::print(fp,"# DATE: {} UNITS: {} Created by pair_write\n",
+      if (fp) utils::print(fp,"# DATE: {} UNITS: {} Created by pair_write\n",
                          utils::current_date(), update->unit_style);
     }
-    if (fp == nullptr)
-      error->one(FLERR,"Cannot open pair_write file {}: {}",table_file, utils::getsyserror());
-    fprintf(fp, "# Pair potential %s for atom types %d %d: i,r,energy,force\n",
-            force->pair_style, itype, jtype);
-    if (style == RLINEAR)
-      fprintf(fp, "\n%s\nN %d R %.15g %.15g\n\n", arg[7], n, inner, outer);
-    if (style == RSQ)
-      fprintf(fp, "\n%s\nN %d RSQ %.15g %.15g\n\n", arg[7], n, inner, outer);
+    if (fp) {
+      fprintf(fp, "# Pair potential %s for atom types %d %d: i,r,energy,force\n",
+              force->pair_style, itype, jtype);
+      if (style == RLINEAR)
+        fprintf(fp, "\n%s\nN %d R %.15g %.15g\n\n", arg[7], n, inner, outer);
+      if (style == RSQ)
+        fprintf(fp, "\n%s\nN %d RSQ %.15g %.15g\n\n", arg[7], n, inner, outer);
+    } else {
+      error->one(FLERR, 6, "Cannot open pair_write file {}: {}",table_file, utils::getsyserror());
+    }
   }
 
   // initialize potentials before evaluating pair potential
@@ -1953,11 +1977,11 @@ void Pair::write_file(int narg, char **arg)
     } else if (style == BMP) {
       rsq_lookup.i = i << nshiftbits;
       rsq_lookup.i |= masklo;
-      if (rsq_lookup.f < inner*inner) {
+      if ((double)rsq_lookup.f < inner*inner) {
         rsq_lookup.i = i << nshiftbits;
         rsq_lookup.i |= maskhi;
       }
-      rsq = rsq_lookup.f;
+      rsq = (double)rsq_lookup.f;
       r = sqrt(rsq);
     }
 
@@ -1973,8 +1997,6 @@ void Pair::write_file(int narg, char **arg)
   double *tmp;
   if (epair) epair->swap_eam(eamfp_hold, &tmp);
   if (atom->q) atom->q = q_hold;
-
-  if (comm->me == 0) fclose(fp);
 }
 
 /* ----------------------------------------------------------------------

@@ -29,6 +29,15 @@ class FixPIMDLangevin : public Fix {
   FixPIMDLangevin(class LAMMPS *, int, char **);
   ~FixPIMDLangevin() override;
 
+  enum { PIMD, NMPIMD };
+  enum { PHYSICAL, NORMAL };
+  enum { BAOAB, OBABO };
+  enum { ISO, ANISO, TRICLINIC };
+  enum { PILE_L };
+  enum { MTTK, BZP };
+  enum { NVE, NVT, NPH, NPT };
+  enum { SINGLE_PROC, MULTI_PROC };
+
   int setmask() override;
 
   void init() override;
@@ -81,21 +90,23 @@ class FixPIMDLangevin : public Fix {
 
   int cmode;
   int sizeplan;
+  int maxsend;
   int *plansend, *planrecv;
 
   tagint *tagsend, *tagrecv;
-  double **bufsend, **bufrecv, **bufbeads;
+  double *bufsend, *bufrecv, **bufbeads;
   double **bufsorted, **bufsortedall;
-  double **outsorted, **buftransall;
-
-  tagint *tagsendall, *tagrecvall;
-  double **bufsendall, **bufrecvall;
 
   int *counts, *displacements;
 
   void comm_init();
+  virtual void prepare_coordinates();
   void inter_replica_comm(double **ptr);
-  void spring_force();
+  void ring_collect(const std::vector<tagint> &miss_tag,
+                                            double **ptr,
+                                            std::vector<tagint> &rep_tag,
+                                            std::vector<double> &rep_val);
+  void virtual spring_force();
 
   /* normal-mode operations */
 
@@ -165,12 +176,12 @@ class FixPIMDLangevin : public Fix {
   class Compute *c_pe;
   class Compute *c_press;
 
-  void compute_totke();            // 1: kinetic energy
-  void compute_spring_energy();    // 2: spring elastic energy
-  void compute_pote();             // 3: potential energy
-  void compute_tote();             // 4: total energy: 1+2+3 for all the beads
+  void compute_totke();                    // 1: kinetic energy
+  virtual void compute_spring_energy();    // 2: spring elastic energy
+  void compute_pote();                     // 3: potential energy
+  void compute_tote();                     // 4: total energy: 1+2+3 for all the beads
   void compute_stress_tensor();
-  void compute_t_prim();
+  virtual void compute_t_prim();
   void compute_t_vir();
   void compute_t_cv();
   void compute_p_prim();

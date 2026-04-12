@@ -16,12 +16,13 @@
 
 #include "pointers.h"
 #include <map>
+#include <mutex>
 
 namespace LAMMPS_NS {
 
 class Thermo : protected Pointers {
-  friend class MinCG;    // accesses compute_pe
-
+  friend class MinCG;      // accesses compute_pe
+  friend class DumpExtXYZ; // accesses compute_temp, compute_press, compute_pe
  public:
   char *style;
   int normflag;    // 0 if do not normalize by atoms, 1 if normalize
@@ -43,16 +44,21 @@ class Thermo : protected Pointers {
   int evaluate_keyword(const std::string &, double *);
 
   // for accessing cached thermo and related data
-  const int *get_line() const { return &nline; }
-  const char *get_image_fname() const { return image_fname.c_str(); }
+  void lock_cache();
+  void unlock_cache();
+  [[nodiscard]] const int *get_line() const { return &nline; }
+  [[nodiscard]] const char *get_image_fname() const { return image_fname.c_str(); }
 
-  const int *get_nfield() const { return &nfield; }
-  const bigint *get_timestep() const { return &ntimestep; }
-  const std::vector<multitype> &get_fields() const { return field_data; }
-  const std::vector<std::string> &get_keywords() const { return keyword; }
+  [[nodiscard]] const int *get_nfield() const { return &nfield; }
+  [[nodiscard]] const bigint *get_timestep() const { return &ntimestep; }
+  [[nodiscard]] const std::vector<multitype> &get_fields() const { return field_data; }
+  [[nodiscard]] const std::vector<std::string> &get_keywords() const { return keyword; }
 
   void set_line(int _nline) { nline = _nline; }
   void set_image_fname(const std::string &fname) { image_fname = fname; }
+
+ protected:
+  class Compute *temperature, *pressure, *pe;
 
  private:
   int nfield, nfield_initial;
@@ -74,13 +80,16 @@ class Thermo : protected Pointers {
   int flushflag, lineflag;
 
   double last_tpcpu, last_spcpu;
-  double last_time;
+  double last_time, last_cpu1, last_cpu2;
   bigint last_step;
 
   bigint natoms;
   bigint ntimestep;
   int nline;
   std::string image_fname;
+
+  // mutex for locking the cache
+  std::mutex *cache_mutex;
 
   // data used by routines that compute single values
 
@@ -98,7 +107,6 @@ class Thermo : protected Pointers {
   // Compute * = ptrs to the Compute objects
 
   int index_temp, index_press_scalar, index_press_vector, index_pe;
-  class Compute *temperature, *pressure, *pe;
   double press_tensor[3][3];
 
   int ncompute;                // # of Compute objects called by thermo
@@ -120,6 +128,7 @@ class Thermo : protected Pointers {
   void deallocate();
 
   void parse_fields(const std::string &);
+  void colname_auto();
   int add_compute(const char *, int);
   int add_fix(const char *);
   int add_variable(const char *);
@@ -129,7 +138,7 @@ class Thermo : protected Pointers {
   void check_press_scalar(const std::string &);
   void check_press_vector(const std::string &);
 
-  typedef void (Thermo::*FnPtr)();
+  using FnPtr = void (Thermo::*)();
   void addfield(const char *, FnPtr, int);
   FnPtr *vfunc;    // list of ptrs to functions
 
@@ -148,6 +157,7 @@ class Thermo : protected Pointers {
   void compute_cpu();
   void compute_tpcpu();
   void compute_spcpu();
+  void compute_cpuuse();
   void compute_cpuremain();
   void compute_part();
   void compute_timeremain();

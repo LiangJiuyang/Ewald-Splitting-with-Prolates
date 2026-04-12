@@ -74,7 +74,7 @@ int dlaexc_(logical *wantq, integer *n, doublereal *t, integer *ldt, doublereal 
         }
     } else {
         nd = *n1 + *n2;
-        dlacpy_((char *)"Full", &nd, &nd, &t[*j1 + *j1 * t_dim1], ldt, d__, &c__4, (ftnlen)4);
+        dlacpy_((char *)"F", &nd, &nd, &t[*j1 + *j1 * t_dim1], ldt, d__, &c__4, (ftnlen)1);
         dnorm = dlange_((char *)"Max", &nd, &nd, d__, &c__4, &work[1], (ftnlen)3);
         eps = dlamch_((char *)"P", (ftnlen)1);
         smlnum = dlamch_((char *)"S", (ftnlen)1) / eps;

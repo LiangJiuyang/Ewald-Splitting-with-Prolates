@@ -23,6 +23,7 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "memory.h"
 #include "neigh_list.h"
 #include "neighbor.h"
@@ -32,7 +33,7 @@
 using namespace LAMMPS_NS;
 
 static const char cite_atm_package[] =
-  "ATM package: doi:10.1063/1.4704930\n\n"
+  "pair_style atm command: https://doi.org/10.1063/1.4704930\n\n"
   "@Article{Lishchuk:2012:164501,\n"
   " author = {S. V. Lishchuk},\n"
   " title = {Role of Three-Body Interactions in Formation of Bulk Viscosity in Liquid Argon},\n"
@@ -222,7 +223,7 @@ void PairATM::settings(int narg, char **arg)
 
 void PairATM::coeff(int narg, char **arg)
 {
-  if (narg != 4) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (narg != 4) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi,klo,khi;
@@ -259,7 +260,7 @@ void PairATM::coeff(int narg, char **arg)
     }
   }
 
-  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 }
 
 /* ----------------------------------------------------------------------
@@ -269,7 +270,7 @@ void PairATM::coeff(int narg, char **arg)
 void PairATM::init_style()
 {
   if (force->newton_pair == 0)
-    error->all(FLERR,"Pair style ATM requires newton pair on");
+    error->all(FLERR, Error::NOLASTLINE, "Pair style ATM requires newton pair on");
 
   // need a full neighbor list
 
@@ -283,7 +284,9 @@ void PairATM::init_style()
 
 double PairATM::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
 
   // set all 6 symmetric permutations of I,J,K types to same nu value
 

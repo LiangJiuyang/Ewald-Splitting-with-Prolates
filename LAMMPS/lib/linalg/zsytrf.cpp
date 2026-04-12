@@ -41,7 +41,8 @@ int zsytrf_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *ipi
     }
     if (*info == 0) {
         nb = ilaenv_(&c__1, (char *)"ZSYTRF", uplo, n, &c_n1, &c_n1, &c_n1, (ftnlen)6, (ftnlen)1);
-        lwkopt = *n * nb;
+        i__1 = 1, i__2 = *n * nb;
+        lwkopt = max(i__1, i__2);
         work[1].r = (doublereal)lwkopt, work[1].i = 0.;
     }
     if (*info != 0) {

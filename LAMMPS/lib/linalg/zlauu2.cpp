@@ -58,9 +58,9 @@ int zlauu2_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
                 i__2 = i__ - 1;
                 i__3 = *n - i__;
                 z__1.r = aii, z__1.i = 0.;
-                zgemv_((char *)"No transpose", &i__2, &i__3, &c_b1, &a[(i__ + 1) * a_dim1 + 1], lda,
+                zgemv_((char *)"N", &i__2, &i__3, &c_b1, &a[(i__ + 1) * a_dim1 + 1], lda,
                        &a[i__ + (i__ + 1) * a_dim1], lda, &z__1, &a[i__ * a_dim1 + 1], &c__1,
-                       (ftnlen)12);
+                       (ftnlen)1);
                 i__2 = *n - i__;
                 zlacgv_(&i__2, &a[i__ + (i__ + 1) * a_dim1], lda);
             } else {
@@ -84,8 +84,8 @@ int zlauu2_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
                 i__2 = *n - i__;
                 i__3 = i__ - 1;
                 z__1.r = aii, z__1.i = 0.;
-                zgemv_((char *)"Conjugate transpose", &i__2, &i__3, &c_b1, &a[i__ + 1 + a_dim1], lda,
-                       &a[i__ + 1 + i__ * a_dim1], &c__1, &z__1, &a[i__ + a_dim1], lda, (ftnlen)19);
+                zgemv_((char *)"C", &i__2, &i__3, &c_b1, &a[i__ + 1 + a_dim1], lda,
+                       &a[i__ + 1 + i__ * a_dim1], &c__1, &z__1, &a[i__ + a_dim1], lda, (ftnlen)1);
                 i__2 = i__ - 1;
                 zlacgv_(&i__2, &a[i__ + a_dim1], lda);
             } else {

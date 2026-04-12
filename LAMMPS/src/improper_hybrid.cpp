@@ -48,7 +48,7 @@ ImproperHybrid::~ImproperHybrid()
     delete[] keywords;
   }
 
-  deallocate();
+  ImproperHybrid::deallocate();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -318,6 +318,14 @@ void ImproperHybrid::init_style()
 
   for (int m = 0; m < nstyles; m++)
     if (styles[m]) styles[m]->init_style();
+}
+
+/* ---------------------------------------------------------------------- */
+
+int ImproperHybrid::check_itype(int itype, char *substyle)
+{
+  if (strcmp(keywords[map[itype]], substyle) == 0) return 1;
+  return 0;
 }
 
 /* ----------------------------------------------------------------------

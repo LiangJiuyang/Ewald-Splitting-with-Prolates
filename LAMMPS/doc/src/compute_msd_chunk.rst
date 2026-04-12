@@ -126,12 +126,12 @@ distance\ :math:`^2` :doc:`units <units>`.
 
 Restrictions
 """"""""""""
- none
+none
 
 Related commands
 """"""""""""""""
 
-:doc:`compute msd <compute_msd>`
+:doc:`compute msd <compute_msd>`, :doc:`compute vacf/chunk <compute_vacf_chunk>`
 
 Default
 """""""

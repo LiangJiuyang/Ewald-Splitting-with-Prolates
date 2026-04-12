@@ -23,12 +23,12 @@ int dlahqr_(logical *wantt, logical *wantz, integer *n, integer *ilo, integer *i
     integer its;
     doublereal ulp, sum, tst, rt1i, rt2i, rt1r, rt2r;
     extern int drot_(integer *, doublereal *, integer *, doublereal *, integer *, doublereal *,
-                     doublereal *),
-        dcopy_(integer *, doublereal *, integer *, doublereal *, integer *);
+                     doublereal *);
+    integer kdefl;
+    extern int dcopy_(integer *, doublereal *, integer *, doublereal *, integer *);
     integer itmax;
     extern int dlanv2_(doublereal *, doublereal *, doublereal *, doublereal *, doublereal *,
-                       doublereal *, doublereal *, doublereal *, doublereal *, doublereal *),
-        dlabad_(doublereal *, doublereal *);
+                       doublereal *, doublereal *, doublereal *, doublereal *, doublereal *);
     extern doublereal dlamch_(char *, ftnlen);
     extern int dlarfg_(integer *, doublereal *, doublereal *, integer *, doublereal *);
     doublereal safmin, safmax, rtdisc, smlnum;
@@ -61,7 +61,6 @@ int dlahqr_(logical *wantt, logical *wantz, integer *n, integer *ilo, integer *i
     nz = *ihiz - *iloz + 1;
     safmin = dlamch_((char *)"SAFE MINIMUM", (ftnlen)12);
     safmax = 1. / safmin;
-    dlabad_(&safmin, &safmax);
     ulp = dlamch_((char *)"PRECISION", (ftnlen)9);
     smlnum = safmin * ((doublereal)nh / ulp);
     if (*wantt) {
@@ -69,6 +68,7 @@ int dlahqr_(logical *wantt, logical *wantz, integer *n, integer *ilo, integer *i
         i2 = *n;
     }
     itmax = max(10, nh) * 30;
+    kdefl = 0;
     i__ = *ihi;
 L20:
     l = *ilo;
@@ -120,21 +120,22 @@ L20:
         if (l >= i__ - 1) {
             goto L150;
         }
+        ++kdefl;
         if (!(*wantt)) {
             i1 = l;
             i2 = i__;
         }
-        if (its == 10) {
-            s = (d__1 = h__[l + 1 + l * h_dim1], abs(d__1)) +
-                (d__2 = h__[l + 2 + (l + 1) * h_dim1], abs(d__2));
-            h11 = s * .75 + h__[l + l * h_dim1];
-            h12 = s * -.4375;
-            h21 = s;
-            h22 = h11;
-        } else if (its == 20) {
+        if (kdefl % 20 == 0) {
             s = (d__1 = h__[i__ + (i__ - 1) * h_dim1], abs(d__1)) +
                 (d__2 = h__[i__ - 1 + (i__ - 2) * h_dim1], abs(d__2));
             h11 = s * .75 + h__[i__ + i__ * h_dim1];
+            h12 = s * -.4375;
+            h21 = s;
+            h22 = h11;
+        } else if (kdefl % 10 == 0) {
+            s = (d__1 = h__[l + 1 + l * h_dim1], abs(d__1)) +
+                (d__2 = h__[l + 2 + (l + 1) * h_dim1], abs(d__2));
+            h11 = s * .75 + h__[l + l * h_dim1];
             h12 = s * -.4375;
             h21 = s;
             h22 = h11;
@@ -301,6 +302,7 @@ L150:
                   &cs, &sn);
         }
     }
+    kdefl = 0;
     i__ = l - 1;
     goto L20;
 L160:

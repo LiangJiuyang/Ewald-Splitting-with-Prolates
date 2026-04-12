@@ -309,8 +309,8 @@ void PairTracker::settings(int narg, char **arg)
 
 void PairTracker::coeff(int narg, char **arg)
 {
-  if (narg > 2 && finitecutflag) error->all(FLERR, "Incorrect args for pair coefficients");
-  if (narg != 3 && !finitecutflag) error->all(FLERR, "Incorrect args for pair coefficients");
+  if (narg > 2 && finitecutflag) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
+  if (narg != 3 && !finitecutflag) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
   int ilo, ihi, jlo, jhi;
@@ -329,7 +329,7 @@ void PairTracker::coeff(int narg, char **arg)
     }
   }
 
-  if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
 }
 
 /* ----------------------------------------------------------------------
@@ -517,26 +517,6 @@ double PairTracker::single(int /*i*/, int /*j*/, int /*itype*/, int /*jtype*/, d
 void PairTracker::transfer_history(double *source, double *target, int /*itype*/, int /*jtype*/)
 {
   for (int i = 0; i < size_history; i++) target[i] = source[i];
-}
-
-/* ----------------------------------------------------------------------
-   self-interaction range of particle if finite particles
-------------------------------------------------------------------------- */
-
-double PairTracker::atom2cut(int i)
-{
-  double cut = atom->radius[i] * 2;
-  return cut;
-}
-
-/* ----------------------------------------------------------------------
-   maximum interaction range for two finite particles
-------------------------------------------------------------------------- */
-
-double PairTracker::radii2cut(double r1, double r2)
-{
-  double cut = r1 + r2;
-  return cut;
 }
 
 /* ---------------------------------------------------------------------- */

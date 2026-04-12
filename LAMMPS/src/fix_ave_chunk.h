@@ -21,6 +21,7 @@ FixStyle(ave/chunk,FixAveChunk);
 #define LMP_FIX_AVE_CHUNK_H
 
 #include "fix.h"
+#include "safe_pointers.h"
 
 namespace LAMMPS_NS {
 
@@ -39,6 +40,7 @@ class FixAveChunk : public Fix {
   struct value_t {
     int which;         // type of data: COMPUTE, FIX, VARIABLE
     int argindex;      // 1-based index if data is vector, else 0
+    int iarg;        // argument index in original argument list
     std::string id;    // compute/fix/variable ID
     union {
       class Compute *c;
@@ -52,10 +54,10 @@ class FixAveChunk : public Fix {
   int normflag, scaleflag, overwrite, biasflag, colextra;
   bigint nvalid, nvalid_last;
   double adof, cdof;
-  char *format, *format_user;
+  char *format;
   char *tstring, *sstring, *id_bias;
   class Compute *tbias;    // ptr to additional bias compute
-  FILE *fp;
+  SafeFilePtr fp;
 
   int densityflag;    // 1 if density/number or density/mass requested
   int volflag;        // SCALAR/VECTOR for density normalization by volume

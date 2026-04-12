@@ -16,6 +16,7 @@
 
 #include "error.h"
 #include "memory.h"
+#include "safe_pointers.h"
 
 #include <cstring>
 
@@ -27,21 +28,18 @@ static constexpr int MAXLINE = 256;
    create & initialize the universe of processors in communicator
 ------------------------------------------------------------------------- */
 
-Universe::Universe(LAMMPS *lmp, MPI_Comm communicator) : Pointers(lmp)
+Universe::Universe(LAMMPS *lmp, MPI_Comm communicator) :
+    Pointers(lmp), uscreen(stdout), ulogfile(nullptr), procs_per_world(nullptr), root_proc(nullptr),
+    uni2orig(nullptr)
 {
   uworld = uorig = communicator;
-  MPI_Comm_rank(uworld,&me);
-  MPI_Comm_size(uworld,&nprocs);
-
-  uscreen = stdout;
-  ulogfile = nullptr;
+  MPI_Comm_rank(uworld, &me);
+  MPI_Comm_size(uworld, &nprocs);
 
   existflag = 0;
   nworlds = 0;
-  procs_per_world = nullptr;
-  root_proc = nullptr;
 
-  memory->create(uni2orig,nprocs,"universe:uni2orig");
+  memory->create(uni2orig, nprocs, "universe:uni2orig");
   for (int i = 0; i < nprocs; i++) uni2orig[i] = i;
 }
 
@@ -87,10 +85,9 @@ void Universe::reorder(char *style, char *arg)
   } else if (strcmp(style,"custom") == 0) {
 
     if (me == 0) {
-      FILE *fp = fopen(arg,"r");
+      SafeFilePtr fp = fopen(arg,"r");
       if (fp == nullptr)
-        error->universe_one(FLERR,fmt::format("Cannot open -reorder "
-                                              "file {}: {}",arg,
+        error->universe_one(FLERR,fmt::format("Cannot open -reorder file {}: {}", arg,
                                               utils::getsyserror()));
 
       // skip header = blank and comment lines
@@ -126,7 +123,6 @@ void Universe::reorder(char *style, char *arg)
                                        "file", me_orig, me_new);
         uni2orig[me_new] = me_orig;
       }
-      fclose(fp);
     }
 
     // bcast uni2org from proc 0 to all other universe procs

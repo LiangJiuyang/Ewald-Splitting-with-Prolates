@@ -30,15 +30,17 @@ enum{NOBIAS,BIAS};
 
 static constexpr double INERTIA = 0.4;          // moment of inertia prefactor for sphere
 
-typedef struct { double x,y,z; } dbl3_t;
+using dbl3_t = struct { double x,y,z; };
 
 /* ---------------------------------------------------------------------- */
 
 FixNHSphereOMP::FixNHSphereOMP(LAMMPS *lmp, int narg, char **arg) :
   FixNHOMP(lmp, narg, arg)
 {
-  if (!atom->omega_flag) error->all(FLERR,"Fix {} requires atom attribute omega", style);
-  if (!atom->radius_flag) error->all(FLERR,"Fix {} requires atom attribute radius", style);
+  if (!atom->omega_flag)
+    error->all(FLERR, Error::NOLASTLINE, "Fix {} requires atom attribute omega", style);
+  if (!atom->radius_flag)
+    error->all(FLERR, Error::NOLASTLINE, "Fix {} requires atom attribute radius", style);
 }
 
 /* ---------------------------------------------------------------------- */

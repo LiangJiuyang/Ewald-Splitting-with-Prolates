@@ -40,10 +40,12 @@ class FixRigidSmall : public Fix {
   void final_integrate_respa(int, int) override;
   void write_restart_file(const char *) override;
 
+
   void grow_arrays(int) override;
   void copy_arrays(int, int, int) override;
   void set_arrays(int) override;
   void set_molecule(int, tagint, int, double *, double *, double *) override;
+  void resample_momenta(int, int, class RanPark *, double);
 
   int pack_exchange(int, double *) override;
   int unpack_exchange(int, double *) override;
@@ -76,7 +78,7 @@ class FixRigidSmall : public Fix {
   int earlyflag;       // 1 if forces/torques are computed at post_force()
   int commflag;        // various modes of forward/reverse comm
   int customflag;      // 1 if custom property/variable define bodies
-  int nbody;           // total # of rigid bodies
+  bigint nbody;        // total # of rigid bodies (supports >2^31)
   int nlinear;         // total # of linear rigid bodies
   tagint maxmol;       // max mol-ID
   double maxextent;    // furthest distance from body owner to body atom

@@ -1,18 +1,26 @@
 .. index:: pair_style saip/metal
 .. index:: pair_style saip/metal/opt
+.. index:: pair_style saip/metal/tmd
+.. index:: pair_style saip/metal/tmd/opt
 
 pair_style saip/metal command
 ===================================
 
 Accelerator Variant: *saip/metal/opt*
 
+pair_style saip/metal/tmd command
+===================================
+
+Accelerator Variant: *saip/metal/tmd/opt*
+
 Syntax
 """"""
 
 .. code-block:: LAMMPS
 
-   pair_style [hybrid/overlay ...] saip/metal cutoff tap_flag
+   pair_style [hybrid/overlay ...] style cutoff tap_flag
 
+* style = *saip/metal* or *saip/metal/tmd*
 * cutoff = global cutoff (distance units)
 * tap_flag = 0/1 to turn off/on the taper function
 
@@ -27,28 +35,39 @@ Examples
    pair_style  hybrid/overlay eam rebo saip/metal 16.0
    pair_coeff  1 1 eam  Au_u3.eam  Au NULL NULL
    pair_coeff  * * rebo CH.rebo    NULL  C H
-   pair_coeff  * * saip/metal  CHAu.ILP  Au C H
+   pair_coeff  * * saip/metal      CHAu.ILP  Au C H
+
+   pair_style  hybrid/overlay eam sw/mod saip/metal/tmd 16.0
+   pair_coeff  1 1 eam  Au_u3.eam    Au NULL NULL
+   pair_coeff  * * sw/mod tmd.sw.mod NULL  S Mo S
+   pair_coeff  * * saip/metal/tmd    TMDAu.SAIP  Au S Mo S
 
 Description
 """""""""""
 
 .. versionadded:: 17Feb2022
 
-The *saip/metal* style computes the registry-dependent interlayer
-potential (ILP) potential for hetero-junctions formed with hexagonal
-2D materials and metal surfaces, as described in :ref:`(Ouyang6) <Ouyang6>`.
+The *saip/metal* style computes the semi-anisotropic interfacial
+potential (SAIP) potential for hetero-junctions formed with hexagonal
+2D materials and metal surfaces, as described in :ref:`(Ouyang6) <Ouyang6>` and :ref:`(Yao1) <Yao1>`.
+
+.. versionadded:: 10Dec2025
+
+The *saip/metal/tmd* style computes the semi-anisotropic interfacial
+potential (SAIP) potential for hetero-junctions formed with transition
+metal dichalcogenides (TMDCs) and metal surfaces, as described in :ref:`(Yao2) <Yao2>`.
 
 .. math::
 
    E  = & \frac{1}{2} \sum_i \sum_{j \neq i} V_{ij} \\
-   V_{ij}  = & {\rm Tap}(r_{ij})\left \{ e^{-\alpha (r_{ij}/\beta -1)}
+   V_{ij}  = & \mathrm{Tap}(r_{ij})\left \{ e^{-\alpha (r_{ij}/\beta -1)}
                 \left [ \epsilon + f(\rho_{ij}) + f(\rho_{ji})\right ] -
                  \frac{1}{1+e^{-d\left [ \left ( r_{ij}/\left (s_R \cdot r^{eff} \right ) \right )-1 \right ]}}
                  \cdot \frac{C_6}{r^6_{ij}} \right \}\\
-   \rho_{ij}^2 = & r_{ij}^2 - ({\bf r}_{ij} \cdot {\bf n}_i)^2 \\
-   \rho_{ji}^2  = & r_{ij}^2 - ({\bf r}_{ij} \cdot {\bf n}_j)^2 \\
+   \rho_{ij}^2 = & r_{ij}^2 - (\mathbf{r}_{ij} \cdot \mathbf{n}_i)^2 \\
+   \rho_{ji}^2  = & r_{ij}^2 - (\mathbf{r}_{ij} \cdot \mathbf{n}_j)^2 \\
    f(\rho)  = &  C e^{ -( \rho / \delta )^2 } \\
-   {\rm Tap}(r_{ij})  = & 20\left ( \frac{r_{ij}}{R_{cut}} \right )^7 -
+   \mathrm{Tap}(r_{ij})  = & 20\left ( \frac{r_{ij}}{R_{cut}} \right )^7 -
                            70\left ( \frac{r_{ij}}{R_{cut}} \right )^6 +
                            84\left ( \frac{r_{ij}}{R_{cut}} \right )^5 -
                            35\left ( \frac{r_{ij}}{R_{cut}} \right )^4 + 1
@@ -63,8 +82,8 @@ calculating the normals.
 .. note::
 
    To account for the isotropic nature of the isolated gold atom
-   electron cloud, their corresponding normal vectors (`{\bf n}_i`) are
-   assumed to lie along the interatomic vector `{\bf r}_ij`. Notably, this
+   electron cloud, their corresponding normal vectors (`\mathbf{n}_i`) are
+   assumed to lie along the interatomic vector `\mathbf{r}_ij`. Notably, this
    assumption is suitable for many bulk material surfaces, for
    example, for systems possessing s-type valence orbitals or
    metallic surfaces, whose valence electrons are mostly
@@ -81,7 +100,7 @@ list for calculating the normals for each atom pair.
 
 .. note::
 
-   The parameters presented in the parameter file (e.g. BNCH.ILP),
+   The parameters presented in the parameter file (e.g. TMDAu.SAIP),
    are fitted with taper function by setting the cutoff equal to 16.0
    Angstrom.  Using different cutoff or taper function should be careful.
 
@@ -132,7 +151,7 @@ if LAMMPS was built with that package.  See the :doc:`Build package
 This pair style requires the newton setting to be *on* for pair
 interactions.
 
-The CHAu.ILP potential file provided with LAMMPS (see the potentials
+The CHAu.ILP and TMDAu.SAIP potential file provided with LAMMPS (see the potentials
 directory) are parameterized for *metal* units.  You can use this
 potential with any LAMMPS units, but you would need to create your own
 custom CHAu.ILP potential file with coefficients listed in the appropriate
@@ -163,3 +182,11 @@ tap_flag = 1
 .. _Ouyang6:
 
 **(Ouyang6)** W. Ouyang, O. Hod, and R. Guerra, J. Chem. Theory Comput. 17, 7215 (2021).
+
+.. _Yao1:
+
+**(Yao1)** Y. Yao, ..., W. Ouyang, J. Phys. Chem. C, 128, 6836 (2024).
+
+.. _Yao2:
+
+**(Yao2)** Y. Yao, ..., W. Ouyang, Adv. Sci. 12, 2415884 (2025).

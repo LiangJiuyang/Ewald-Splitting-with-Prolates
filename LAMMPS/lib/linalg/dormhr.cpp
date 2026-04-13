@@ -39,10 +39,10 @@ int dormhr_(char *side, char *trans, integer *m, integer *n, integer *ilo, integ
     lquery = *lwork == -1;
     if (left) {
         nq = *m;
-        nw = *n;
+        nw = max(1, *n);
     } else {
         nq = *n;
-        nw = *m;
+        nw = max(1, *m);
     }
     if (!left && !lsame_(side, (char *)"R", (ftnlen)1, (ftnlen)1)) {
         *info = -1;
@@ -61,7 +61,7 @@ int dormhr_(char *side, char *trans, integer *m, integer *n, integer *ilo, integ
         *info = -8;
     } else if (*ldc < max(1, *m)) {
         *info = -11;
-    } else if (*lwork < max(1, nw) && !lquery) {
+    } else if (*lwork < nw && !lquery) {
         *info = -13;
     }
     if (*info == 0) {
@@ -76,7 +76,7 @@ int dormhr_(char *side, char *trans, integer *m, integer *n, integer *ilo, integ
             s_lmp_cat(ch__1, a__1, i__1, &c__2, (ftnlen)2);
             nb = ilaenv_(&c__1, (char *)"DORMQR", ch__1, m, &nh, &nh, &c_n1, (ftnlen)6, (ftnlen)2);
         }
-        lwkopt = max(1, nw) * nb;
+        lwkopt = nw * nb;
         work[1] = (doublereal)lwkopt;
     }
     if (*info != 0) {

@@ -37,7 +37,7 @@ using namespace FixConst;
 
 FixQEQCombOMP::FixQEQCombOMP(LAMMPS *lmp, int narg, char **arg) : FixQEQComb(lmp, narg, arg)
 {
-  if (narg < 5) error->all(FLERR, "Illegal fix qeq/comb/omp command");
+  if (narg < 5) utils::missing_cmd_args(FLERR, "fix qeq/comb/omp", error);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -99,7 +99,7 @@ void FixQEQCombOMP::post_force(int /* vflag */)
 
   // charge-equilibration loop
 
-  if (me == 0 && fp) fmt::print(fp, "Charge equilibration on step {}\n", update->ntimestep);
+  if (me == 0 && fp) utils::print(fp, "Charge equilibration on step {}\n", update->ntimestep);
 
   heatpq = 0.05;
   qmass = 0.016;

@@ -29,9 +29,11 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "math_const.h"
 #include "memory.h"
 #include "neigh_list.h"
+#include "safe_pointers.h"
 
 #include <cmath>
 #include <cstring>
@@ -43,7 +45,7 @@ enum { NONE, RLINEAR, RSQ };
 static constexpr int MAXLINE = 1024;
 
 static const char cite_pair_multi_lucy[] =
-  "pair_style multi/lucy command: doi:10.1063/1.4942520\n\n"
+  "pair_style multi/lucy command: https://doi.org/10.1063/1.4942520\n\n"
   "@Article{Moore16,\n"
   " author = {J. D. Moore and B. C. Barnes and S. Izvekov and M. Lisal and M. S. Sellers and D. E. Taylor and J. K. Brennan},\n"
   " title = {A Coarse-Grain Force Field for {RDX}:  Density Dependent and Energy Conserving},\n"
@@ -327,7 +329,9 @@ void PairMultiLucy::coeff(int narg, char **arg)
 
 double PairMultiLucy::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status:\n" + Info::get_pair_coeff_status(lmp));
 
   tabindex[j][i] = tabindex[i][j];
 
@@ -347,7 +351,7 @@ void PairMultiLucy::read_table(Table *tb, char *file, char *keyword)
 
   // open file
 
-  FILE *fp = fopen(file,"r");
+  SafeFilePtr fp = fopen(file,"r");
   if (fp == nullptr) {
     char str[128];
     snprintf(str,128,"Cannot open file %s",file);
@@ -403,7 +407,6 @@ void PairMultiLucy::read_table(Table *tb, char *file, char *keyword)
 
   // close file
 
-  fclose(fp);
 }
 
 /* ----------------------------------------------------------------------
@@ -623,7 +626,7 @@ void PairMultiLucy::spline(double *x, double *y, int n,
 {
   int i,k;
   double p,qn,sig,un;
-  auto u = new double[n];
+  auto *u = new double[n];
 
   if (yp1 > 0.99e30) y2[0] = u[0] = 0.0;
   else {

@@ -19,20 +19,22 @@
 
 #include "pair_momb.h"
 
-#include <cmath>
 #include "atom.h"
 #include "comm.h"
 #include "force.h"
+#include "info.h"
 #include "neigh_list.h"
 #include "memory.h"
 #include "error.h"
 
 #include "citeme.h"
 
+#include <cmath>
+
 using namespace LAMMPS_NS;
 
 static const char cite_momb[] =
-  "Pair style momb: doi:10.1021/jp412098n\n\n"
+  "Pair style momb: https://doi.org/10.1021/jp412098n\n\n"
   "@Article{pair_momb_2015,\n"
   "title = {A Force Field for Describing the Polyvinylpyrrolidone-Mediated\n"
   "    Solution-Phase Synthesis of Shape-Selective {Ag} Nanoparticles},\n"
@@ -211,7 +213,7 @@ void PairMomb::settings(int narg, char **arg)
 void PairMomb::coeff(int narg, char **arg)
 {
   if (narg < 7 || narg > 8)
-    error->all(FLERR,"Incorrect args for pair coefficients");
+    error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
   if (!allocated) allocate();
 
@@ -242,7 +244,7 @@ void PairMomb::coeff(int narg, char **arg)
     }
   }
 
-  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 }
 
 
@@ -252,7 +254,9 @@ void PairMomb::coeff(int narg, char **arg)
 
 double PairMomb::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status:\n" + Info::get_pair_coeff_status(lmp));
 
   morse1[i][j] = 2.0*d0[i][j]*alpha[i][j];
 

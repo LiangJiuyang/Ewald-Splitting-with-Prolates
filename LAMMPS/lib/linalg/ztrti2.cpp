@@ -54,8 +54,8 @@ int ztrti2_(char *uplo, char *diag, integer *n, doublecomplex *a, integer *lda, 
                 ajj.r = z__1.r, ajj.i = z__1.i;
             }
             i__2 = j - 1;
-            ztrmv_((char *)"Upper", (char *)"No transpose", diag, &i__2, &a[a_offset], lda, &a[j * a_dim1 + 1],
-                   &c__1, (ftnlen)5, (ftnlen)12, (ftnlen)1);
+            ztrmv_((char *)"U", (char *)"N", diag, &i__2, &a[a_offset], lda, &a[j * a_dim1 + 1], &c__1, (ftnlen)1,
+                   (ftnlen)1, (ftnlen)1);
             i__2 = j - 1;
             zscal_(&i__2, &ajj, &a[j * a_dim1 + 1], &c__1);
         }
@@ -74,8 +74,8 @@ int ztrti2_(char *uplo, char *diag, integer *n, doublecomplex *a, integer *lda, 
             }
             if (j < *n) {
                 i__1 = *n - j;
-                ztrmv_((char *)"Lower", (char *)"No transpose", diag, &i__1, &a[j + 1 + (j + 1) * a_dim1], lda,
-                       &a[j + 1 + j * a_dim1], &c__1, (ftnlen)5, (ftnlen)12, (ftnlen)1);
+                ztrmv_((char *)"L", (char *)"N", diag, &i__1, &a[j + 1 + (j + 1) * a_dim1], lda,
+                       &a[j + 1 + j * a_dim1], &c__1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
                 i__1 = *n - j;
                 zscal_(&i__1, &ajj, &a[j + 1 + j * a_dim1], &c__1);
             }

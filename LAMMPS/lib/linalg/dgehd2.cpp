@@ -8,11 +8,10 @@ int dgehd2_(integer *n, integer *ilo, integer *ihi, doublereal *a, integer *lda,
 {
     integer a_dim1, a_offset, i__1, i__2, i__3;
     integer i__;
-    doublereal aii;
-    extern int dlarf_(char *, integer *, integer *, doublereal *, integer *, doublereal *,
-                      doublereal *, integer *, doublereal *, ftnlen),
-        dlarfg_(integer *, doublereal *, doublereal *, integer *, doublereal *),
-        xerbla_(char *, integer *, ftnlen);
+    extern int dlarfg_(integer *, doublereal *, doublereal *, integer *, doublereal *),
+        xerbla_(char *, integer *, ftnlen),
+        dlarf1f_(char *, integer *, integer *, doublereal *, integer *, doublereal *, doublereal *,
+                 integer *, doublereal *, ftnlen);
     a_dim1 = *lda;
     a_offset = 1 + a_dim1;
     a -= a_offset;
@@ -39,16 +38,13 @@ int dgehd2_(integer *n, integer *ilo, integer *ihi, doublereal *a, integer *lda,
         i__3 = i__ + 2;
         dlarfg_(&i__2, &a[i__ + 1 + i__ * a_dim1], &a[min(i__3, *n) + i__ * a_dim1], &c__1,
                 &tau[i__]);
-        aii = a[i__ + 1 + i__ * a_dim1];
-        a[i__ + 1 + i__ * a_dim1] = 1.;
         i__2 = *ihi - i__;
-        dlarf_((char *)"Right", ihi, &i__2, &a[i__ + 1 + i__ * a_dim1], &c__1, &tau[i__],
-               &a[(i__ + 1) * a_dim1 + 1], lda, &work[1], (ftnlen)5);
+        dlarf1f_((char *)"R", ihi, &i__2, &a[i__ + 1 + i__ * a_dim1], &c__1, &tau[i__],
+                 &a[(i__ + 1) * a_dim1 + 1], lda, &work[1], (ftnlen)1);
         i__2 = *ihi - i__;
         i__3 = *n - i__;
-        dlarf_((char *)"Left", &i__2, &i__3, &a[i__ + 1 + i__ * a_dim1], &c__1, &tau[i__],
-               &a[i__ + 1 + (i__ + 1) * a_dim1], lda, &work[1], (ftnlen)4);
-        a[i__ + 1 + i__ * a_dim1] = aii;
+        dlarf1f_((char *)"L", &i__2, &i__3, &a[i__ + 1 + i__ * a_dim1], &c__1, &tau[i__],
+                 &a[i__ + 1 + (i__ + 1) * a_dim1], lda, &work[1], (ftnlen)1);
     }
     return 0;
 }

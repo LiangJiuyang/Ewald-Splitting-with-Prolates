@@ -23,8 +23,10 @@ RegionStyle(sphere,RegSphere);
 #include "region.h"
 
 namespace LAMMPS_NS {
-
 class RegSphere : public Region {
+  friend class Region2VMD;
+  friend class DumpImage;
+
  public:
   RegSphere(class LAMMPS *, int, char **);
   ~RegSphere() override;
@@ -33,6 +35,7 @@ class RegSphere : public Region {
   int surface_interior(double *, double) override;
   int surface_exterior(double *, double) override;
   void shape_update() override;
+  void bbox_update() override;
   void set_velocity_shape() override;
   void velocity_contact_shape(double *, double *) override;
 

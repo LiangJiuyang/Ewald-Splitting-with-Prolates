@@ -120,7 +120,6 @@ accelerated styles exist.
 * :doc:`airebo/morse <pair_airebo>` - AIREBO with Morse instead of LJ
 * :doc:`amoeba <pair_amoeba>` -
 * :doc:`atm <pair_atm>` - Axilrod-Teller-Muto potential
-* :doc:`awpmd/cut <pair_awpmd>` - Antisymmetrized Wave Packet MD potential for atoms and electrons
 * :doc:`beck <pair_beck>` - Beck potential
 * :doc:`body/nparticle <pair_body_nparticle>` - interactions between body particles
 * :doc:`body/rounded/polygon <pair_body_rounded_polygon>` - granular-style 2d polygon potential
@@ -172,6 +171,7 @@ accelerated styles exist.
 * :doc:`coul/tt <pair_coul_tt>` - damped charge-dipole Coulomb for Drude dipoles
 * :doc:`coul/wolf <pair_coul>` - Coulomb via Wolf potential
 * :doc:`coul/wolf/cs <pair_cs>` - Coulomb via Wolf potential with core/shell adjustments
+* :doc:`dispersion/d3 <pair_dispersion_d3>` - Dispersion correction for potentials derived from DFT functionals
 * :doc:`dpd <pair_dpd>` - dissipative particle dynamics (DPD)
 * :doc:`dpd/coul/slater/long <pair_dpd_coul_slater_long>` - dissipative particle dynamics (DPD) with electrostatic interactions
 * :doc:`dpd/ext <pair_dpd_ext>` - generalized force field for DPD
@@ -187,7 +187,9 @@ accelerated styles exist.
 * :doc:`eam/cd <pair_eam>` - concentration-dependent EAM
 * :doc:`eam/cd/old <pair_eam>` - older two-site model for concentration-dependent EAM
 * :doc:`eam/fs <pair_eam>` - Finnis-Sinclair EAM
+* :doc:`eam/fs/apip <pair_eam_apip>` - :doc:`adaptive precision <Howto_apip>` version of FS EAM, used as fast potential
 * :doc:`eam/he <pair_eam>` - Finnis-Sinclair EAM modified for Helium in metals
+* :doc:`eam/apip <pair_eam_apip>` - :doc:`adaptive-precision <Howto_apip>` version of EAM, used as fast potential
 * :doc:`edip <pair_edip>` - three-body EDIP potential
 * :doc:`edip/multi <pair_edip>` - multi-element EDIP potential
 * :doc:`edpd <pair_mesodpd>` - eDPD particle interactions
@@ -199,14 +201,17 @@ accelerated styles exist.
 * :doc:`gauss/cut <pair_gauss>` - generalized Gaussian potential
 * :doc:`gayberne <pair_gayberne>` - Gay-Berne ellipsoidal potential
 * :doc:`granular <pair_granular>` - Generalized granular potential
+* :doc:`granular/superellipsoid <pair_granular_superellipsoid>` - Generalized granular potential for superellipsoids
 * :doc:`gran/hertz/history <pair_gran>` - granular potential with Hertzian interactions
-* :doc:`gran/hooke <pair_gran>` - granular potential with history effects
-* :doc:`gran/hooke/history <pair_gran>` - granular potential without history effects
+* :doc:`gran/hooke <pair_gran>` - granular potential without history effects
+* :doc:`gran/hooke/history <pair_gran>` - granular potential with history effects
 * :doc:`gw <pair_gw>` - Gao-Weber potential
 * :doc:`gw/zbl <pair_gw>` - Gao-Weber potential with a repulsive ZBL core
 * :doc:`harmonic/cut <pair_harmonic_cut>` - repulsive-only harmonic potential
 * :doc:`hbond/dreiding/lj <pair_hbond_dreiding>` - DREIDING hydrogen bonding LJ potential
+* :doc:`hbond/dreiding/lj/angleoffset <pair_hbond_dreiding>` - DREIDING hydrogen bonding LJ potential with offset for hbond angle
 * :doc:`hbond/dreiding/morse <pair_hbond_dreiding>` - DREIDING hydrogen bonding Morse potential
+* :doc:`hbond/dreiding/morse/angleoffset <pair_hbond_dreiding>` - DREIDING hydrogen bonding Morse potential with offset for hbond angle
 * :doc:`hdnnp <pair_hdnnp>` - High-dimensional neural network potential
 * :doc:`hippo <pair_amoeba>` -
 * :doc:`ilp/graphene/hbn <pair_ilp_graphene_hbn>` - registry-dependent interlayer potential (ILP)
@@ -214,6 +219,9 @@ accelerated styles exist.
 * :doc:`kim <pair_kim>` - interface to potentials provided by KIM project
 * :doc:`kolmogorov/crespi/full <pair_kolmogorov_crespi_full>` - Kolmogorov-Crespi (KC) potential with no simplifications
 * :doc:`kolmogorov/crespi/z <pair_kolmogorov_crespi_z>` - Kolmogorov-Crespi (KC) potential with normals along z-axis
+* :doc:`lambda/input/apip <pair_lambda_input_apip>` - constant as input for the precision calculation of an :doc:`adaptive-precision interatomic potential (APIP) <Howto_apip>`
+* :doc:`lambda/input/csp/apip <pair_lambda_input_apip>` - CSP as input for the precision calculation of an :doc:`adaptive-precision interatomic potential (APIP) <Howto_apip>`
+* :doc:`lambda/zone/apip <pair_lambda_zone_apip>` - transition zone of an :doc:`adaptive-precision interatomic potential <Howto_apip>`
 * :doc:`lcbop <pair_lcbop>` - long-range bond-order potential (LCBOP)
 * :doc:`lebedeva/z <pair_lebedeva_z>` - Lebedeva interlayer potential for graphene with normals along z-axis
 * :doc:`lennard/mdf <pair_mdf>` - LJ potential in A/B form with a taper function
@@ -244,6 +252,7 @@ accelerated styles exist.
 * :doc:`lj/cut/coul/debye <pair_lj_cut_coul>` - LJ with Debye screening added to Coulomb
 * :doc:`lj/cut/coul/debye/dielectric <pair_dielectric>` -
 * :doc:`lj/cut/coul/dsf <pair_lj_cut_coul>` - LJ with Coulomb via damped shifted forces
+* :doc:`lj/cut/coul/esp <pair_lj_cut_coul>` - LJ with long-range Coulomb
 * :doc:`lj/cut/coul/long <pair_lj_cut_coul>` - LJ with long-range Coulomb
 * :doc:`lj/cut/coul/long/cs <pair_cs>` - LJ with long-range Coulomb with core/shell adjustments
 * :doc:`lj/cut/coul/long/dielectric <pair_dielectric>` -
@@ -269,6 +278,7 @@ accelerated styles exist.
 * :doc:`lj/long/dipole/long <pair_dipole>` - long-range LJ and long-range point dipoles
 * :doc:`lj/long/tip4p/long <pair_lj_long>` - long-range LJ and long-range Coulomb for TIP4P water
 * :doc:`lj/mdf <pair_mdf>` - LJ potential with a taper function
+* :doc:`lj/pirani <pair_lj_pirani>` - Improved LJ potential
 * :doc:`lj/relres <pair_lj_relres>` - LJ using multiscale Relative Resolution (RelRes) methodology :ref:`(Chaimovich) <Chaimovich2>`.
 * :doc:`lj/spica <pair_spica>` - LJ for SPICA coarse-graining
 * :doc:`lj/spica/coul/long <pair_spica>` - LJ for SPICA coarse-graining with long-range Coulomb
@@ -283,6 +293,7 @@ accelerated styles exist.
 * :doc:`lubricate/poly <pair_lubricate>` - Hydrodynamic lubrication forces with polydispersity
 * :doc:`lubricateU <pair_lubricateU>` - Hydrodynamic lubrication forces for Fast Lubrication Dynamics
 * :doc:`lubricateU/poly <pair_lubricateU>` - Hydrodynamic lubrication forces for Fast Lubrication with polydispersity
+* :doc:`mbx <pair_mbx>` - Many-Body eXpansion (MBX) potential
 * :doc:`mdpd <pair_mesodpd>` - mDPD particle interactions
 * :doc:`mdpd/rhosum <pair_mesodpd>` - mDPD particle interactions for mass density
 * :doc:`meam <pair_meam>` - Modified embedded atom method (MEAM)
@@ -326,6 +337,9 @@ accelerated styles exist.
 * :doc:`oxrna2/xstk <pair_oxrna2>` -
 * :doc:`pace <pair_pace>` - Atomic Cluster Expansion (ACE) machine-learning potential
 * :doc:`pace/extrapolation <pair_pace>` - Atomic Cluster Expansion (ACE) machine-learning potential with extrapolation grades
+* :doc:`pace/apip <pair_pace_apip>` - :doc:`adaptive-precision <Howto_apip>` version of ACE, used as precise potential
+* :doc:`pace/fast/apip <pair_pace_apip>` - :doc:`adaptive-precision <Howto_apip>` version of ACE, used as fast potential
+* :doc:`pace/precise/apip <pair_pace_apip>` - :doc:`adaptive-precision <Howto_apip>` version of ACE, used as precise potential
 * :doc:`pedone <pair_pedone>` - Pedone (PMMCS) potential (non-Coulomb part)
 * :doc:`pod <pair_pod>` - Proper orthogonal decomposition (POD) machine-learning potential
 * :doc:`peri/eps <pair_peri>` - Peridynamic EPS potential
@@ -343,6 +357,7 @@ accelerated styles exist.
 * :doc:`rheo/solid <pair_rheo_solid>` - solid interactions in RHEO package
 * :doc:`resquared <pair_resquared>` - Everaers RE-Squared ellipsoidal potential
 * :doc:`saip/metal <pair_saip_metal>` - Interlayer potential for hetero-junctions formed with hexagonal 2D materials and metal surfaces
+* :doc:`saip/metal/tmd <pair_saip_metal>` - Interlayer potential for transition-metal dichalcogenide / metal interfaces
 * :doc:`sdpd/taitwater/isothermal <pair_sdpd_taitwater_isothermal>` - Smoothed dissipative particle dynamics for water at isothermal conditions
 * :doc:`smatb <pair_smatb>` - Second Moment Approximation to the Tight Binding
 * :doc:`smatb/single <pair_smatb>` - Second Moment Approximation to the Tight Binding for single-element systems

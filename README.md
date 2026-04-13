@@ -35,35 +35,71 @@ rigorous and fair comparisons with the native codes.
 
 # Quick Start
 
-## Use ESP method in LAMMPS
-The compilation process follows the standard LAMMPS build commands. Below is an example:
+## Build LAMMPS-ESP
+LAMMPS-ESP follows the standard LAMMPS CMake workflow. A minimal local build for ESP support is:
+
+```bash
+cmake -S LAMMPS/cmake -B build \
+  -D CMAKE_BUILD_TYPE=Release \
+  -D PKG_KSPACE=on \
+  -D PKG_MOLECULE=on
+cmake --build build -j 4
 ```
-mkdir LAMMPS/build
-cd LAMMPS/build
-cmake -C ../cmake/presets/oneapi.cmake -D PKG_RIGID=on -D PKG_MOLECULE=on -D PKG_KSPACE=on ../cmake
-make install
-make -j 4 
+
+If you want to run the bundled SPC/E water example in [`LAMMPS-Water/`](./LAMMPS-Water), also enable `PKG_RIGID=on` because the input script uses `fix shake`.
+
+```bash
+cmake -S LAMMPS/cmake -B build \
+  -D CMAKE_BUILD_TYPE=Release \
+  -D PKG_KSPACE=on \
+  -D PKG_MOLECULE=on \
+  -D PKG_RIGID=on
+cmake --build build -j 4
 ```
-To use the PPPM, include the following commands in the input file:
+
+## Use ESP in LAMMPS
+The current LAMMPS interface exposed by this repository is:
+
+```lammps
+kspace_style esp ACCURACY
+pair_style coul/esp CUTOFF
+pair_style lj/cut/coul/esp LJ_CUTOFF
 ```
-pair_style lj/cut/coul/long  9 9  # Cutoffs for the LJ and Coulomb interactions
-kspace_style pppm 1e-4 # Splitting accuracy
+
+For example, to replace the standard long-range Coulomb treatment
+
+```lammps
+pair_style lj/cut/coul/long 9.0 9.0
+kspace_style ewald 1.0e-6
 ```
-To switch to the PSWF, replace them with:
+
+with ESP, use
+
+```lammps
+pair_style lj/cut/coul/esp 9.0
+kspace_style esp 1.0e-6
 ```
-pair_style lj/cut/coul/ps  9 9
-kspace_style ppps 1e-4 1e-4  # Splitting accuracy and spreading accuracy
+
+For Coulomb-only simulations, use
+
+```lammps
+pair_style coul/esp 8.0
+kspace_style esp 1.0e-7
 ```
-For specifying the number of Fourier grids and spreading points, you can use:
+
+You can still control the Fourier grid and interpolation order through `kspace_modify`, for example:
+
+```lammps
+kspace_modify mesh 100 100 100 order 7
 ```
-kspace_modify mesh 100 100 100 order 4  # Mesh size along each axis and spreading order
-```
+
+Note that the `esp` accuracy argument is a target parameter used by the solver setup. The realized force/energy error depends on the system, cutoff, mesh, and pair style, so tighter settings may be needed for strict reproducibility.
 
 ## GROMACS Dataset
 The folders "[LysoProtein/](./LysoProtein/)", "[Transmembrane/](./Transmembrane/)", and "[Li-ion-Electrolyte/](./Li-ion-Electrolyte/)" contain the GROMACS input files for the lysozyme protein, the transmembrane bovine bc1 complex, and Li-ion aqueous electrolytes, respectively. The transmembrane input files were downloaded from [MemProt MD](https://memprotmd.bioch.ox.ac.uk/_ref/mpstruc/transmembrane-proteins-alpha-helical/_sim/1sqq_default_dppc/Chain.D/) and have been slightly modified in terms of the .mdp and README files to ensure compatibility with the current version of GROMACS. 
 
 ## LAMMPS Dataset
-The folders "[LAMMPS-Water/](./LAMMPS-Water)" contains LAMMPS input files for the SPC/E bulk water system. The system is replicated 11-fold and 34-fold to generate larger systems containing 3,597,693 and 106,238,712 atoms, respectively.  
+The folder [`LAMMPS-Water/`](./LAMMPS-Water) contains a LAMMPS input script and equilibrated data file for an SPC/E bulk water system. The bundled example script currently reads `equi_bulk.4000000.data`, replicates it by `2 2 2`, and uses `ewald 1e-9` as a high-accuracy reference setup. Commented lines in the script show the corresponding ESP configuration used for comparison.
 
 # Citing
 

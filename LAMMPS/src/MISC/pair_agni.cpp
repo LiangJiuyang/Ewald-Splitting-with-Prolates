@@ -21,8 +21,9 @@
 #include "atom.h"
 #include "citeme.h"
 #include "comm.h"
-#include "force.h"
 #include "error.h"
+#include "force.h"
+#include "info.h"
 #include "math_const.h"
 #include "math_special.h"
 #include "memory.h"
@@ -37,7 +38,7 @@ using namespace LAMMPS_NS;
 using namespace MathSpecial;
 
 static const char cite_pair_agni[] =
-  "pair agni command: doi:10.1021/acs.jpcc.9b04207\n\n"
+  "pair agni command: https://doi.org/10.1021/acs.jpcc.9b04207\n\n"
   "@article{huan2019jpc,\n"
   " author    = {Huan, T. and Batra, R. and Chapman, J. and Kim, C. and Chandrasekaran, A. and Ramprasad, Rampi},\n"
   " journal   = {J.~Phys.\\ Chem.~C},\n"
@@ -254,7 +255,9 @@ void PairAGNI::init_style()
 
 double PairAGNI::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
 
   return cutmax;
 }

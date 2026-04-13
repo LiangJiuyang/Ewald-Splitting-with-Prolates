@@ -64,6 +64,7 @@
 #include "domain.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "memory.h"
 #include "neigh_list.h"
 #include "neigh_request.h"
@@ -77,7 +78,7 @@
 using namespace LAMMPS_NS;
 
 static constexpr const char *const cite_openkim =
-  "OpenKIM Project: doi:10.1007/s11837-011-0102-6\n\n"
+  "OpenKIM Project: https://doi.org/10.1007/s11837-011-0102-6\n\n"
   "@Article{tadmor:elliott:2011,\n"
   " author = {E. B. Tadmor and R. S. Elliott and J. P. Sethna and R. E. Miller "
   "and C. A. Becker},\n"
@@ -225,7 +226,7 @@ void PairKIM::compute(int eflag, int vflag)
                              KIM_COMPUTE_ARGUMENT_NAME_particleContributing,
                              kim_particleContributing);
     if (kimerror)
-      error->all(FLERR,"Unable to set KIM particle species codes and/or contributing");
+      error->one(FLERR,"Unable to set KIM particle species codes and/or contributing");
   }
 
   // kim_particleSpecies = KIM atom species for each LAMMPS atom
@@ -250,7 +251,7 @@ void PairKIM::compute(int eflag, int vflag)
 
   // compute via KIM model
   int kimerror = KIM_Model_Compute(pkim, pargs);
-  if (kimerror) error->all(FLERR, "KIM Compute returned error {}", kimerror);
+  if (kimerror) error->one(FLERR, "KIM Compute returned error {}", kimerror);
 
   // scale results for fix adapt if needed
   if (scale_extracted) {
@@ -364,7 +365,7 @@ void PairKIM::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   if (narg < 2 + atom->ntypes)
-    error->all(FLERR,"Incorrect args for pair coefficients");
+    error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
   // read args that map atom species to KIM elements
   // lmps_map_species_to_unique[i] =
@@ -407,7 +408,7 @@ void PairKIM::coeff(int narg, char **arg)
     }
   }
 
-  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
   // setup mapping between LAMMPS unique elements and KIM species codes
   if (kim_particle_codes_ok) {
@@ -588,7 +589,7 @@ void PairKIM::init_style()
     int neighflags = NeighConst::REQ_FULL | NeighConst::REQ_NEWTON_OFF;
     if (!modelWillNotRequestNeighborsOfNoncontributingParticles[i])
       neighflags |= NeighConst::REQ_GHOST;
-    auto req = neighbor->add_request(this, neighflags);
+    auto *req = neighbor->add_request(this, neighflags);
     req->set_id(i);
 
     // set cutoff
@@ -621,7 +622,9 @@ double PairKIM::init_one(int i, int j)
   // This is called once of each (unordered) i,j pair for each
   // "run ...", "minimize ...", etc. read from input
 
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
 
   return kim_global_influence_distance;
 }
@@ -771,7 +774,7 @@ int PairKIM::get_neigh(void const * const dataObject,
                        int * const numberOfNeighbors,
                        int const ** const neighborsOfParticle)
 {
-  auto  const Model = reinterpret_cast<PairKIM const *>(dataObject);
+  const auto *const   Model = reinterpret_cast<PairKIM const *>(dataObject);
 
   if (numberOfNeighborLists != Model->kim_number_of_neighbor_lists)
     return true;
@@ -814,7 +817,7 @@ void PairKIM::kim_free()
   if (kim_init_ok) {
     int kimerror = KIM_Model_ComputeArgumentsDestroy(pkim, &pargs);
     if (kimerror)
-      error->all(FLERR,"Unable to destroy Compute Arguments Object");
+      error->one(FLERR,"Unable to destroy Compute Arguments Object");
 
     KIM_Model_Destroy(&pkim);
 

@@ -35,7 +35,6 @@
 #include "variable.h"
 
 #include <cmath>
-#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -1726,7 +1725,7 @@ void PairLubricateU::settings(int narg, char **arg)
 void PairLubricateU::coeff(int narg, char **arg)
 {
   if (narg != 2 && narg != 4)
-    error->all(FLERR,"Incorrect args for pair coefficients");
+    error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
   if (!allocated) allocate();
 
@@ -1751,7 +1750,7 @@ void PairLubricateU::coeff(int narg, char **arg)
     }
   }
 
-  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 }
 
 /* ----------------------------------------------------------------------

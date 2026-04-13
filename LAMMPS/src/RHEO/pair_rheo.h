@@ -45,6 +45,7 @@ class PairRHEO : public Pair {
   int rho_damp_flag;
   int thermal_flag;
   int interface_flag;
+  int variable_csq;
 
   int harmonic_means_flag;
 
@@ -55,6 +56,7 @@ class PairRHEO : public Pair {
   class ComputeRHEOInterface *compute_interface;
   class FixRHEO *fix_rheo;
   class FixRHEOPressure *fix_pressure;
+  class FixRHEOThermal *fix_thermal;
 };
 
 }    // namespace LAMMPS_NS

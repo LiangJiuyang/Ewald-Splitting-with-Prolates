@@ -40,7 +40,8 @@ int dsytrf_(char *uplo, integer *n, doublereal *a, integer *lda, integer *ipiv, 
     }
     if (*info == 0) {
         nb = ilaenv_(&c__1, (char *)"DSYTRF", uplo, n, &c_n1, &c_n1, &c_n1, (ftnlen)6, (ftnlen)1);
-        lwkopt = *n * nb;
+        i__1 = 1, i__2 = *n * nb;
+        lwkopt = max(i__1, i__2);
         work[1] = (doublereal)lwkopt;
     }
     if (*info != 0) {

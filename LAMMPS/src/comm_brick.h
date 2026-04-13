@@ -32,17 +32,17 @@ class CommBrick : public Comm {
   void exchange() override;                     // move atoms to new procs
   void borders() override;                      // setup list of atoms to comm
 
-  void forward_comm(class Pair *) override;                 // forward comm from a Pair
-  void reverse_comm(class Pair *) override;                 // reverse comm from a Pair
-  void forward_comm(class Bond *) override;                 // forward comm from a Bond
-  void reverse_comm(class Bond *) override;                 // reverse comm from a Bond
-  void forward_comm(class Fix *, int size = 0) override;    // forward comm from a Fix
-  void reverse_comm(class Fix *, int size = 0) override;    // reverse comm from a Fix
-  void reverse_comm_variable(class Fix *) override;         // variable size reverse comm from a Fix
-  void forward_comm(class Compute *) override;              // forward from a Compute
-  void reverse_comm(class Compute *) override;              // reverse from a Compute
-  void forward_comm(class Dump *) override;                 // forward comm from a Dump
-  void reverse_comm(class Dump *) override;                 // reverse comm from a Dump
+  void forward_comm(class Pair *, int size = 0) override;     // forward comm from a Pair
+  void reverse_comm(class Pair *, int size = 0) override;     // reverse comm from a Pair
+  void forward_comm(class Bond *, int size = 0) override;     // forward comm from a Bond
+  void reverse_comm(class Bond *, int size = 0) override;     // reverse comm from a Bond
+  void forward_comm(class Fix *, int size = 0) override;      // forward comm from a Fix
+  void reverse_comm(class Fix *, int size = 0) override;      // reverse comm from a Fix
+  void reverse_comm_variable(class Fix *) override;           // variable size reverse comm from a Fix
+  void forward_comm(class Compute *, int size = 0) override;  // forward from a Compute
+  void reverse_comm(class Compute *, int size = 0) override;  // reverse from a Compute
+  void forward_comm(class Dump *, int size = 0) override;     // forward comm from a Dump
+  void reverse_comm(class Dump *, int size = 0) override;     // reverse comm from a Dump
 
   void forward_comm_array(int, double **) override;    // forward comm of array
   void *extract(const char *, int &) override;
@@ -61,9 +61,7 @@ class CommBrick : public Comm {
   int *size_reverse_recv;               // # to recv in each reverse comm
   double *slablo, *slabhi;              // bounds of slab to send at each swap
   double **multilo, **multihi;          // bounds of slabs for multi-collection swap
-  double **multioldlo, **multioldhi;    // bounds of slabs for multi-type swap
   double **cutghostmulti;               // cutghost on a per-collection basis
-  double **cutghostmultiold;            // cutghost on a per-type basis
   int *pbc_flag;                        // general flag for sending atoms thru PBC
   int **pbc;                            // dimension flags for PBC adjustments
 
@@ -85,13 +83,11 @@ class CommBrick : public Comm {
   virtual void grow_send(int, int);       // reallocate send buffer
   virtual void grow_recv(int);            // free/allocate recv buffer
   virtual void grow_list(int, int);       // reallocate one sendlist
-  virtual void grow_swap(int);            // grow swap, multi, and multi/old arrays
+  virtual void grow_swap(int);            // grow swap and multi arrays
   virtual void allocate_swap(int);        // allocate swap arrays
   virtual void allocate_multi(int);       // allocate multi arrays
-  virtual void allocate_multiold(int);    // allocate multi/old arrays
   virtual void free_swap();               // free swap arrays
   virtual void free_multi();              // free multi arrays
-  virtual void free_multiold();           // free multi/old arrays
 };
 
 }    // namespace LAMMPS_NS

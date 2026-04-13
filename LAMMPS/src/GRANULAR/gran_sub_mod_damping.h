@@ -19,6 +19,7 @@ GranSubModStyle(mass_velocity,GranSubModDampingMassVelocity,DAMPING);
 GranSubModStyle(viscoelastic,GranSubModDampingViscoelastic,DAMPING);
 GranSubModStyle(tsuji,GranSubModDampingTsuji,DAMPING);
 GranSubModStyle(coeff_restitution,GranSubModDampingCoeffRestitution,DAMPING);
+GranSubModStyle(mdr,GranSubModDampingMDR,DAMPING);
 // clang-format on
 #else
 
@@ -26,17 +27,16 @@ GranSubModStyle(coeff_restitution,GranSubModDampingCoeffRestitution,DAMPING);
 #define GRAN_SUB_MOD_DAMPING_H
 
 #include "gran_sub_mod.h"
-#include "pointers.h"
 
-namespace LAMMPS_NS {
-namespace Granular_NS {
+
+namespace LAMMPS_NS::Granular_NS {
 
   class GranSubModDamping : public GranSubMod {
    public:
     GranSubModDamping(class GranularModel *, class LAMMPS *);
     void init() override;
     virtual double calculate_forces() = 0;
-    double get_damp_prefactor() const { return damp_prefactor; }
+    [[nodiscard]] double get_damp_prefactor() const { return damp_prefactor; }
 
    protected:
     double damp_prefactor;
@@ -48,7 +48,6 @@ namespace Granular_NS {
   class GranSubModDampingNone : public GranSubModDamping {
    public:
     GranSubModDampingNone(class GranularModel *, class LAMMPS *);
-    void init() override{};
     double calculate_forces() override;
   };
 
@@ -87,17 +86,29 @@ namespace Granular_NS {
 
   /* ---------------------------------------------------------------------- */
 
-  class GranSubModDampingCoeffRestitution : public GranSubModDamping {
+  class GranSubModDampingCoeffRestitution : public GranSubModDampingTsuji {
    public:
     GranSubModDampingCoeffRestitution(class GranularModel *, class LAMMPS *);
     void init() override;
-    double calculate_forces() override;
   };
 
   /* ---------------------------------------------------------------------- */
 
-}    // namespace Granular_NS
-}    // namespace LAMMPS_NS
+  class GranSubModDampingMDR : public GranSubModDamping {
+   public:
+    GranSubModDampingMDR(class GranularModel *, class LAMMPS *);
+    void coeffs_to_local() override;
+    void init() override;
+    double calculate_forces() override;
+
+   protected:
+    int damp_type;
+  };
+
+  /* ---------------------------------------------------------------------- */
+
+} // namespace LAMMPS_NS::Granular_NS
+
 
 #endif /*GRAN_SUB_MOD_DAMPING_H */
 #endif /*GRAN_SUB_MOD_CLASS_H */

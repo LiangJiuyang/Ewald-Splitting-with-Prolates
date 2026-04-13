@@ -25,6 +25,7 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "math_extra.h"
 #include "memory.h"
 #include "neigh_list.h"
@@ -41,7 +42,7 @@ using namespace MathExtra;
 static constexpr int DELTA = 4;
 
 static const char cite_pair_edip[] =
-  "pair edip/multi: doi:10.1103/PhysRevB.86.144118, doi:10.1088/0953-8984/22/3/035802\n\n"
+  "pair_style edip/multi command: https://doi.org/10.1103/PhysRevB.86.144118, https://doi.org/10.1088/0953-8984/22/3/035802\n\n"
   "@article{cjiang2012\n"
   " author    = {Jian, Chao and Morgan, Dane, and Szlufarska, Izabella},\n"
   " title     = {Carbon Tri-Interstitial Defect: {A} Model for {D$_{\\mathrm{II}}$} Center},\n"
@@ -339,14 +340,9 @@ void PairEDIPMulti::compute(int eflag, int vflag)
   if (vflag_fdotr) virial_fdotr_compute();
 }
 
-double sqr(double x)
-{
-  return x * x;
-}
-
 //pair Vij, partial derivatives dVij(r,Z)/dr and dVij(r,Z)/dZ
 void PairEDIPMulti::edip_pair(double r, double z, const Param &param, double &eng,
-                         double &fdr, double &fZ)
+                              double &fdr, double &fZ)
 {
   double A = param.A;
   double B = param.B;
@@ -448,7 +444,7 @@ void PairEDIPMulti::edip_h(double l, double z, const Param &param, double &f,
 
   edip_tau(z, param, Tau, TaudZ);
 
-  v1 = sqr(l + Tau);
+  v1 = (l + Tau) * (l + Tau);
   u2 = Q * v1;
   v2 = exp(-u2);
 
@@ -570,7 +566,9 @@ void PairEDIPMulti::init_style()
 
 double PairEDIPMulti::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
 
   return cutmax;
 }

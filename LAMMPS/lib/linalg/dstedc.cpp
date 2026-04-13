@@ -82,7 +82,7 @@ int dstedc_(char *compz, integer *n, doublereal *d__, doublereal *e, doublereal 
             lwmin = 1;
         } else if (*n <= smlsiz) {
             liwmin = 1;
-            lwmin = *n - 1 << 1;
+            lwmin = (*n - 1) << 1;
         } else {
             lgn = (integer)(log((doublereal)(*n)) / log(2.));
             if (pow_lmp_ii(&c__2, &lgn) < *n) {
@@ -138,7 +138,7 @@ int dstedc_(char *compz, integer *n, doublereal *d__, doublereal *e, doublereal 
             storez = 1;
         }
         if (icompz == 2) {
-            dlaset_((char *)"Full", n, n, &c_b17, &c_b18, &z__[z_offset], ldz, (ftnlen)4);
+            dlaset_((char *)"F", n, n, &c_b17, &c_b18, &z__[z_offset], ldz, (ftnlen)1);
         }
         orgnrm = dlanst_((char *)"M", n, &d__[1], &e[1], (ftnlen)1);
         if (orgnrm == 0.) {

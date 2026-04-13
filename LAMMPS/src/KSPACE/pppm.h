@@ -58,7 +58,6 @@ class PPPM : public KSpace {
   int nlower, nupper;
   int ngrid, nfft_brick, nfft, nfft_both;
 
-  double **Time; // timing for each step
   FFT_SCALAR ***density_brick;
   FFT_SCALAR ***vdx_brick, ***vdy_brick, ***vdz_brick;
   FFT_SCALAR ***u_brick;
@@ -135,7 +134,7 @@ class PPPM : public KSpace {
 
   virtual void poisson_peratom();
   virtual void fieldforce_peratom();
-  void procs2grid2d(int, int, int, int *, int *);
+  void procs2grid2d(int, int, int, int &, int &);
   void compute_rho1d(const FFT_SCALAR &, const FFT_SCALAR &, const FFT_SCALAR &);
   void compute_drho1d(const FFT_SCALAR &, const FFT_SCALAR &, const FFT_SCALAR &);
   void compute_rho_coeff();
@@ -176,7 +175,7 @@ class PPPM : public KSpace {
    gf_b = denominator expansion coeffs
 ------------------------------------------------------------------------- */
 
-  inline double gf_denom(const double &x, const double &y, const double &z) const
+  [[nodiscard]] double gf_denom(const double &x, const double &y, const double &z) const
   {
     double sx, sy, sz;
     sz = sy = sx = 0.0;

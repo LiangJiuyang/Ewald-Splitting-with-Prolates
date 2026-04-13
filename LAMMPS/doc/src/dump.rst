@@ -3,6 +3,7 @@
 .. index:: dump cfg
 .. index:: dump custom
 .. index:: dump dcd
+.. index:: dump extxyz
 .. index:: dump grid
 .. index:: dump grid/vtk
 .. index:: dump local
@@ -59,7 +60,7 @@ Syntax
 
 * ID = user-assigned name for the dump
 * group-ID = ID of the group of atoms to be dumped
-* style = *atom* or *atom/adios* or *atom/gz* or *atom/zstd* or *cfg* or *cfg/gz* or *cfg/zstd* or *cfg/uef* or *custom* or *custom/gz* or *custom/zstd* or *custom/adios* or *dcd* or *grid* or *grid/vtk* or *h5md* or *image* or *local* or *local/gz* or *local/zstd* or *molfile* or *movie* or *netcdf* or *netcdf/mpiio* or *vtk* or *xtc* or *xyz* or *xyz/gz* or *xyz/zstd* or *yaml*
+* style = *atom* or *atom/adios* or *atom/gz* or *atom/zstd* or *cfg* or *cfg/gz* or *cfg/zstd* or *cfg/uef* or *custom* or *custom/gz* or *custom/zstd* or *custom/adios* or *dcd* or *extxyz* or *grid* or *grid/vtk* or *h5md* or *image* or *local* or *local/gz* or *local/zstd* or *molfile* or *movie* or *netcdf* or *netcdf/mpiio* or *vtk* or *xtc* or *xyz* or *xyz/gz* or *xyz/zstd* or *yaml*
 * N = dump on timesteps which are multiples of N
 * file = name of file to write dump info to
 * attribute1,attribute2,... = list of attributes for a particular style
@@ -77,6 +78,7 @@ Syntax
        *custom*, *custom/gz*, *custom/zstd* attributes = see below
        *custom/adios* attributes = same as *custom* attributes, discussed on :doc:`dump custom/adios <dump_adios>` page
        *dcd* attributes = none
+       *extxyz* attributes = none
        *h5md* attributes = discussed on :doc:`dump h5md <dump_h5md>` page
        *grid* attributes = see below
        *grid/vtk* attributes = see below
@@ -208,7 +210,7 @@ support these options; see details on the :doc:`dump_modify
 <dump_modify>` doc page.
 
 As described below, the filename determines the kind of output: text
-or binary or gzipped, one big file or one per timestep, one file for
+or binary or compressed, one big file or one per timestep, one file for
 all the processors or multiple smaller files.
 
 .. note::
@@ -242,28 +244,29 @@ all the processors or multiple smaller files.
    frames consistently to the same atom.  This can lead to incorrect
    visualizations or results.  LAMMPS will print a warning in such cases.
 
-For the *atom*, *custom*, *cfg*, *grid*, and *local* styles, sorting
-is off by default.  For the *dcd*, *grid/vtk*, *xtc*, *xyz*, and
+For the *atom*, *custom*, *cfg*, *grid*, and *local* styles, sorting is
+off by default.  For the *dcd*, *extxyz*, *grid/vtk*, *xtc*, *xyz*, and
 *molfile* styles, sorting by atom ID or grid ID is on by default. See
 the :doc:`dump_modify <dump_modify>` page for details.
 
 The *style* keyword determines what kind of data is written to the
 dump file(s) and in what format.
 
-Note that *atom*, *custom*, *dcd*, *xtc*, *xyz*, and *yaml* style dump
-files can be read directly by `VMD <https://www.ks.uiuc.edu/Research/vmd>`_,
-a popular tool for visualizing and analyzing trajectories from atomic
-and molecular systems.  For reading *netcdf* style dump files, the
-netcdf plugin needs to be recompiled from source using a NetCDF version
-compatible with the one used by LAMMPS.  The bundled plugin binary
-uses a very old version of NetCDF that is not compatible with LAMMPS.
+Note that *atom*, *custom*, *dcd*, *extxyz*, *xtc*, *xyz*, and *yaml*
+style dump files can be read directly by `VMD
+<https://www.ks.uiuc.edu/Research/vmd/>`_, a popular tool for visualizing
+and analyzing trajectories from atomic and molecular systems.  For
+reading *netcdf* style dump files, the netcdf plugin needs to be
+recompiled from source using a NetCDF version compatible with the one
+used by LAMMPS.  The bundled plugin binary uses a very old version of
+NetCDF that is not compatible with LAMMPS.
 
 Likewise the `OVITO visualization package <https://www.ovito.org>`_,
-popular for materials modeling, can read the *atom*, *custom*,
+popular for materials modeling, can read the *atom*, *custom*, *extxyz*,
 *local*, *xtc*, *cfg*, *netcdf*, and *xyz* style atom dump files
-directly.  With version 3.8 and above, OVITO can also read and
-visualize *grid* style dump files with grid cell data, including
-iso-surface images of the grid cell values.
+directly.  With version 3.8 and above, OVITO can also read and visualize
+*grid* style dump files with grid cell data, including iso-surface
+images of the grid cell values.
 
 Note that settings made via the :doc:`dump_modify <dump_modify>`
 command can also alter the format of individual values and content of
@@ -281,7 +284,7 @@ when viewing a dump file.  Many post-processing tools either included
 with LAMMPS or third-party tools can read this format, as does the
 :doc:`rerun <rerun>` command.  See tools described on the :doc:`Tools
 <Tools>` doc page for examples, including `Pizza.py
-<https://lammps.github.io/pizza>`_.
+<https://lammps.github.io/pizza/>`_.
 
 For all these styles, the dimensions of the simulation box are
 included in each snapshot.  The simulation box in LAMMPS can be
@@ -475,6 +478,24 @@ label). This option will help many visualization programs to guess bonds
 and colors. You can use the :doc:`dump_modify types labels <dump_modify>`
 option to replace numeric atom types with :doc:`type labels <Howto_type_labels>`.
 
+.. versionadded:: 2Apr2025
+
+The *extxyz* style writes XYZ files compatible with the Extended XYZ (or
+ExtXYZ) format as defined as defined in `the libAtoms specification
+<https://github.com/libAtoms/extxyz>`_. Specifically, the following
+information will be dumped:
+
+* timestep
+* time, which can be disabled with :doc:`dump_modify time no <dump_modify>`
+* simulation box lattice and pbc conditions
+* atomic forces, which can be disabled with :doc:`dump_modify forces no <dump_modify>`
+* atomic velocities, which can be disabled with :doc:`dump_modify vel no <dump_modify>`
+* atomic masses, if enabled with :doc:`dump_modify mass yes <dump_modify>`
+
+Dump style *extxyz* requires either that a :doc:`type label map for atoms types
+<labelmap>` is defined or :doc:`dump_modify element <dump_modify>` is used to
+set up an atom type number to atom name mapping.
+
 .. versionadded:: 22Dec2022
 
 The *grid/vtk* style writes VTK files for grid data on a regular
@@ -607,8 +628,8 @@ with the processor ID from :math:`0` to :math:`P-1`.  For example,
 tmp.dump.% becomes tmp.dump.0, tmp.dump.1, ... tmp.dump.:math:`P-1`,
 etc.  This creates smaller files and can be a fast mode of output on
 parallel machines that support parallel I/O for output. This option is
-**not** available for the *dcd*, *xtc*, *xyz*, *grid/vtk*, and *yaml*
-styles.
+**not** available for the *dcd*, *extxyz*, *xtc*, *xyz*, *grid/vtk*, and
+*yaml* styles.
 
 By default, :math:`P` is the the number of processors, meaning one file per
 processor, but :math:`P` can be set to a smaller value via the *nfile* or
@@ -638,22 +659,24 @@ the binary file.  The format of the binary file can be understood by
 looking at the :file:`tools/binary2txt.cpp` file.  This option is only
 available for the *atom* and *custom* styles.
 
-If the filename ends with ".gz", the dump file (or files, if "\*" or "%"
-is also used) is written in gzipped format.  A gzipped dump file will be
-about :math:`3\times` smaller than the text version, but will also take
-longer to write.  This option is not available for the *dcd* and *xtc*
-styles.
+If LAMMPS has been compiled with the :doc:`corresponding setting
+<Build_settings>` and if the filename ends with ".gz" or some other
+:ref:`supported compression format suffix <gzip>`, the dump file (or
+files, if "\*" or "%" is also used) is written in compressed format.  A
+compressed dump file will be about :math:`3\times` smaller than the text
+version, but will also take longer to write.  This option is not
+available for the *dcd* and *xtc* styles.
 
 Note that styles that end with *gz* are identical in command syntax to
-the corresponding styles without "gz", however, they generate
-compressed files using the zlib library. Thus the filename suffix
-".gz" is mandatory. This is an alternative approach to writing
-compressed files via a pipe, as done by the regular dump styles, which
-may be required on clusters where the interface to the high-speed
-network disallows using the fork() library call (which is needed for a
-pipe).  For the remainder of this page, you should thus consider the
-*atom* and *atom/gz* styles (etc.) to be inter-changeable, with the
-exception of the required filename suffix.
+the corresponding styles without "gz", however, they generate compressed
+files using the zlib library. Thus the filename suffix ".gz" is
+mandatory. This is an alternative approach to writing compressed files
+via a pipe (see above), as done by the regular dump styles, which may be
+required on HPC clusters where the interface to the high-speed network
+disallows using the fork() library call (which is needed for a pipe).
+For the remainder of this page, you should thus consider the *atom* and
+*atom/gz* styles (etc.) to be inter-changeable, with the exception of
+the required filename suffix.
 
 Similarly, styles that end with *zstd* are identical to the gz styles,
 but use the Zstd compression library instead and require a ".zst"
@@ -959,7 +982,7 @@ the distance and energy of each bond:
 .. code-block:: LAMMPS
 
    compute 1 all property/local batom1 batom2 btype
-   compute 2 all bond/local dist eng
+   compute 2 all bond/local dist engpot
    dump 1 all local 1000 tmp.dump index c_1[1] c_1[2] c_1[3] c_2[1] c_2[2]
 
 ----------
@@ -1003,9 +1026,12 @@ to effectively specify multiple values.
 Restrictions
 """"""""""""
 
-To write gzipped dump files, you must either compile LAMMPS with the
--DLAMMPS_GZIP option or use the styles from the COMPRESS package.
+To write compressed dump files, you must either compile LAMMPS with the
+``-DLAMMPS_GZIP`` option or use the styles from the COMPRESS package.
 See the :doc:`Build settings <Build_settings>` page for details.
+
+To create images or movies, you must install the GRAPHICS package.
+See the :doc:`Build extras <Build_extras>` page for details.
 
 While a dump command is active (i.e., has not been stopped by using
 the :doc:`undump command <undump>`), no commands may be used that will
@@ -1017,9 +1043,9 @@ the COMPRESS package.  They are only enabled if LAMMPS was built with
 that package.  See the :doc:`Build package <Build_package>` page for
 more info.
 
-The *xtc*, *dcd*, and *yaml* styles are part of the EXTRA-DUMP package.
-They are only enabled if LAMMPS was built with that package.  See the
-:doc:`Build package <Build_package>` page for more info.
+The *dcd*, *extxyz*, *xtc*, and *yaml* styles are part of the EXTRA-DUMP
+package.  They are only enabled if LAMMPS was built with that package.
+See the :doc:`Build package <Build_package>` page for more info.
 
 Related commands
 """"""""""""""""

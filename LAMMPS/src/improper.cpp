@@ -18,6 +18,7 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "memory.h"
 #include "suffix.h"
 #include "update.h"
@@ -30,6 +31,7 @@ Improper::Improper(LAMMPS *_lmp) : Pointers(_lmp)
 {
   energy = 0.0;
   writedata = 0;
+  reinitflag = 1;
   for (int i = 0; i < 4; i++) symmatoms[i] = 0;
 
   allocated = 0;
@@ -67,9 +69,14 @@ Improper::~Improper()
 
 void Improper::init()
 {
-  if (!allocated && atom->nimpropertypes) error->all(FLERR, "Improper coeffs are not set");
+  if (!allocated && atom->nimpropertypes)
+    error->all(FLERR, Error::NOLASTLINE,
+               "Improper coeffs are not set. Status:\n" + Info::get_improper_coeff_status(lmp));
   for (int i = 1; i <= atom->nimpropertypes; i++)
-    if (setflag[i] == 0) error->all(FLERR, "All improper coeffs are not set");
+    if (setflag[i] == 0)
+      error->all(FLERR, Error::NOLASTLINE,
+                 "All improper coeffs are not set. Status:\n"
+                 + Info::get_improper_coeff_status(lmp));
 
   init_style();
 }
@@ -89,14 +96,15 @@ void Improper::settings(int narg, char **args)
    see integrate::ev_set() for bitwise settings of eflag/vflag
    set the following flags, values are otherwise set to 0:
      evflag       != 0 if any bits of eflag or vflag are set
-     eflag_global != 0 if ENERGY_GLOBAL bit of eflag set
-     eflag_atom   != 0 if ENERGY_ATOM bit of eflag set
+     eflag_global != 0 if ENERGY_GLOBAL bit of eflag is set
+     eflag_atom   != 0 if ENERGY_ATOM bit of eflag is set
      eflag_either != 0 if eflag_global or eflag_atom is set
-     vflag_global != 0 if VIRIAL_PAIR or VIRIAL_FDOTR bit of vflag set
-     vflag_atom   != 0 if VIRIAL_ATOM bit of vflag set
-     vflag_atom   != 0 if VIRIAL_CENTROID bit of vflag set
+     eflag_only   != 0 if ENERGY_GLOBAL and ENERGY_ONLY bits of eflag are set
+     vflag_global != 0 if VIRIAL_PAIR or VIRIAL_FDOTR bit of vflag is set
+     vflag_atom   != 0 if VIRIAL_ATOM bit of vflag is set
+     vflag_atom   != 0 if VIRIAL_CENTROID bit of vflag is set
                        and centroidstressflag != CENTROID_AVAIL
-     cvflag_atom  != 0 if VIRIAL_CENTROID bit of vflag set
+     cvflag_atom  != 0 if VIRIAL_CENTROID bit of vflag is set
                        and centroidstressflag = CENTROID_AVAIL
      vflag_either != 0 if any of vflag_global, vflag_atom, cvflag_atom is set
 ------------------------------------------------------------------------- */
@@ -107,9 +115,10 @@ void Improper::ev_setup(int eflag, int vflag, int alloc)
 
   evflag = 1;
 
-  eflag_either = eflag;
+  eflag_either = eflag & (ENERGY_GLOBAL | ENERGY_ATOM);
   eflag_global = eflag & ENERGY_GLOBAL;
   eflag_atom = eflag & ENERGY_ATOM;
+  eflag_only = eflag_global ? (eflag & ENERGY_ONLY) : 0;
 
   vflag_global = vflag & (VIRIAL_PAIR | VIRIAL_FDOTR);
   vflag_atom = vflag & VIRIAL_ATOM;
@@ -177,7 +186,6 @@ void Improper::ev_setup(int eflag, int vflag, int alloc)
       cvatom[i][6] = 0.0;
       cvatom[i][7] = 0.0;
       cvatom[i][8] = 0.0;
-      cvatom[i][9] = 0.0;
     }
   }
 }
@@ -399,7 +407,7 @@ void Improper::ev_tally(int i1, int i2, int i3, int i4, int nlocal, int newton_b
 
 void Improper::problem(const char *filename, int lineno, int i1, int i2, int i3, int i4)
 {
-  const auto x = atom->x;
+  auto *const x = atom->x;
   auto warn = fmt::format("Improper problem: {} {} {} {} {} {}\n", comm->me, update->ntimestep,
                           atom->tag[i1], atom->tag[i2], atom->tag[i3], atom->tag[i4]);
   warn += fmt::format("WARNING:   1st atom: {} {:.8} {:.8} {:.8}\n", comm->me, x[i1][0], x[i1][1],
@@ -420,4 +428,16 @@ double Improper::memory_usage()
   double bytes = (double) comm->nthreads * maxeatom * sizeof(double);
   bytes += (double) comm->nthreads * maxvatom * 6 * sizeof(double);
   return bytes;
+}
+
+/* -----------------------------------------------------------------------
+   reset all type-based improper params via init()
+-------------------------------------------------------------------------- */
+
+void Improper::reinit()
+{
+  if (!reinitflag)
+    error->all(FLERR, "Fix adapt interface to this improper style not supported");
+
+  init();
 }

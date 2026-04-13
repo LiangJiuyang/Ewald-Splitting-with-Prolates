@@ -8,36 +8,38 @@ Optional build settings
 LAMMPS can be built with several optional settings.  Each subsection
 explains how to do this for building both with CMake and make.
 
-* `C++11 standard compliance`_ when building all of LAMMPS
+* `C++17 standard compliance`_ when building all of LAMMPS
 * `FFT library`_ for use with the :doc:`kspace_style pppm <kspace_style>` command
 * `Size of LAMMPS integer types and size limits`_
 * `Read or write compressed files`_
-* `Output of JPEG, PNG, and movie files`_ via the :doc:`dump image <dump_image>` or :doc:`dump movie <dump_image>` commands
-* `Support for downloading files`_
+* `Support for downloading files from the input`_
+* `Prevent download of large potential files`_
 * `Memory allocation alignment`_
 * `Workaround for long long integers`_
 * `Exception handling when using LAMMPS as a library`_ to capture errors
-* `Trigger selected floating-point exceptions`_
 
 ----------
 
-.. _cxx11:
+.. _cxx17:
 
-C++11 standard compliance
+C++17 standard compliance
 -------------------------
 
-A C++11 standard compatible compiler is a requirement for compiling LAMMPS.
-LAMMPS version 3 March 2020 is the last version compatible with the previous
-C++98 standard for the core code and most packages. Most currently used
-C++ compilers are compatible with C++11, but some older ones may need extra
-flags to enable C++11 compliance.  Example for GNU c++ 4.8.x:
+.. versionchanged:: 10Sep2025
+
+A C++17 standard compatible compiler is currently the minimum
+requirement for compiling LAMMPS.  LAMMPS version 22 July 2025 is the
+last version compatible with the C++11 standard for the core code and
+most packages. Most currently used C++ compilers are compatible with
+C++17, but some older ones may need extra flags to enable C++17
+compliance.
 
 .. code-block:: make
 
-   CCFLAGS = -g -O3 -std=c++11
+   CCFLAGS = -g -O3 -std=c++17
 
 Individual packages may require compliance with a later C++ standard
-like C++14 or C++17.  These requirements will be documented with the
+like C++20.  These requirements will be documented with the
 :doc:`individual packages <Packages_details>`.
 
 ----------
@@ -252,8 +254,8 @@ use and parallel communication costs for transposing 3d FFT data.
 When using ``-DFFT_SINGLE`` with FFTW3, you may need to ensure that
 the FFTW3 installation includes support for single-precision.
 
-When compiler FFTW3 from source, you can do the following, which should
-produce the additional libraries ``libfftw3f.a`` and/or ``libfftw3f.so``\ .
+When compiling FFTW3 from source, you can do the following, which should
+produce the additional libraries ``libfftw3f.a`` and ``libfftw3f.so``\ .
 
 .. code-block:: bash
 
@@ -274,7 +276,7 @@ find a heFFTe installation with the correct back end (e.g., FFTW or
 MKL), it will attempt to download and build the library automatically.
 In this case, LAMMPS CMake will also accept all heFFTe specific
 variables listed in the `heFFTe documentation
-<https://mkstoyanov.bitbucket.io/heffte/md_doxygen_installation.html>`_
+<https://icl-utk-edu.github.io/heffte/md_doxygen_installation.html>`_
 and those variables will be passed into the heFFTe build.
 
 ----------
@@ -303,7 +305,7 @@ large counters can become before "rolling over".  The default setting of
 
       .. code-block:: bash
 
-         -D LAMMPS_SIZES=value   # smallbig (default) or bigbig or smallsmall
+         -D LAMMPS_SIZES=value   # smallbig (default) or bigbig
 
       If the variable is not set explicitly, "smallbig" is used.
 
@@ -314,7 +316,7 @@ large counters can become before "rolling over".  The default setting of
 
       .. code-block:: make
 
-         LMP_INC = -DLAMMPS_SMALLBIG    # or -DLAMMPS_BIGBIG or -DLAMMPS_SMALLSMALL
+         LMP_INC = -DLAMMPS_SMALLBIG    # or -DLAMMPS_BIGBIG
 
       The default setting is ``-DLAMMPS_SMALLBIG`` if nothing is specified
 
@@ -323,42 +325,33 @@ LAMMPS system size restrictions
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 27 28 27
+   :widths: 27 36 37
    :align: center
 
    * -
      - smallbig
      - bigbig
-     - smallsmall
    * - Total atom count
      - :math:`2^{63}` atoms (= :math:`9.223 \cdot 10^{18}`)
      - :math:`2^{63}` atoms (= :math:`9.223 \cdot 10^{18}`)
-     - :math:`2^{31}` atoms (= :math:`2.147 \cdot 10^9`)
    * - Total timesteps
      - :math:`2^{63}` steps (= :math:`9.223 \cdot 10^{18}`)
      - :math:`2^{63}` steps (= :math:`9.223 \cdot 10^{18}`)
-     - :math:`2^{31}` steps (= :math:`2.147 \cdot 10^9`)
    * - Atom ID values
      - :math:`1 \le i \le 2^{31} (= 2.147 \cdot 10^9)`
      - :math:`1 \le i \le 2^{63} (= 9.223 \cdot 10^{18})`
-     - :math:`1 \le i \le 2^{31} (= 2.147 \cdot 10^9)`
    * - Image flag values
      - :math:`-512 \le i \le 511`
      - :math:`- 1\,048\,576 \le i \le 1\,048\,575`
-     - :math:`-512 \le i \le 511`
 
 The "bigbig" setting increases the size of image flags and atom IDs over
-"smallbig" and the "smallsmall" setting is only needed if your machine
-does not support 64-bit integers or incurs performance penalties when
-using them.
+the default "smallbig" setting.
 
 These are limits for the core of the LAMMPS code, specific features or
-some styles may impose additional limits.  The :ref:`ATC
-<PKG-ATC>` package cannot be compiled with the "bigbig" setting.
-Also, there are limitations when using the library interface where some
-functions with known issues have been replaced by dummy calls printing a
-corresponding error message rather than crashing randomly or corrupting
-data.
+some styles may impose additional limits.  Also, there are limitations
+when using the library interface where some functions with known issues
+have been replaced by dummy calls printing a corresponding error message
+rather than crashing randomly or corrupting data.
 
 Atom IDs are not required for atomic systems which do not store bond
 topology information, though IDs are enabled by default.  The
@@ -390,86 +383,26 @@ in whichever ``lib/gpu/Makefile`` is used must be the same as above.
 
 ----------
 
-.. _graphics:
-
-Output of JPEG, PNG, and movie files
-------------------------------------
-
-The :doc:`dump image <dump_image>` command has options to output JPEG or
-PNG image files.  Likewise, the :doc:`dump movie <dump_image>` command
-outputs movie files in a variety of movie formats.  Using these options
-requires the following settings:
-
-.. tabs::
-
-   .. tab:: CMake build
-
-      .. code-block:: bash
-
-         -D WITH_JPEG=value    # yes or no
-                               # default = yes if CMake finds JPEG development files, else no
-         -D WITH_PNG=value     # yes or no
-                               # default = yes if CMake finds PNG and ZLIB development files,
-                               # else no
-         -D WITH_FFMPEG=value  # yes or no
-                               # default = yes if CMake can find ffmpeg, else no
-
-      Usually these settings are all that is needed.  If CMake cannot
-      find the graphics header, library, executable files, you can set
-      these variables:
-
-      .. code-block:: bash
-
-         -D JPEG_INCLUDE_DIR=path    # path to jpeglib.h header file
-         -D JPEG_LIBRARY=path        # path to libjpeg.a (.so) file
-         -D PNG_INCLUDE_DIR=path     # path to png.h header file
-         -D PNG_LIBRARY=path         # path to libpng.a (.so) file
-         -D ZLIB_INCLUDE_DIR=path    # path to zlib.h header file
-         -D ZLIB_LIBRARY=path        # path to libz.a (.so) file
-         -D FFMPEG_EXECUTABLE=path   # path to ffmpeg executable
-
-   .. tab:: Traditional make
-
-      .. code-block:: make
-
-         LMP_INC = -DLAMMPS_JPEG -DLAMMPS_PNG -DLAMMPS_FFMPEG  <other LMP_INC settings>
-
-         JPG_INC = -I/usr/local/include   # path to jpeglib.h, png.h, zlib.h headers
-                                          # if make cannot find them
-         JPG_PATH = -L/usr/lib            # paths to libjpeg.a, libpng.a, libz.a (.so)
-                                          # files if make cannot find them
-         JPG_LIB = -ljpeg -lpng -lz       # library names
-
-      As with CMake, you do not need to set ``JPG_INC`` or ``JPG_PATH``,
-      if make can find the graphics header and library files in their
-      default system locations.  You must specify ``JPG_LIB`` with a
-      list of graphics libraries to include in the link.  You must make
-      certain that the ffmpeg executable (or ffmpeg.exe on Windows) is
-      in a directory where LAMMPS can find it at runtime; that is
-      usually a directory list in your ``PATH`` environment variable.
-
-Using ``ffmpeg`` to output movie files requires that your machine
-supports the "popen" function in the standard runtime library.
-
-.. note::
-
-   On some clusters with high-speed networks, using the fork()
-   library call (required by popen()) can interfere with the fast
-   communication library and lead to simulations using ffmpeg to hang or
-   crash.
-
-----------
-
 .. _gzip:
 
 Read or write compressed files
 -----------------------------------------
 
+.. versionchanged:: 11Feb2026
+
+   Added support for ``brotli`` and ``7-zip``
+
 If this option is enabled, large files can be read or written with
 compression by ``gzip`` or similar tools by several LAMMPS commands,
-including :doc:`read_data <read_data>`, :doc:`rerun <rerun>`, and
-:doc:`dump <dump>`.  Supported compression tools and algorithms are currently
-``gzip``, ``bzip2``, ``zstd``, ``xz``, ``lz4``, and ``lzma`` (via xz).
+including :doc:`read_data <read_data>`, :doc:`write_data <write_data>`,
+:doc:`rerun <rerun>`, :doc:`dump <dump>`, and :doc:`write_dump
+<write_dump>`.  Supported compression tools and algorithms are currently
+``gzip``, ``bzip2``, ``zstd``, ``xz``, ``lz4``, ``lzma`` (via xz),
+``brotli``, and ``7-zip (via 7z)``.  LAMMPS checks at runtime, which
+compression commands are available and adjusts the check for supported
+suffixes accordingly.  The list of available compression formats and
+suffixes is shown when running LAMMPS with the :doc:`-help or -h
+command_line flag <Run_options>`.
 
 .. tabs::
 
@@ -498,14 +431,14 @@ during a run.
    library and lead to simulations using compressed output or input to
    hang or crash. For selected operations, compressed file I/O is also
    available using a compression library instead, which is what the
-   :ref:`COMPRESS package <PKG-COMPRESS>` enables.
+   :ref:`COMPRESS package <PKG-COMPRESS>` provides.
 
 --------------------------------------------------
 
 .. _libcurl:
 
-Support for downloading files
------------------------------
+Support for downloading files from the input
+--------------------------------------------
 
 .. versionadded:: 29Aug2024
 
@@ -545,6 +478,25 @@ LAMMPS is compiled accordingly which needs the following settings:
       if make can find the libcurl header and library files in their
       default system locations.  You must specify ``CURL_LIB`` with a
       paths or linker flags to link to libcurl.
+
+----------
+
+.. _download_pot:
+
+Prevent download of large potential files
+-----------------------------------------
+
+.. versionadded:: 8Feb2023
+
+LAMMPS bundles a selection of potential files in the ``potentials``
+folder as examples of how those kinds of potential files look like and
+for use with the provided input examples in the ``examples`` tree.  To
+keep the size of the distributed LAMMPS source package small, very large
+potential files (> 5 MBytes) are not bundled, but only downloaded on
+demand when the :doc:`corresponding package <Packages>` is
+installed.  This automatic download can be prevented when :doc:`building
+LAMMPS with CMake <Build_cmake>` by adding the setting `-D
+DOWNLOAD_POTENTIALS=off` when configuring.
 
 ----------
 
@@ -634,40 +586,3 @@ code has to be set up to *catch* exceptions thrown from within LAMMPS.
    throw an exception and thus other MPI ranks may get stuck waiting for
    messages from the ones with errors.
 
-----------
-
-.. _trap_fpe:
-
-Trigger selected floating-point exceptions
-------------------------------------------
-
-Many kinds of CPUs have the capability to detect when a calculation
-results in an invalid math operation, like a division by zero or calling
-the square root with a negative argument.  The default behavior on
-most operating systems is to continue and have values for ``NaN`` (= not
-a number) or ``Inf`` (= infinity).  This allows software to detect and
-recover from such conditions.  This behavior can be changed, however,
-often through use of compiler flags.  On Linux systems (or more general
-on systems using the GNU C library), these so-called floating-point traps
-can also be selectively enabled through library calls.  LAMMPS supports
-that by setting the ``-DLAMMPS_TRAP_FPE`` pre-processor define.  As it is
-done in the ``main()`` function, this applies only to the standalone
-executable, not the library.
-
-.. tabs::
-
-   .. tab:: CMake build
-
-      .. code-block:: bash
-
-         -D CMAKE_TUNE_FLAGS=-DLAMMPS_TRAP_FPE
-
-   .. tab:: Traditional make
-
-      .. code-block:: make
-
-         LMP_INC = -DLAMMPS_TRAP_FPE  <other LMP_INC settings>
-
-After compilation with this flag set, the LAMMPS executable will stop
-and produce a core dump when a division by zero, overflow, illegal math
-function argument or other invalid floating point operation is encountered.

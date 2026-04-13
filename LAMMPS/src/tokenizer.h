@@ -36,17 +36,17 @@ class Tokenizer {
 
  public:
   Tokenizer(std::string str, std::string separators = TOKENIZER_DEFAULT_SEPARATORS);
-  Tokenizer(Tokenizer &&);
+  Tokenizer(Tokenizer &&) noexcept;
   Tokenizer(const Tokenizer &);
   Tokenizer &operator=(const Tokenizer &);
-  Tokenizer &operator=(Tokenizer &&);
-  void swap(Tokenizer &);
+  Tokenizer &operator=(Tokenizer &&) noexcept;
+  void swap(Tokenizer &) noexcept;
 
   void reset();
   void skip(int n = 1);
-  bool has_next() const;
-  bool contains(const std::string &str) const;
-  bool matches(const std::string &str) const;
+  [[nodiscard]] bool has_next() const;
+  [[nodiscard]] bool contains(const std::string &str) const;
+  [[nodiscard]] bool matches(const std::string &str) const;
   std::string next();
 
   size_t count();
@@ -59,18 +59,22 @@ class TokenizerException : public std::exception {
   std::string message;
 
  public:
-  // remove unused default constructor
+  /** The default constructor is disabled */
   TokenizerException() = delete;
 
   /** Thrown during retrieving or skipping tokens
    *
-   * \param  msg    String with error message
-   * \param  token  String of the token/word that caused the error */
+   * \param   msg     String with error message
+   * \param   token   String of the token or word that caused the error */
   explicit TokenizerException(const std::string &msg, const std::string &token);
 
   /** Retrieve message describing the thrown exception
-   * \return string with error message */
-  const char *what() const noexcept override { return message.c_str(); }
+   *
+   * This function provides the message that can be retrieved when the corresponding
+   * exception is caught.
+   *
+   * \return  String with error message */
+  [[nodiscard]] const char *what() const noexcept override { return message.c_str(); }
 };
 
 /** Exception thrown by ValueTokenizer when trying to convert an invalid integer string */
@@ -107,10 +111,10 @@ class ValueTokenizer {
   ValueTokenizer(const std::string &str,
                  const std::string &separators = TOKENIZER_DEFAULT_SEPARATORS);
   ValueTokenizer(const ValueTokenizer &) = default;
-  ValueTokenizer(ValueTokenizer &&);
+  ValueTokenizer(ValueTokenizer &&) noexcept;
   ValueTokenizer &operator=(const ValueTokenizer &);
-  ValueTokenizer &operator=(ValueTokenizer &&);
-  void swap(ValueTokenizer &);
+  ValueTokenizer &operator=(ValueTokenizer &&) noexcept;
+  void swap(ValueTokenizer &) noexcept;
 
   std::string next_string();
   tagint next_tagint();
@@ -118,9 +122,9 @@ class ValueTokenizer {
   int next_int();
   double next_double();
 
-  bool has_next() const;
-  bool contains(const std::string &value) const;
-  bool matches(const std::string &str) const;
+  [[nodiscard]] bool has_next() const;
+  [[nodiscard]] bool contains(const std::string &value) const;
+  [[nodiscard]] bool matches(const std::string &str) const;
   void skip(int ntokens = 1);
 
   size_t count();

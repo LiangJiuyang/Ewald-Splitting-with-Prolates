@@ -86,9 +86,8 @@ int zhegs2_(integer *itype, char *uplo, integer *n, doublecomplex *a, integer *l
                     i__2 = *n - k;
                     zlacgv_(&i__2, &b[k + (k + 1) * b_dim1], ldb);
                     i__2 = *n - k;
-                    ztrsv_(uplo, (char *)"Conjugate transpose", (char *)"Non-unit", &i__2,
-                           &b[k + 1 + (k + 1) * b_dim1], ldb, &a[k + (k + 1) * a_dim1], lda,
-                           (ftnlen)1, (ftnlen)19, (ftnlen)8);
+                    ztrsv_(uplo, (char *)"C", (char *)"N", &i__2, &b[k + 1 + (k + 1) * b_dim1], ldb,
+                           &a[k + (k + 1) * a_dim1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1);
                     i__2 = *n - k;
                     zlacgv_(&i__2, &a[k + (k + 1) * a_dim1], lda);
                 }
@@ -122,8 +121,8 @@ int zhegs2_(integer *itype, char *uplo, integer *n, doublecomplex *a, integer *l
                     zaxpy_(&i__2, &ct, &b[k + 1 + k * b_dim1], &c__1, &a[k + 1 + k * a_dim1],
                            &c__1);
                     i__2 = *n - k;
-                    ztrsv_(uplo, (char *)"No transpose", (char *)"Non-unit", &i__2, &b[k + 1 + (k + 1) * b_dim1],
-                           ldb, &a[k + 1 + k * a_dim1], &c__1, (ftnlen)1, (ftnlen)12, (ftnlen)8);
+                    ztrsv_(uplo, (char *)"N", (char *)"N", &i__2, &b[k + 1 + (k + 1) * b_dim1], ldb,
+                           &a[k + 1 + k * a_dim1], &c__1, (ftnlen)1, (ftnlen)1, (ftnlen)1);
                 }
             }
         }
@@ -136,8 +135,8 @@ int zhegs2_(integer *itype, char *uplo, integer *n, doublecomplex *a, integer *l
                 i__2 = k + k * b_dim1;
                 bkk = b[i__2].r;
                 i__2 = k - 1;
-                ztrmv_(uplo, (char *)"No transpose", (char *)"Non-unit", &i__2, &b[b_offset], ldb,
-                       &a[k * a_dim1 + 1], &c__1, (ftnlen)1, (ftnlen)12, (ftnlen)8);
+                ztrmv_(uplo, (char *)"N", (char *)"N", &i__2, &b[b_offset], ldb, &a[k * a_dim1 + 1], &c__1,
+                       (ftnlen)1, (ftnlen)1, (ftnlen)1);
                 d__1 = akk * .5;
                 ct.r = d__1, ct.i = 0.;
                 i__2 = k - 1;
@@ -164,8 +163,8 @@ int zhegs2_(integer *itype, char *uplo, integer *n, doublecomplex *a, integer *l
                 i__2 = k - 1;
                 zlacgv_(&i__2, &a[k + a_dim1], lda);
                 i__2 = k - 1;
-                ztrmv_(uplo, (char *)"Conjugate transpose", (char *)"Non-unit", &i__2, &b[b_offset], ldb,
-                       &a[k + a_dim1], lda, (ftnlen)1, (ftnlen)19, (ftnlen)8);
+                ztrmv_(uplo, (char *)"C", (char *)"N", &i__2, &b[b_offset], ldb, &a[k + a_dim1], lda, (ftnlen)1,
+                       (ftnlen)1, (ftnlen)1);
                 d__1 = akk * .5;
                 ct.r = d__1, ct.i = 0.;
                 i__2 = k - 1;

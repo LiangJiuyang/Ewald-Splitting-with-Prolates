@@ -30,6 +30,7 @@
 #include "error.h"
 #include "fix_reaxff.h"
 #include "force.h"
+#include "info.h"
 #include "memory.h"
 #include "modify.h"
 #include "neigh_list.h"
@@ -46,7 +47,7 @@ using namespace LAMMPS_NS;
 using namespace ReaxFF;
 
 static const char cite_pair_reax_c[] =
-  "pair reaxff command: doi:10.1016/j.parco.2011.08.005\n\n"
+  "pair reaxff command: https://doi.org/10.1016/j.parco.2011.08.005\n\n"
   "@Article{Aktulga12,\n"
   " author = {H. M. Aktulga and J. C. Fogarty and S. A. Pandit and A. Y. Grama},\n"
   " title = {Parallel Reactive Molecular Dynamics: {N}umerical Methods and Algorithmic Techniques},\n"
@@ -278,7 +279,7 @@ void PairReaxFF::coeff(int nargs, char **args)
   if (!allocated) allocate();
 
   if (nargs != 3 + atom->ntypes)
-    error->all(FLERR,"Incorrect args for pair coefficients");
+    error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
   // read ffield file
 
@@ -328,7 +329,7 @@ void PairReaxFF::coeff(int nargs, char **args)
         count++;
       }
 
-  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
 }
 
@@ -341,12 +342,13 @@ void PairReaxFF::init_style()
   auto acks2_fixes = modify->get_fix_by_style("^acks2/reax");
   int have_qeq = modify->get_fix_by_style("^qeq/reax").size()
     + modify->get_fix_by_style("^qeq/shielded").size() + acks2_fixes.size()
+    + modify->get_fix_by_style("^qeq/rel/reax").size()
     + modify->get_fix_by_style("^qtpie/reax").size();
 
   if (qeqflag && (have_qeq != 1))
     error->all(FLERR,"Pair style reaxff requires use of exactly one of the "
                "fix qeq/reaxff or fix qeq/shielded or fix acks2/reaxff or "
-	       "fix qtpie/reaxff commands");
+               "fix qtpie/reaxff or fix qeq/rel/reaxff commands");
 
   api->system->acks2_flag = acks2_fixes.size();
   if (api->system->acks2_flag)
@@ -442,7 +444,9 @@ void PairReaxFF::setup()
 
 double PairReaxFF::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
 
   cutghost[i][j] = cutghost[j][i] = cutmax;
   return cutmax;
@@ -465,7 +469,7 @@ void PairReaxFF::compute(int eflag, int vflag)
   api->system->N = atom->nlocal + atom->nghost; // mine + ghosts
 
   if (api->system->acks2_flag) {
-    auto ifix = modify->get_fix_by_style("^acks2/reax").front();
+    auto *ifix = modify->get_fix_by_style("^acks2/reax").front();
     api->workspace->s = (dynamic_cast<FixACKS2ReaxFF*>(ifix))->get_s();
   }
 

@@ -18,9 +18,11 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "memory.h"
 #include "neigh_list.h"
 #include "neighbor.h"
+#include "safe_pointers.h"
 #include "sna.h"
 #include "tokenizer.h"
 
@@ -383,7 +385,7 @@ void PairSNAP::settings(int narg, char ** /* arg */)
 void PairSNAP::coeff(int narg, char **arg)
 {
   if (!allocated) allocate();
-  if (narg != 4 + atom->ntypes) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (narg != 4 + atom->ntypes) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
   map_element2type(narg-4,arg+4);
 
@@ -398,7 +400,7 @@ void PairSNAP::coeff(int narg, char **arg)
     // ncoeffall should be (ncoeff+2)*(ncoeff+1)/2
     // so, ncoeff = floor(sqrt(2*ncoeffall))-1
 
-    ncoeff = sqrt(2.0*ncoeffall)-1;
+    ncoeff = (int) sqrt(2.0*ncoeffall) - 1;
     ncoeffq = (ncoeff*(ncoeff+1))/2;
     int ntmp = 1+ncoeff+ncoeffq;
     if (ntmp != ncoeffall) {
@@ -453,10 +455,11 @@ void PairSNAP::init_style()
 
 double PairSNAP::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
   scale[j][i] = scale[i][j];
-  return (radelem[map[i]] +
-          radelem[map[j]])*rcutfac;
+  return (radelem[map[i]] + radelem[map[j]])*rcutfac;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -466,7 +469,7 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
 
   // open SNAP coefficient file on proc 0
 
-  FILE *fpcoeff;
+  SafeFilePtr fpcoeff;
   if (comm->me == 0) {
     fpcoeff = utils::open_potential(coefffilename,lmp,nullptr);
     if (fpcoeff == nullptr)
@@ -483,7 +486,6 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
       ptr = fgets(line,MAXLINE,fpcoeff);
       if (ptr == nullptr) {
         eof = 1;
-        fclose(fpcoeff);
       }
     }
     MPI_Bcast(&eof,1,MPI_INT,0,world);
@@ -535,7 +537,6 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
       ptr = fgets(line,MAXLINE,fpcoeff);
       if (ptr == nullptr) {
         eof = 1;
-        fclose(fpcoeff);
       }
     }
     MPI_Bcast(&eof,1,MPI_INT,0,world);
@@ -564,7 +565,6 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
           ptr = fgets(line,MAXLINE,fpcoeff);
           if (ptr == nullptr) {
             eof = 1;
-            fclose(fpcoeff);
           }
         }
       }
@@ -591,7 +591,6 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
         ptr = fgets(line,MAXLINE,fpcoeff);
         if (ptr == nullptr) {
           eof = 1;
-          fclose(fpcoeff);
         }
       }
 
@@ -611,8 +610,6 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
       }
     }
   }
-
-  if (comm->me == 0) fclose(fpcoeff);
 
   for (int jelem = 0; jelem < nelements; jelem++) {
     if (elementflags[jelem] == 0)
@@ -646,7 +643,7 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
 
   // open SNAP parameter file on proc 0
 
-  FILE *fpparam;
+  SafeFilePtr fpparam;
   if (comm->me == 0) {
     fpparam = utils::open_potential(paramfilename,lmp,nullptr);
     if (fpparam == nullptr)
@@ -660,7 +657,6 @@ void PairSNAP::read_files(char *coefffilename, char *paramfilename)
       ptr = fgets(line,MAXLINE,fpparam);
       if (ptr == nullptr) {
         eof = 1;
-        fclose(fpparam);
       }
     }
     MPI_Bcast(&eof,1,MPI_INT,0,world);

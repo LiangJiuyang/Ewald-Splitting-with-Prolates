@@ -57,9 +57,9 @@ int zpotrf_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
                 i__3 = nb, i__4 = *n - j + 1;
                 jb = min(i__3, i__4);
                 i__3 = j - 1;
-                zherk_((char *)"Upper", (char *)"Conjugate transpose", &jb, &i__3, &c_b14, &a[j * a_dim1 + 1], lda,
-                       &c_b15, &a[j + j * a_dim1], lda, (ftnlen)5, (ftnlen)19);
-                zpotrf2_((char *)"Upper", &jb, &a[j + j * a_dim1], lda, info, (ftnlen)5);
+                zherk_((char *)"U", (char *)"C", &jb, &i__3, &c_b14, &a[j * a_dim1 + 1], lda, &c_b15,
+                       &a[j + j * a_dim1], lda, (ftnlen)1, (ftnlen)1);
+                zpotrf2_((char *)"U", &jb, &a[j + j * a_dim1], lda, info, (ftnlen)1);
                 if (*info != 0) {
                     goto L30;
                 }
@@ -67,13 +67,13 @@ int zpotrf_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
                     i__3 = *n - j - jb + 1;
                     i__4 = j - 1;
                     z__1.r = -1., z__1.i = -0.;
-                    zgemm_((char *)"Conjugate transpose", (char *)"No transpose", &jb, &i__3, &i__4, &z__1,
-                           &a[j * a_dim1 + 1], lda, &a[(j + jb) * a_dim1 + 1], lda, &c_b1,
-                           &a[j + (j + jb) * a_dim1], lda, (ftnlen)19, (ftnlen)12);
+                    zgemm_((char *)"C", (char *)"N", &jb, &i__3, &i__4, &z__1, &a[j * a_dim1 + 1], lda,
+                           &a[(j + jb) * a_dim1 + 1], lda, &c_b1, &a[j + (j + jb) * a_dim1], lda,
+                           (ftnlen)1, (ftnlen)1);
                     i__3 = *n - j - jb + 1;
-                    ztrsm_((char *)"Left", (char *)"Upper", (char *)"Conjugate transpose", (char *)"Non-unit", &jb, &i__3, &c_b1,
-                           &a[j + j * a_dim1], lda, &a[j + (j + jb) * a_dim1], lda, (ftnlen)4,
-                           (ftnlen)5, (ftnlen)19, (ftnlen)8);
+                    ztrsm_((char *)"L", (char *)"U", (char *)"C", (char *)"N", &jb, &i__3, &c_b1, &a[j + j * a_dim1], lda,
+                           &a[j + (j + jb) * a_dim1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1,
+                           (ftnlen)1);
                 }
             }
         } else {
@@ -83,9 +83,9 @@ int zpotrf_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
                 i__3 = nb, i__4 = *n - j + 1;
                 jb = min(i__3, i__4);
                 i__3 = j - 1;
-                zherk_((char *)"Lower", (char *)"No transpose", &jb, &i__3, &c_b14, &a[j + a_dim1], lda, &c_b15,
-                       &a[j + j * a_dim1], lda, (ftnlen)5, (ftnlen)12);
-                zpotrf2_((char *)"Lower", &jb, &a[j + j * a_dim1], lda, info, (ftnlen)5);
+                zherk_((char *)"L", (char *)"N", &jb, &i__3, &c_b14, &a[j + a_dim1], lda, &c_b15,
+                       &a[j + j * a_dim1], lda, (ftnlen)1, (ftnlen)1);
+                zpotrf2_((char *)"L", &jb, &a[j + j * a_dim1], lda, info, (ftnlen)1);
                 if (*info != 0) {
                     goto L30;
                 }
@@ -93,13 +93,13 @@ int zpotrf_(char *uplo, integer *n, doublecomplex *a, integer *lda, integer *inf
                     i__3 = *n - j - jb + 1;
                     i__4 = j - 1;
                     z__1.r = -1., z__1.i = -0.;
-                    zgemm_((char *)"No transpose", (char *)"Conjugate transpose", &i__3, &jb, &i__4, &z__1,
-                           &a[j + jb + a_dim1], lda, &a[j + a_dim1], lda, &c_b1,
-                           &a[j + jb + j * a_dim1], lda, (ftnlen)12, (ftnlen)19);
+                    zgemm_((char *)"N", (char *)"C", &i__3, &jb, &i__4, &z__1, &a[j + jb + a_dim1], lda,
+                           &a[j + a_dim1], lda, &c_b1, &a[j + jb + j * a_dim1], lda, (ftnlen)1,
+                           (ftnlen)1);
                     i__3 = *n - j - jb + 1;
-                    ztrsm_((char *)"Right", (char *)"Lower", (char *)"Conjugate transpose", (char *)"Non-unit", &i__3, &jb, &c_b1,
-                           &a[j + j * a_dim1], lda, &a[j + jb + j * a_dim1], lda, (ftnlen)5,
-                           (ftnlen)5, (ftnlen)19, (ftnlen)8);
+                    ztrsm_((char *)"R", (char *)"L", (char *)"C", (char *)"N", &i__3, &jb, &c_b1, &a[j + j * a_dim1], lda,
+                           &a[j + jb + j * a_dim1], lda, (ftnlen)1, (ftnlen)1, (ftnlen)1,
+                           (ftnlen)1);
                 }
             }
         }

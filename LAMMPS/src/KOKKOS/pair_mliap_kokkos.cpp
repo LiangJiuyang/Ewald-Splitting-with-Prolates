@@ -37,12 +37,14 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-PairMLIAPKokkos<DeviceType>::PairMLIAPKokkos(class LAMMPS* l) : PairMLIAP(l)
+PairMLIAPKokkos<DeviceType>::PairMLIAPKokkos(class LAMMPS *lmp) : PairMLIAP(lmp)
 {
   kokkosable = 1;
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
   datamask_modify = 0;
   is_child=true;
+  reverse_comm_device = 1;
+  comm_type=COMM_TYPE::UNSET;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -53,8 +55,9 @@ PairMLIAPKokkos<DeviceType>::~PairMLIAPKokkos()
   memoryKK->destroy_kokkos(k_map, map);
   memoryKK->destroy_kokkos(k_cutsq, cutsq);
   memoryKK->destroy_kokkos(k_setflag, setflag);
-  memoryKK->destroy_kokkos(k_eatom,eatom);
-  memoryKK->destroy_kokkos(k_vatom,vatom);
+  memoryKK->destroy_kokkos(k_eatom, eatom);
+  memoryKK->destroy_kokkos(k_vatom, vatom);
+  if (ghostneigh) memoryKK->destroy_kokkos(k_cutghost, cutghost);
   delete model;
   delete descriptor;
   model=nullptr;
@@ -81,15 +84,27 @@ void PairMLIAPKokkos<DeviceType>::compute(int eflag, int vflag)
   if (data->nelements != model->nelements)
     error->all(FLERR, "Incompatible model and descriptor element count");
 
-  ev_init(eflag, vflag);
-  if (eflag_atom && (int)k_eatom.h_view.extent(0) < maxeatom) {
-     memoryKK->destroy_kokkos(k_eatom,eatom);
-     memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
+  ev_init(eflag, vflag, 0);
+  if (eflag_atom) {
+    if ((int)k_eatom.view_host().extent(0) < maxeatom) {
+      memoryKK->destroy_kokkos(k_eatom,eatom);
+      memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
+    } else {
+      Kokkos::deep_copy(k_eatom.template view<DeviceType>(),0);
+      k_eatom.modify<DeviceType>();
+      k_eatom.sync_host();
+    }
   }
 
-  if (vflag_atom && (int)k_vatom.h_view.extent(0) < maxeatom) {
-    memoryKK->destroy_kokkos(k_vatom,vatom);
-    memoryKK->create_kokkos(k_vatom,vatom,maxeatom,6,"pair:eatom");
+  if (vflag_atom) {
+    if ((int)k_vatom.view_host().extent(0) < maxeatom) {
+      memoryKK->destroy_kokkos(k_vatom,vatom);
+      memoryKK->create_kokkos(k_vatom,vatom,maxeatom,6,"pair:eatom");
+    } else {
+      Kokkos::deep_copy(k_vatom.template view<DeviceType>(),0);
+      k_vatom.modify<DeviceType>();
+      k_vatom.sync_host();
+    }
   }
 
   data->generate_neighdata(list, eflag, vflag);
@@ -113,7 +128,6 @@ void PairMLIAPKokkos<DeviceType>::compute(int eflag, int vflag)
   // calculate force contributions beta_i*dB_i/dR_j
   atomKK->sync(descriptor_space,F_MASK);
   k_data->sync(descriptor_space, NUMNEIGHS_MASK | IATOMS_MASK | IELEMS_MASK | ELEMS_MASK | BETAS_MASK | JATOMS_MASK | PAIR_I_MASK | JELEMS_MASK | RIJ_MASK );
-
   descriptor->compute_forces(data);
 
   e_tally(data);
@@ -146,6 +160,7 @@ void PairMLIAPKokkos<DeviceType>::allocate()
   memoryKK->create_kokkos(k_cutsq, cutsq, n+1, n+1, "pair_mliap:cutsq");
   memoryKK->create_kokkos(k_setflag, setflag, n+1, n+1, "pair_mliap:setflag");
 
+  if (ghostneigh) memoryKK->create_kokkos(k_cutghost, cutghost, n+1, n+1, "pair_mliap:cutghost");
   // this is for the base class so it doesn't double delete
   allocated = 1;
 }
@@ -214,11 +229,8 @@ void PairMLIAPKokkos<DeviceType>::settings(int narg, char ** arg)
 
 template<class DeviceType>
 void PairMLIAPKokkos<DeviceType>::coeff(int narg, char **arg) {
-  if (narg < 3) error->all(FLERR,"Incorrect args for pair coefficients");
-  if (!allocated) {
-    PairMLIAP::allocate();
-    allocate();
-  }
+  if (narg < 3) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
+  if (!allocated) allocate();
 
   char* type1 = arg[0];
   char* type2 = arg[1];
@@ -227,7 +239,7 @@ void PairMLIAPKokkos<DeviceType>::coeff(int narg, char **arg) {
   // ensure I,J args are * *
 
   if (strcmp(type1,"*") != 0 || strcmp(type2,"*") != 0)
-    error->all(FLERR,"Incorrect args for pair coefficients");
+    error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
   // read args that map atom types to elements
   // map[i] = which element the Ith atom type is, -1 if not mapped
@@ -243,10 +255,10 @@ void PairMLIAPKokkos<DeviceType>::coeff(int narg, char **arg) {
     if (jelem < descriptor->nelements)
       map[i] = jelem;
     else if (strcmp(elemname,"NULL") == 0) map[i] = -1;
-    else error->all(FLERR,"Incorrect args for pair coefficients");
+    else error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
   }
-  k_map.modify<LMPHostType>();
-  k_map.sync<LMPDeviceType>();
+  k_map.modify_host();
+  k_map.sync_device();
 
   // clear setflag since coeff() called once with I,J = * *
 
@@ -264,23 +276,23 @@ void PairMLIAPKokkos<DeviceType>::coeff(int narg, char **arg) {
         setflag[i][j] = 1;
         count++;
       }
-  k_setflag.modify<LMPHostType>();
-  k_setflag.sync<LMPDeviceType>();
+  k_setflag.modify_host();
+  k_setflag.sync_device();
 
-  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
 
   // set up model, descriptor, and mliap data structures
   model->init();
   descriptor->init();
 
-  auto h_cutsq=k_cutsq.template view<LMPHostType>();
+  auto h_cutsq=k_cutsq.view_host();
   for (int itype=1; itype <= atom->ntypes; ++itype)
     for (int jtype=1; jtype <= atom->ntypes; ++jtype)
       // do not set cuts for NULL atoms
       if (map[itype] >= 0 && map[jtype] >= 0) {
         h_cutsq(itype,jtype) = descriptor->cutsq[map[itype]][map[jtype]];
       }
-  k_cutsq.modify<LMPHostType>();
+  k_cutsq.modify_host();
   k_cutsq.sync<DeviceType>();
   constexpr int gradgradflag = -1;
   delete data;
@@ -302,12 +314,13 @@ void PairMLIAPKokkos<DeviceType>::e_tally(MLIAPData* data)
     auto d_iatoms = k_data->k_iatoms.template view<DeviceType>();
     auto d_eatoms = k_data->k_eatoms.template view<DeviceType>();
     auto d_eatom = k_eatom.template view<DeviceType>();
-    Kokkos::parallel_for(data->nlistatoms, KOKKOS_LAMBDA (int ii) {
+    k_eatom.sync<DeviceType>();
+    Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType>(0,data->nlistatoms), KOKKOS_LAMBDA (int ii) {
       d_eatom(d_iatoms(ii)) = d_eatoms(ii);
     });
     k_eatom.modify<DeviceType>();
     // This sync has to be here for the hybrid pair type
-    k_eatom.sync<LMPHostType>();
+    k_eatom.sync_host();
   }
 }
 
@@ -326,9 +339,344 @@ void PairMLIAPKokkos<DeviceType>::init_style()
 
 /* ---------------------------------------------------------------------- */
 
+template<class DeviceType>
+template<class CommType>
+int PairMLIAPKokkos<DeviceType>::forward_comm(CommType* copy_from_, CommType* copy_to_, const int vl)
+{
+  static_assert( std::is_same_v<CommType,float>
+              || std::is_same_v<CommType,double>,
+                 "Unsupported CommType");
+  if constexpr ( std::is_same_v<CommType,float> ) {
+    comm_type = COMM_TYPE::FLOAT;
+  } else if constexpr ( std::is_same_v<CommType,double> ) {
+    comm_type = COMM_TYPE::DOUBLE;
+  }
+  copy_to = copy_to_;
+  copy_from = copy_from_;
+  comm_forward = vec_len=vl;
+
+  Kokkos::parallel_for((atom->nlocal+atom->nghost)*vl, KOKKOS_LAMBDA (int i) {
+    copy_to_[i] = copy_from_[i];
+  });
+  //call comm
+  comm->forward_comm(this);
+
+  return 0;
+}
+
+/* ---------------------------------------------------------------------- */
+template<class DeviceType>
+template<class CommType>
+int PairMLIAPKokkos<DeviceType>::reverse_comm(CommType* copy_from_, CommType* copy_to_, const int vl)
+{
+  static_assert( std::is_same_v<CommType,float>
+              || std::is_same_v<CommType,double>,
+                 "Unsupported CommType");
+  if constexpr ( std::is_same_v<CommType,float> ) {
+    comm_type = COMM_TYPE::FLOAT;
+  } else if constexpr ( std::is_same_v<CommType,double> ) {
+    comm_type = COMM_TYPE::DOUBLE;
+  }
+  copy_to = copy_to_;
+  copy_from = copy_from_;
+  comm_reverse = vec_len = vl;
+
+  Kokkos::parallel_for((atom->nlocal+atom->nghost)*vl, KOKKOS_LAMBDA (int i) {
+    copy_to_[i] = copy_from_[i]; // Copy inputs
+  });
+
+  comm->reverse_comm(this);
+
+  Kokkos::parallel_for(
+    Kokkos::RangePolicy<>( (atom->nlocal)*vl,(atom->nlocal + atom->nghost)*vl),
+    KOKKOS_LAMBDA (int i) {
+    copy_to_[i] = 0; //Zero out ghosts
+  });
+
+  return 0;
+}
+
+/* ---------------------------------------------------------------------- */
+
+template <class DeviceType>
+int PairMLIAPKokkos<DeviceType>::pack_forward_comm_kokkos(
+    int nv, DAT::tdual_int_1d idx_v, DAT::tdual_double_1d &fill, int int2,
+    int *intp) {
+  switch( comm_type ) {
+    case COMM_TYPE::FLOAT:
+      return pack_forward_comm_kokkos(nv,idx_v,fill,int2,intp,std::get<float*>(copy_to));
+    case COMM_TYPE::DOUBLE:
+      return pack_forward_comm_kokkos(nv,idx_v,fill,int2,intp,std::get<double*>(copy_to));
+    case COMM_TYPE::UNSET:
+    default:
+      error->all(FLERR,"comm_type was never set");
+      return -1;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+template <class DeviceType>
+template <typename CommType>
+int PairMLIAPKokkos<DeviceType>::pack_forward_comm_kokkos(
+  int nv, DAT::tdual_int_1d idx_v, DAT::tdual_double_1d &fill, int /*int2*/,
+  int* /*intp*/, CommType *copy_to) {
+  auto idx=idx_v.view<DeviceType>();
+  auto val=fill.view<DeviceType>();
+  int nf=vec_len;
+  auto to=copy_to;
+  Kokkos::parallel_for(nv*nf, KOKKOS_LAMBDA (int start) {
+      const int i = start/nf;
+      const int gstart=idx(i)*nf;
+      const int j = start%nf;
+      val(start) = static_cast<double>(to[gstart+j]);
+    }
+  );
+  return nv*nf;
+}
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+int PairMLIAPKokkos<DeviceType>::pack_forward_comm(int nv, int* idx_v, double *fill,
+                                                   int int2, int *intp)
+{
+  static bool first=true;
+  if (first) {
+    error->warning(FLERR,"PackForwardComm has only been tested on Kokkos devices");
+    first=false;
+  }
+  switch( comm_type ) {
+    case COMM_TYPE::FLOAT:
+      return pack_forward_comm(nv,idx_v,fill,int2,intp,std::get<float*>(copy_to));
+    case COMM_TYPE::DOUBLE:
+      return pack_forward_comm(nv,idx_v,fill,int2,intp,std::get<double*>(copy_to));
+    case COMM_TYPE::UNSET:
+    default:
+      error->all(FLERR,"comm_type was never set");
+      return -1;
+  }
+}
+
+template<class DeviceType>
+template <typename CommType>
+int PairMLIAPKokkos<DeviceType>::pack_forward_comm(int nv, int* idx_v, double *fill,
+                                                   int /*int2*/, int */*intp*/, CommType *copy_to)
+{
+  for (int i=0;i<nv;++i) {
+    int gstart=idx_v[i]*vec_len;
+    int start=i*vec_len;
+    for (int j=0;j<vec_len;++j)
+      fill[start++] = static_cast<double>(copy_to[gstart++]);
+  }
+  return nv*vec_len;
+}
+/* ---------------------------------------------------------------------- */
+
+template <class DeviceType>
+void PairMLIAPKokkos<DeviceType>::unpack_forward_comm_kokkos(
+    int nv, int first_up, DAT::tdual_double_1d &fill) {
+  switch( comm_type ) {
+    case COMM_TYPE::FLOAT:
+      return unpack_forward_comm_kokkos(nv,first_up,fill,std::get<float*>(copy_to));
+    case COMM_TYPE::DOUBLE:
+      return unpack_forward_comm_kokkos(nv,first_up,fill,std::get<double*>(copy_to));
+    case COMM_TYPE::UNSET:
+    default:
+      error->all(FLERR,"comm_type was never set");
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+template <class DeviceType>
+template <typename CommType>
+void PairMLIAPKokkos<DeviceType>::unpack_forward_comm_kokkos(
+    int nv, int first_up, DAT::tdual_double_1d &fill, CommType *copy_to) {
+  auto val=fill.view<DeviceType>();
+  int nf=vec_len;
+  auto to=copy_to;
+  Kokkos::parallel_for(nv*nf, KOKKOS_LAMBDA (int start) {
+      const int i=start/nf;
+      const int gstart=(first_up+i)*nf;
+      const int j=start%nf;
+      to[gstart+j] = static_cast<CommType>(val(start));
+    }
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+void PairMLIAPKokkos<DeviceType>::unpack_forward_comm(int nv, int first_up, double *fill)
+{
+  switch( comm_type ) {
+    case COMM_TYPE::FLOAT:
+      return unpack_forward_comm(nv,first_up,fill,std::get<float*>(copy_to));
+    case COMM_TYPE::DOUBLE:
+      return unpack_forward_comm(nv,first_up,fill,std::get<double*>(copy_to));
+    case COMM_TYPE::UNSET:
+    default:
+      error->all(FLERR,"comm_type was never set");
+  }
+}
+
+template <class DeviceType>
+template <typename CommType>
+void PairMLIAPKokkos<DeviceType>::unpack_forward_comm(
+    int nv, int first_up, double *fill, CommType *copy_to) {
+  for (int i=0; i<nv; ++i) {
+    int gstart=(first_up+i)*vec_len;
+    int start=i*vec_len;
+    for (int j=0;j<vec_len;++j) {
+      copy_to[gstart+j] = static_cast<CommType>(fill[start+j]);
+    }
+  }
+}
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+int PairMLIAPKokkos<DeviceType>::pack_reverse_comm_kokkos(int nv, int first_up, DAT::tdual_double_1d &fill)
+{
+  switch( comm_type ) {
+    case COMM_TYPE::FLOAT:
+      return pack_reverse_comm_kokkos(nv,first_up,fill,std::get<float*>(copy_to));
+    case COMM_TYPE::DOUBLE:
+      return pack_reverse_comm_kokkos(nv,first_up,fill,std::get<double*>(copy_to));
+    case COMM_TYPE::UNSET:
+    default:
+      error->all(FLERR,"comm_type was never set");
+  }
+  return -1;
+}
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+template<typename CommType>
+int PairMLIAPKokkos<DeviceType>::pack_reverse_comm_kokkos(int nv, int first_up, DAT::tdual_double_1d &fill, CommType *copy_to)
+{
+  int nf=vec_len;
+  auto val=fill.view<DeviceType>();
+  auto to=copy_to;
+  Kokkos::parallel_for(nv*nf, KOKKOS_LAMBDA (int start) {
+      const int i = start/nf;
+      const int gstart=(first_up+i)*nf;
+      const int j = start%nf;
+      val(start) = static_cast<double>(to[gstart+j]);
+    }
+  );
+  return nv*nf;
+}
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+int PairMLIAPKokkos<DeviceType>::pack_reverse_comm(int nv, int first_up, double *fill)
+{
+  switch( comm_type ) {
+    case COMM_TYPE::FLOAT:
+      return pack_reverse_comm(nv,first_up,fill,std::get<float*>(copy_to));
+    case COMM_TYPE::DOUBLE:
+      return pack_reverse_comm(nv,first_up,fill,std::get<double*>(copy_to));
+    case COMM_TYPE::UNSET:
+    default:
+      error->all(FLERR,"comm_type was never set");
+  }
+  return -1;
+}
+
+/* ---------------------------------------------------------------------- */
+template<class DeviceType>
+template<typename CommType>
+int PairMLIAPKokkos<DeviceType>::pack_reverse_comm(int nv, int first_up, double *fill, CommType *copy_to)
+{
+  for (int i=0;i<nv;++i) {
+    int gstart=(first_up+i)*vec_len;
+    int start=i*vec_len;
+    for (int j=0;j<vec_len;++j) {
+      fill[start++] = static_cast<double>(copy_to[gstart++]);
+    }
+  }
+  return nv*vec_len;
+}
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+void PairMLIAPKokkos<DeviceType>::unpack_reverse_comm_kokkos(int nv, DAT::tdual_int_1d idx_v, DAT::tdual_double_1d &fill)
+{
+  switch( comm_type ) {
+    case COMM_TYPE::FLOAT:
+      return unpack_reverse_comm_kokkos(nv,idx_v,fill,std::get<float*>(copy_to));
+    case COMM_TYPE::DOUBLE:
+      return unpack_reverse_comm_kokkos(nv,idx_v,fill,std::get<double*>(copy_to));
+    case COMM_TYPE::UNSET:
+    default:
+      error->all(FLERR,"comm_type was never set");
+      return;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+template<typename CommType>
+void PairMLIAPKokkos<DeviceType>::unpack_reverse_comm_kokkos(int nv, DAT::tdual_int_1d idx_v, DAT::tdual_double_1d &fill, CommType *copy_to)
+{
+  int nf=vec_len;
+  auto val=fill.view<DeviceType>();
+  auto idx=idx_v.view<DeviceType>();
+  auto to=copy_to;
+  Kokkos::parallel_for(nv*nf, KOKKOS_LAMBDA (int start) {
+      const int i = start/nf;
+      const int gstart=idx(i)*nf;
+      const int j=start%nf;
+      to[gstart+j] += static_cast<CommType>(val(start));
+    }
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+void PairMLIAPKokkos<DeviceType>::unpack_reverse_comm(int nv, int *idx, double *fill)
+{
+  switch( comm_type ) {
+    case COMM_TYPE::FLOAT:
+      return unpack_reverse_comm(nv,idx,fill,std::get<float*>(copy_to));
+    case COMM_TYPE::DOUBLE:
+      return unpack_reverse_comm(nv,idx,fill,std::get<double*>(copy_to));
+    case COMM_TYPE::UNSET:
+    default:
+      error->all(FLERR,"comm_type was never set");
+      return;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+template<typename CommType>
+void PairMLIAPKokkos<DeviceType>::unpack_reverse_comm(int nv, int *idx, double *fill, CommType *copy_to)
+{
+  for (int i=0;i<nv;++i) {
+    int gstart=idx[i]*vec_len;
+    int start=i*vec_len;
+    for (int j=0;j<vec_len;++j)
+      copy_to[gstart++] += static_cast<CommType>(fill[start++]);
+  }
+}
 namespace LAMMPS_NS {
 template class PairMLIAPKokkos<LMPDeviceType>;
+template int PairMLIAPKokkos<LMPDeviceType>::forward_comm<float>(float*,float*,const int);
+template int PairMLIAPKokkos<LMPDeviceType>::forward_comm<double>(double*,double*,const int);
+template int PairMLIAPKokkos<LMPDeviceType>::reverse_comm<float>(float*,float*,const int);
+template int PairMLIAPKokkos<LMPDeviceType>::reverse_comm<double>(double*,double*,const int);
 #ifdef LMP_KOKKOS_GPU
 template class PairMLIAPKokkos<LMPHostType>;
+template int PairMLIAPKokkos<LMPHostType>::forward_comm<float>(float*,float*,const int);
+template int PairMLIAPKokkos<LMPHostType>::forward_comm<double>(double*,double*,const int);
+template int PairMLIAPKokkos<LMPHostType>::reverse_comm<float>(float*,float*,const int);
+template int PairMLIAPKokkos<LMPHostType>::reverse_comm<double>(double*,double*,const int);
 #endif
 }

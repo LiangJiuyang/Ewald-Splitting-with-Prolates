@@ -67,7 +67,7 @@ int dlaqr4_(logical *wantt, logical *wantz, integer *n, integer *ilo, integer *i
         work[1] = 1.;
         return 0;
     }
-    if (*n <= 11) {
+    if (*n <= 15) {
         lwkopt = 1;
         if (*lwork != -1) {
             dlahqr_(wantt, wantz, n, ilo, ihi, &h__[h_offset], ldh, &wr[1], &wi[1], iloz, ihiz,
@@ -90,7 +90,7 @@ int dlaqr4_(logical *wantt, logical *wantz, integer *n, integer *ilo, integer *i
         i__1 = *ihi - *ilo + 1, i__2 = (*n - 1) / 3, i__1 = min(i__1, i__2);
         nwr = min(i__1, nwr);
         nsr = ilaenv_(&c__15, (char *)"DLAQR4", jbcmpz, n, ilo, ihi, lwork, (ftnlen)6, (ftnlen)2);
-        i__1 = nsr, i__2 = (*n + 6) / 9, i__1 = min(i__1, i__2), i__2 = *ihi - *ilo;
+        i__1 = nsr, i__2 = (*n - 3) / 6, i__1 = min(i__1, i__2), i__2 = *ihi - *ilo;
         nsr = min(i__1, i__2);
         i__1 = 2, i__2 = nsr - nsr % 2;
         nsr = max(i__1, i__2);
@@ -105,7 +105,7 @@ int dlaqr4_(logical *wantt, logical *wantz, integer *n, integer *ilo, integer *i
             return 0;
         }
         nmin = ilaenv_(&c__12, (char *)"DLAQR4", jbcmpz, n, ilo, ihi, lwork, (ftnlen)6, (ftnlen)2);
-        nmin = max(11, nmin);
+        nmin = max(15, nmin);
         nibble = ilaenv_(&c__14, (char *)"DLAQR4", jbcmpz, n, ilo, ihi, lwork, (ftnlen)6, (ftnlen)2);
         nibble = max(0, nibble);
         kacc22 = ilaenv_(&c__16, (char *)"DLAQR4", jbcmpz, n, ilo, ihi, lwork, (ftnlen)6, (ftnlen)2);
@@ -114,7 +114,7 @@ int dlaqr4_(logical *wantt, logical *wantz, integer *n, integer *ilo, integer *i
         i__1 = (*n - 1) / 3, i__2 = *lwork / 2;
         nwmax = min(i__1, i__2);
         nw = nwmax;
-        i__1 = (*n + 6) / 9, i__2 = (*lwork << 1) / 3;
+        i__1 = (*n - 3) / 6, i__2 = (*lwork << 1) / 3;
         nsmax = min(i__1, i__2);
         nsmax -= nsmax % 2;
         ndfl = 1;
@@ -270,7 +270,7 @@ int dlaqr4_(logical *wantt, logical *wantz, integer *n, integer *ilo, integer *i
                 ns = min(i__2, i__3);
                 ns -= ns % 2;
                 ks = kbot - ns + 1;
-                kdu = ns * 3 - 3;
+                kdu = ns << 1;
                 ku = *n - kdu + 1;
                 kwh = kdu + 1;
                 nho = *n - kdu - 3 - (kdu + 1) + 1;

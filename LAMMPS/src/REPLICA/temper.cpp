@@ -64,7 +64,7 @@ void Temper::command(int narg, char **arg)
   if (universe->nworlds == 1)
     error->universe_all(FLERR,"More than one processor partition required for temper command");
   if (domain->box_exist == 0)
-    error->universe_all(FLERR,"Temper command before simulation box is defined");
+    error->universe_all(FLERR,"Temper command before simulation box is defined" + utils::errorurl(33));
   if (narg != 6 && narg != 7) error->universe_all(FLERR,"Illegal temper command");
 
   int nsteps = utils::inumeric(FLERR,arg[0],false,lmp);
@@ -193,18 +193,13 @@ void Temper::command(int narg, char **arg)
   update->integrate->setup(1);
 
   if (me_universe == 0) {
-    if (universe->uscreen) {
-      fprintf(universe->uscreen,"Step");
-      for (int i = 0; i < nworlds; i++)
-        fprintf(universe->uscreen," T%d",i);
-      fprintf(universe->uscreen,"\n");
-    }
-    if (universe->ulogfile) {
-      fprintf(universe->ulogfile,"Step");
-      for (int i = 0; i < nworlds; i++)
-        fprintf(universe->ulogfile," T%d",i);
-      fprintf(universe->ulogfile,"\n");
-    }
+    std::string status = fmt::format("{:^10}", "Step");
+    for (int i = 0; i < nworlds; i++)
+      status += fmt::format(" {:^4}", std::string("T") + std::to_string(i));
+    status += '\n';
+
+    if (universe->uscreen) fputs(status.c_str(), universe->uscreen);
+    if (universe->ulogfile) fputs(status.c_str(), universe->ulogfile);
     print_status();
   }
 
@@ -361,11 +356,10 @@ void Temper::scale_velocities(int t_partner, int t_me)
 
 void Temper::print_status()
 {
-  std::string status = std::to_string(update->ntimestep);
+  std::string status = fmt::format("{:>10}", update->ntimestep);
   for (int i = 0; i < nworlds; i++)
-    status += " " + std::to_string(world2temp[i]);
-
-  status += "\n";
+    status += fmt::format(" {:>4}", world2temp[i]);
+  status += '\n';
 
   if (universe->uscreen) fputs(status.c_str(), universe->uscreen);
   if (universe->ulogfile) {

@@ -35,6 +35,7 @@ Please contact Timothy Sirk for questions (tim.sirk@us.army.mil).
 #include "error.h"
 #include "fix_srp.h"
 #include "force.h"
+#include "info.h"
 #include "memory.h"
 #include "modify.h"
 #include "neigh_list.h"
@@ -52,7 +53,7 @@ static constexpr double BIG = 1e10;
 #define ONETWOBIT 0x40000000
 
 static const char cite_srp[] =
-  "pair srp command: doi:10.1063/1.3698476\n\n"
+  "pair srp command: https://doi.org/10.1063/1.3698476\n\n"
   "@Article{Sirk2012\n"
   " author = {T. W. Sirk and Y. R. Sliozberg and J. K. Brennan and M. Lisal and J. W. Andzelm},\n"
   " title = {An Enhanced Entangled Polymer Model for Dissipative Particle Dynamics},\n"
@@ -62,13 +63,15 @@ static const char cite_srp[] =
   " pages =   {134903}\n"
   "}\n\n";
 
-static int srp_instance = 0;
+namespace {
+int srp_instance = 0;
+}
 
 /* ----------------------------------------------------------------------
  set size of pair comms in constructor
  ---------------------------------------------------------------------- */
 
-PairSRP::PairSRP(LAMMPS *lmp) : Pair(lmp), fix_id(nullptr)
+PairSRP::PairSRP(LAMMPS *lmp) : Pair(lmp)
 {
   writedata = 1;
   single_enable = 0;
@@ -83,8 +86,8 @@ PairSRP::PairSRP(LAMMPS *lmp) : Pair(lmp), fix_id(nullptr)
   //   this should be early enough that FixSRP::pre_exchange()
   //   will be invoked before other fixes that migrate atoms
   //   this is checked for in FixSRP
-
-  f_srp = dynamic_cast<FixSRP *>(modify->add_fix(fmt::format("{:02d}_FIX_SRP all SRP", srp_instance)));
+  fix_id = fmt::format("{:02d}_FIX_SRP", srp_instance);
+  f_srp = modify->add_fix(fix_id + "_FIX_SRP all SRP");
   ++srp_instance;
 }
 
@@ -394,18 +397,19 @@ void PairSRP::settings(int narg, char **arg)
 void PairSRP::coeff(int narg, char **arg)
 {
   if (narg < 3 || narg > 4)
-    error->all(FLERR,"PairSRP: Incorrect args for pair coeff");
+    error->all(FLERR,"Incorrect args for pair coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
-  if (btype_str.size() > 0)
+  if (btype_str.size() > 0) {
     btype = utils::expand_type_int(FLERR, btype_str, Atom::BOND, lmp);
-  if ((btype > atom->nbondtypes) || (btype <= 0))
-    error->all(FLERR,"Invalid bond type {} for pair style srp", btype);
+    if ((btype > atom->nbondtypes) || (btype <= 0))
+      error->all(FLERR, Error::NOLASTLINE, "Invalid bond type {} for pair style srp", btype);
+  }
 
   if (bptype_str.size() > 0)
     bptype = utils::expand_type_int(FLERR, bptype_str, Atom::ATOM, lmp);
   if ((bptype < 1) || (bptype > atom->ntypes))
-    error->all(FLERR,"Invalid bond particle type {} for pair style srp", bptype);
+    error->all(FLERR, Error::NOLASTLINE, "Invalid bond particle type {} for pair style srp", bptype);
 
   // reset cutoffs if explicitly set
   if (allocated) {
@@ -481,7 +485,7 @@ void PairSRP::init_style()
   arg1[0] = (char *) "norm";
   arg1[1] = (char *) "no";
   output->thermo->modify_params(2, arg1);
-  if (comm->me == 0) error->message(FLERR,"Thermo normalization turned off by pair srp");
+  if (comm->me == 0) utils::logmesg(lmp, "Thermo normalization turned off by pair srp\n");
 
   neighbor->add_request(this);
 }
@@ -492,7 +496,9 @@ void PairSRP::init_style()
 
 double PairSRP::init_one(int i, int j)
 {
- if (setflag[i][j] == 0) error->all(FLERR,"PairSRP: All pair coeffs are not set");
+ if (setflag[i][j] == 0)
+   error->all(FLERR, Error::NOLASTLINE,
+              "All pair coeffs are not set. Status\n" + Info::get_pair_coeff_status(lmp));
 
   cut[j][i] = cut[i][j];
   a0[j][i] = a0[i][j];

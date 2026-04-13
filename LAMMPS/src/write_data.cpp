@@ -51,7 +51,7 @@ WriteData::WriteData(LAMMPS *lmp) : Command(lmp) {}
 void WriteData::command(int narg, char **arg)
 {
   if (domain->box_exist == 0)
-    error->all(FLERR,"Write_data command before simulation box is defined");
+    error->all(FLERR,"Write_data command before simulation box is defined" + utils::errorurl(33));
 
   if (narg < 1) utils::missing_cmd_args(FLERR, "write_data", error);
 
@@ -203,7 +203,12 @@ void WriteData::write(const std::string &file)
   // open data file
 
   if (comm->me == 0) {
-    fp = fopen(file.c_str(),"w");
+    if (platform::has_compress_extension(file)) {
+      fp.set_pclose();
+      fp = platform::compressed_write(file);
+    } else {
+      fp = fopen(file.c_str(), "w");
+    }
     if (fp == nullptr)
       error->one(FLERR,"Cannot open data file {}: {}", file, utils::getsyserror());
   }
@@ -254,7 +259,7 @@ void WriteData::write(const std::string &file)
   // extra sections managed by fixes
 
   if (fixflag)
-    for (auto &ifix : modify->get_fix_list())
+    for (const auto &ifix : modify->get_fix_list())
       if (ifix->wd_section)
         for (int m = 0; m < ifix->wd_section; m++) fix(ifix,m);
 
@@ -262,10 +267,6 @@ void WriteData::write(const std::string &file)
   // restore internal per-atom data that was rotated
 
   if (domain->triclinic_general) atom->avec->write_data_restore_restricted();
-
-  // close data file
-
-  if (comm->me == 0) fclose(fp);
 }
 
 /* ----------------------------------------------------------------------
@@ -274,46 +275,46 @@ void WriteData::write(const std::string &file)
 
 void WriteData::header()
 {
-  fmt::print(fp,"LAMMPS data file via write_data, version {}, timestep = {}, units = {}\n\n",
+  utils::print(fp,"LAMMPS data file via write_data, version {}, timestep = {}, units = {}\n\n",
              lmp->version, update->ntimestep, update->unit_style);
 
-  fmt::print(fp,"{} atoms\n{} atom types\n",atom->natoms,atom->ntypes);
+  utils::print(fp,"{} atoms\n{} atom types\n",atom->natoms,atom->ntypes);
 
   // only write out number of types for atom style template
 
   if (atom->molecular == Atom::MOLECULAR) {
     if (atom->nbonds || atom->nbondtypes)
-      fmt::print(fp,"{} bonds\n{} bond types\n",
+      utils::print(fp,"{} bonds\n{} bond types\n",
                  nbonds,atom->nbondtypes);
     if (atom->nangles || atom->nangletypes)
-      fmt::print(fp,"{} angles\n{} angle types\n",
+      utils::print(fp,"{} angles\n{} angle types\n",
                  nangles,atom->nangletypes);
     if (atom->ndihedrals || atom->ndihedraltypes)
-      fmt::print(fp,"{} dihedrals\n{} dihedral types\n",
+      utils::print(fp,"{} dihedrals\n{} dihedral types\n",
                  ndihedrals,atom->ndihedraltypes);
     if (atom->nimpropers || atom->nimpropertypes)
-      fmt::print(fp,"{} impropers\n{} improper types\n",
+      utils::print(fp,"{} impropers\n{} improper types\n",
                  nimpropers,atom->nimpropertypes);
   }
 
   if (atom->molecular == Atom::TEMPLATE) {
-    if (atom->nbondtypes) fmt::print(fp,"{} bond types\n",atom->nbondtypes);
-    if (atom->nangletypes) fmt::print(fp,"{} angle types\n",atom->nangletypes);
-    if (atom->ndihedraltypes) fmt::print(fp,"{} dihedral types\n",atom->ndihedraltypes);
-    if (atom->nimpropertypes) fmt::print(fp,"{} improper types\n",atom->nimpropertypes);
+    if (atom->nbondtypes) utils::print(fp,"{} bond types\n",atom->nbondtypes);
+    if (atom->nangletypes) utils::print(fp,"{} angle types\n",atom->nangletypes);
+    if (atom->ndihedraltypes) utils::print(fp,"{} dihedral types\n",atom->ndihedraltypes);
+    if (atom->nimpropertypes) utils::print(fp,"{} improper types\n",atom->nimpropertypes);
   }
 
   // bonus info
 
-  if (atom->ellipsoid_flag) fmt::print(fp,"{} ellipsoids\n",atom->nellipsoids);
-  if (atom->line_flag) fmt::print(fp,"{} lines\n",atom->nlines);
-  if (atom->tri_flag) fmt::print(fp,"{} triangles\n",atom->ntris);
-  if (atom->body_flag) fmt::print(fp,"{} bodies\n",atom->nbodies);
+  if (atom->ellipsoid_flag) utils::print(fp,"{} ellipsoids\n",atom->nellipsoids);
+  if (atom->line_flag) utils::print(fp,"{} lines\n",atom->nlines);
+  if (atom->tri_flag) utils::print(fp,"{} triangles\n",atom->ntris);
+  if (atom->body_flag) utils::print(fp,"{} bodies\n",atom->nbodies);
 
   // fix info
 
   if (fixflag)
-    for (auto &ifix : modify->get_fix_list())
+    for (const auto &ifix : modify->get_fix_list())
       if (ifix->wd_header)
         for (int m = 0; m < ifix->wd_header; m++)
           ifix->write_data_header(fp,m);
@@ -321,19 +322,19 @@ void WriteData::header()
   // box info: orthogonal, restricted triclinic, or general triclinic (if requested)
 
   if (!domain->triclinic_general) {
-    fmt::print(fp,"\n{} {} xlo xhi\n{} {} ylo yhi\n{} {} zlo zhi\n",
+    utils::print(fp,"\n{} {} xlo xhi\n{} {} ylo yhi\n{} {} zlo zhi\n",
                domain->boxlo[0],domain->boxhi[0],
                domain->boxlo[1],domain->boxhi[1],
                domain->boxlo[2],domain->boxhi[2]);
     if (domain->triclinic)
-      fmt::print(fp,"{} {} {} xy xz yz\n",domain->xy,domain->xz,domain->yz);
+      utils::print(fp,"{} {} {} xy xz yz\n",domain->xy,domain->xz,domain->yz);
 
   } else if (domain->triclinic_general) {
-    fmt::print(fp,"\n{} {} {} avec\n{} {} {} bvec\n{} {} {} cvec\n",
+    utils::print(fp,"\n{} {} {} avec\n{} {} {} bvec\n{} {} {} cvec\n",
                domain->avec[0],domain->avec[1],domain->avec[2],
                domain->bvec[0],domain->bvec[1],domain->bvec[2],
                domain->cvec[0],domain->cvec[1],domain->cvec[2]);
-    fmt::print(fp,"{} {} {} abc origin\n",
+    utils::print(fp,"{} {} {} abc origin\n",
                domain->boxlo[0],domain->boxlo[1],domain->boxlo[2]);
   }
 }
@@ -348,7 +349,7 @@ void WriteData::type_arrays()
     double *mass = atom->mass;
     fputs("\nMasses\n\n",fp);
     for (int i = 1; i <= atom->ntypes; i++)
-      fmt::print(fp,"{} {:.16g}\n",i,mass[i]);
+      utils::print(fp,"{} {:.16g}\n",i,mass[i]);
   }
 }
 
@@ -363,7 +364,7 @@ void WriteData::force_fields()
       if ((comm->me == 0) && (force->pair->mixed_flag == 0))
         error->warning(FLERR,"Not all mixed pair coeffs generated from mixing. "
                        "Use write_data with 'pair ij' option to store all pair coeffs.");
-      fmt::print(fp,"\nPair Coeffs # {}\n\n", force->pair_style);
+      utils::print(fp,"\nPair Coeffs # {}\n\n", force->pair_style);
       force->pair->write_data(fp);
     } else if (pairflag == IJ) {
       // try computing mixed pair coeffs in case we skipped lmp->init()
@@ -375,24 +376,24 @@ void WriteData::force_fields()
             if (!force->pair->setflag[i][j])
               force->pair->init_one(i, j);
       }
-      fmt::print(fp,"\nPairIJ Coeffs # {}\n\n", force->pair_style);
+      utils::print(fp,"\nPairIJ Coeffs # {}\n\n", force->pair_style);
       force->pair->write_data_all(fp);
     }
   }
   if (force->bond && force->bond->writedata && atom->nbondtypes) {
-    fmt::print(fp,"\nBond Coeffs # {}\n\n", force->bond_style);
+    utils::print(fp,"\nBond Coeffs # {}\n\n", force->bond_style);
     force->bond->write_data(fp);
   }
   if (force->angle && force->angle->writedata && atom->nangletypes) {
-    fmt::print(fp,"\nAngle Coeffs # {}\n\n", force->angle_style);
+    utils::print(fp,"\nAngle Coeffs # {}\n\n", force->angle_style);
     force->angle->write_data(fp);
   }
   if (force->dihedral && force->dihedral->writedata && atom->ndihedraltypes) {
-    fmt::print(fp,"\nDihedral Coeffs # {}\n\n", force->dihedral_style);
+    utils::print(fp,"\nDihedral Coeffs # {}\n\n", force->dihedral_style);
     force->dihedral->write_data(fp);
   }
   if (force->improper && force->improper->writedata && atom->nimpropertypes) {
-    fmt::print(fp,"\nImproper Coeffs # {}\n\n", force->improper_style);
+    utils::print(fp,"\nImproper Coeffs # {}\n\n", force->improper_style);
     force->improper->write_data(fp);
   }
 }
@@ -423,13 +424,14 @@ void WriteData::atoms()
   // proc 0 pings each proc, receives its chunk, writes to file
   // all other procs wait for ping, send their chunk to proc 0
 
-  int tmp,recvrow;
+  int tmp = 0;
+  int recvrow;
 
   if (comm->me == 0) {
     MPI_Status status;
     MPI_Request request;
 
-    fmt::print(fp,"\nAtoms # {}\n\n",atom->atom_style);
+    utils::print(fp,"\nAtoms # {}\n\n",atom->atom_style);
     for (int iproc = 0; iproc < comm->nprocs; iproc++) {
       if (iproc) {
         MPI_Irecv(&buf[0][0],maxrow*ncol,MPI_DOUBLE,iproc,0,world,&request);
@@ -476,7 +478,8 @@ void WriteData::velocities()
   // proc 0 pings each proc, receives its chunk, writes to file
   // all other procs wait for ping, send their chunk to proc 0
 
-  int tmp,recvrow;
+  int tmp = 0;
+  int recvrow;
 
   if (comm->me == 0) {
     MPI_Status status;
@@ -529,7 +532,8 @@ void WriteData::bonds()
   // proc 0 pings each proc, receives its chunk, writes to file
   // all other procs wait for ping, send their chunk to proc 0
 
-  int tmp,recvrow;
+  int tmp = 0;
+  int recvrow;
 
   int index = 1;
   if (comm->me == 0) {
@@ -584,7 +588,8 @@ void WriteData::angles()
   // proc 0 pings each proc, receives its chunk, writes to file
   // all other procs wait for ping, send their chunk to proc 0
 
-  int tmp,recvrow;
+  int tmp = 0;
+  int recvrow;
 
   int index = 1;
   if (comm->me == 0) {
@@ -639,7 +644,8 @@ void WriteData::dihedrals()
   // proc 0 pings each proc, receives its chunk, writes to file
   // all other procs wait for ping, send their chunk to proc 0
 
-  int tmp,recvrow;
+  int tmp = 0;
+  int recvrow;
 
   int index = 1;
   if (comm->me == 0) {
@@ -694,7 +700,8 @@ void WriteData::impropers()
   // proc 0 pings each proc, receives its chunk, writes to file
   // all other procs wait for ping, send their chunk to proc 0
 
-  int tmp,recvrow;
+  int tmp = 0;
+  int recvrow;
 
   int index = 1;
   if (comm->me == 0) {
@@ -749,7 +756,7 @@ void WriteData::bonus(int flag)
   // proc 0 pings each proc, receives its chunk, writes to file
   // all other procs wait for ping, send their chunk to proc 0
 
-  int tmp;
+  int tmp = 0;
 
   if (comm->me == 0) {
     MPI_Status status;
@@ -805,7 +812,8 @@ void WriteData::fix(Fix *ifix, int mth)
   // proc 0 pings each proc, receives its chunk, writes to file
   // all other procs wait for ping, send their chunk to proc 0
 
-  int tmp,recvrow;
+  int tmp = 0;
+  int recvrow;
 
   int index = 1;
   if (comm->me == 0) {

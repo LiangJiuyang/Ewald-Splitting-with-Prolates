@@ -63,6 +63,7 @@ class FixQEqReaxFF : public Fix {
   int n_cap, nmax, m_cap;
   int pack_flag;
   int nlevels_respa;
+  int matrix_free;     // kokkos backend; whether or not to use the matrix-free form
   class NeighList *list;
   class PairReaxFF *reaxff;
   class FixEfield *efield;
@@ -81,6 +82,7 @@ class FixQEqReaxFF : public Fix {
   double **s_hist, **t_hist;
   int nprev;
 
+  // NOLINTBEGIN
   typedef struct {
     int n, m;
     int *firstnbr;
@@ -88,6 +90,7 @@ class FixQEqReaxFF : public Fix {
     int *jlist;
     double *val;
   } sparse_matrix;
+  // NOLINTEND
 
   sparse_matrix H;
   double *Hdia_inv;

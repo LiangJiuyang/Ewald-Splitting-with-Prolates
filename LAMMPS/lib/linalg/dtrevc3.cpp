@@ -51,8 +51,7 @@ int dtrevc3_(char *side, char *howmny, logical *select, integer *n, doublereal *
     extern int dlaln2_(logical *, integer *, integer *, doublereal *, doublereal *, doublereal *,
                        integer *, doublereal *, doublereal *, doublereal *, integer *, doublereal *,
                        doublereal *, doublereal *, integer *, doublereal *, doublereal *,
-                       integer *),
-        dlabad_(doublereal *, doublereal *);
+                       integer *);
     extern doublereal dlamch_(char *, ftnlen);
     extern integer idamax_(integer *, doublereal *, integer *);
     extern int dlaset_(char *, integer *, integer *, doublereal *, doublereal *, doublereal *,
@@ -89,7 +88,8 @@ int dtrevc3_(char *side, char *howmny, logical *select, integer *n, doublereal *
     i__1[1] = 1, a__1[1] = howmny;
     s_lmp_cat(ch__1, a__1, i__1, &c__2, (ftnlen)2);
     nb = ilaenv_(&c__1, (char *)"DTREVC", ch__1, n, &c_n1, &c_n1, &c_n1, (ftnlen)6, (ftnlen)2);
-    maxwrk = *n + (*n << 1) * nb;
+    i__2 = 1, i__3 = *n + (*n << 1) * nb;
+    maxwrk = max(i__2, i__3);
     work[1] = (doublereal)maxwrk;
     lquery = *lwork == -1;
     if (!rightv && !leftv) {
@@ -165,7 +165,6 @@ int dtrevc3_(char *side, char *howmny, logical *select, integer *n, doublereal *
     }
     unfl = dlamch_((char *)"Safe minimum", (ftnlen)12);
     ovfl = 1. / unfl;
-    dlabad_(&unfl, &ovfl);
     ulp = dlamch_((char *)"Precision", (ftnlen)9);
     smlnum = unfl * (*n / ulp);
     bignum = (1. - ulp) / smlnum;

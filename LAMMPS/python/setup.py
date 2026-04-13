@@ -18,6 +18,9 @@ def get_lammps_version():
         start_pos = line.find('"')+1
         end_pos = line.find('"', start_pos)
         t = time.strptime("".join(line[start_pos:end_pos].split()), "%d%b%Y")
+        line = f.readline()
+        if line.find("Development") >= 0 or line.find("Maintenance") >= 0:
+          return "{}.{}.{}".format(t.tm_year,t.tm_mon,t.tm_mday+1)
         return "{}.{}.{}".format(t.tm_year,t.tm_mon,t.tm_mday)
 
 class BinaryDistribution(Distribution):
@@ -26,7 +29,7 @@ class BinaryDistribution(Distribution):
         return True
 
 if version_info.major >= 3:
-    pkgs = ['lammps', 'lammps.mliap']
+    pkgs = ['lammps', 'lammps.mliap', 'lammps.ipython']
 else:
     pkgs = ['lammps']
 
@@ -44,6 +47,7 @@ else:
 setup(
     name = "lammps",
     version = get_lammps_version(),
+    license = "GPL-2.0-only",
     author = "The LAMMPS Developers",
     author_email = "developers@lammps.org",
     url = "https://www.lammps.org",
@@ -57,11 +61,10 @@ setup(
         "Programming Language :: Python :: 3",
         "Development Status :: 5 - Production/Stable",
         "Environment :: Console",
-        "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
         "Operating System :: OS Independent",
     ],
-    license = "GPL",
     packages = pkgs,
     package_data = pkgdata,
     distclass = bdist,
+    python_requires = '>=3.6',
 )

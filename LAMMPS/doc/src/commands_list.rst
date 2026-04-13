@@ -82,6 +82,7 @@ Commands
    read_dump
    read_restart
    region
+   region2vmd
    replicate
    rerun
    reset_atoms
@@ -112,4 +113,5 @@ Commands
    write_coeff
    write_data
    write_dump
+   write_molecule
    write_restart

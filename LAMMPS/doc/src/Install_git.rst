@@ -12,26 +12,17 @@ several advantages:
   LAMMPS.  For that, you should first create your own :doc:`fork on
   GitHub <Howto_github>`, though.
 
-You must have `git <git_>`_ installed on your system to use the
-commands explained below to communicate with the git servers on
-GitHub.  For people still using subversion (svn), GitHub also
-provides `limited support for subversion clients <svn_>`_.
-
-.. note::
-
-   As of October 2016, the official home of public LAMMPS development is
-   on GitHub.  The previously advertised LAMMPS git repositories on
-   git.lammps.org and bitbucket.org are now offline or deprecated.
+You must have `git <git_>`_ installed on your system to use the commands
+explained below to communicate with the git servers on GitHub.
 
 .. _git: https://git-scm.com
-.. _svn: https://help.github.com/en/github/importing-your-projects-to-github/working-with-subversion-on-github
 
 You can follow the LAMMPS development on 4 different git branches:
 
 * **develop** : this branch follows the ongoing development and is
   updated with every merge commit of a pull request
-* **release** : this branch is updated with every "feature release";
-   updates are always "fast-forward" merges from *develop*
+* **release** : this branch is updated with every "feature release"
+  and updates are always "fast-forward" merges from *develop*
 * **maintenance** : this branch collects back-ported bug fixes from the
   *develop* branch to the *stable* branch.  It is used to update the
   *stable* branch for "stable update releases".
@@ -39,7 +30,7 @@ You can follow the LAMMPS development on 4 different git branches:
   every "stable release" version and also has selected bug fixes with
   every "update release" when the *maintenance* branch is merged into it
 
-To access the git repositories on your box, use the clone command to
+To access the git repository on your box, use the clone command to
 create a local copy of the LAMMPS repository with a command like:
 
 .. code-block:: bash
@@ -52,6 +43,7 @@ your machine and "release" is one of the 3 branches listed above.
 between them at any time using "git checkout <branch name>".)
 
 .. admonition:: Saving time and disk space when using ``git clone``
+   :class: note
 
    The complete git history of the LAMMPS project is quite large because
    it contains the entire commit history of the project since fall 2006,
@@ -60,7 +52,7 @@ between them at any time using "git checkout <branch name>".)
    files (mostly by accident).  If you do not need access to the entire
    commit history (most people don't), you can speed up the "cloning"
    process and reduce local disk space requirements by using the
-   ``--depth`` git command line flag.  That will create a "shallow clone"
+   ``--depth`` git command-line flag.  That will create a "shallow clone"
    of the repository, which contains only a subset of the git history.
    Using a depth of 1000 is usually sufficient to include the head
    commits of the *develop*, the *release*, and the *maintenance*
@@ -169,4 +161,11 @@ changed.  How to do this depends on the build system you are using.
    ``git@github.com:lammps/lammps.git``.
 
 The LAMMPS GitHub project is currently overseen by Axel Kohlmeyer
-(Temple U, akohlmey at gmail.com).
+(Temple U, akohlmey at gmail.com), contact him if you have any
+questions or concerns.
+
+----
+
+You can find additional LAMMPS features for dynamically loading
+with the :doc:`plugin command <plugin>` in the
+`LAMMPS plugins source code repository on GitHub <https://github.com/lammps/lammps-plugins>`_

@@ -22,6 +22,7 @@
 #include "force.h"
 #include "improper.h"
 #include "pair.h"
+#include "safe_pointers.h"
 
 #include <cctype>
 #include <cstring>
@@ -39,7 +40,7 @@ static constexpr int BUF_SIZE = 256;
 void WriteCoeff::command(int narg, char **arg)
 {
   if (domain->box_exist == 0)
-    error->all(FLERR, "Write_coeff command before simulation box is defined");
+    error->all(FLERR, "Write_coeff command before simulation box is defined" + utils::errorurl(33));
 
   if (narg != 1) utils::missing_cmd_args(FLERR, "write_coeff", error);
 
@@ -50,7 +51,7 @@ void WriteCoeff::command(int narg, char **arg)
 
   if (comm->me == 0) {
     char str[BUF_SIZE], coeff[BUF_SIZE];
-    FILE *one = fopen(file, "wb+");
+    SafeFilePtr one = fopen(file, "wb+");
 
     if (one == nullptr)
       error->one(FLERR, "Cannot open coeff file {}: {}", file, utils::getsyserror());
@@ -82,7 +83,7 @@ void WriteCoeff::command(int narg, char **arg)
     }
     rewind(one);
 
-    FILE *two = fopen(arg[0], "w");
+    SafeFilePtr two = fopen(arg[0], "w");
     if (two == nullptr)
       error->one(FLERR, "Cannot open coeff file {}: {}", arg[0], utils::getsyserror());
 
@@ -154,8 +155,8 @@ void WriteCoeff::command(int narg, char **arg)
           // parse type number and skip over it
           int type = std::stoi(str);
           char *p = str;
-          while ((*p != '\0') && (*p == ' ')) ++p;
-          while ((*p != '\0') && isdigit(*p)) ++p;
+          while (*p == ' ') ++p;
+          while (isdigit(*p)) ++p;
 
           fprintf(two, "%s %d %s %s", coeff, type, section, p);
           utils::sfgets(FLERR, str, BUF_SIZE, one, file, error);
@@ -163,8 +164,7 @@ void WriteCoeff::command(int narg, char **arg)
       }
       fputc('\n', two);
     }
-    fclose(one);
-    fclose(two);
+    one = nullptr;              // implicitly close file
     platform::unlink(file);
   }
   delete[] file;

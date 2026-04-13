@@ -1,18 +1,5 @@
-//@HEADER
-// ************************************************************************
-//
-//                        Kokkos v. 4.0
-//       Copyright (2022) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
-//
-// Under the terms of Contract DE-NA0003525 with NTESS,
-// the U.S. Government retains certain rights in this software.
-//
-// Part of Kokkos, under the Apache License v2.0 with LLVM Exceptions.
-// See https://kokkos.org/LICENSE for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//@HEADER
+// SPDX-FileCopyrightText: Copyright Contributors to the Kokkos project
 
 #ifndef KOKKOS_SYCL_PARALLEL_SCAN_RANGE_HPP
 #define KOKKOS_SYCL_PARALLEL_SCAN_RANGE_HPP
@@ -145,14 +132,14 @@ class ParallelScanSYCLBase {
   using value_type     = typename Analysis::value_type;
   using reference_type = typename Analysis::reference_type;
   using functor_type   = FunctorType;
-  using size_type      = Kokkos::Experimental::SYCL::size_type;
+  using size_type      = Kokkos::SYCL::size_type;
   using index_type     = typename Policy::index_type;
 
  protected:
   const CombinedFunctorReducer<FunctorType, typename Analysis::Reducer>
       m_functor_reducer;
   const Policy m_policy;
-  sycl_host_ptr<value_type> m_scratch_host = nullptr;
+  sycl::global_ptr<value_type> m_scratch_host = nullptr;
   pointer_type m_result_ptr;
   const bool m_result_ptr_device_accessible;
 
@@ -161,100 +148,102 @@ class ParallelScanSYCLBase {
   sycl::event sycl_direct_launch(const FunctorWrapper& functor_wrapper,
                                  sycl::event memcpy_event) {
     // Convenience references
-    const Kokkos::Experimental::SYCL& space = m_policy.space();
-    Kokkos::Experimental::Impl::SYCLInternal& instance =
+    const Kokkos::SYCL& space = m_policy.space();
+    Kokkos::Impl::SYCLInternal& instance =
         *space.impl_internal_space_instance();
     sycl::queue& q = space.sycl_queue();
 
     const auto size = m_policy.end() - m_policy.begin();
 
-    auto scratch_flags = static_cast<sycl_device_ptr<unsigned int>>(
+    auto scratch_flags = static_cast<sycl::global_ptr<unsigned int>>(
         instance.scratch_flags(sizeof(unsigned int)));
 
     const auto begin = m_policy.begin();
 
     // Initialize global memory
-    auto scan_lambda_factory = [&](sycl::local_accessor<value_type> local_mem,
-                                   sycl::local_accessor<unsigned int>
-                                       num_teams_done,
-                                   sycl_device_ptr<value_type> global_mem_,
-                                   sycl_device_ptr<value_type> group_results_) {
-      auto lambda = [=](sycl::nd_item<1> item) {
-        auto global_mem    = global_mem_;
-        auto group_results = group_results_;
+    auto scan_lambda_factory =
+        [&](sycl::local_accessor<value_type> local_mem,
+            sycl::local_accessor<unsigned int> num_teams_done,
+            sycl::global_ptr<value_type> global_mem_,
+            sycl::global_ptr<value_type> group_results_) {
+          auto lambda = [=](sycl::nd_item<1> item) {
+            auto global_mem    = global_mem_;
+            auto group_results = group_results_;
 
-        const CombinedFunctorReducer<FunctorType, typename Analysis::Reducer>&
-            functor_reducer        = functor_wrapper.get_functor();
-        const FunctorType& functor = functor_reducer.get_functor();
-        const typename Analysis::Reducer& reducer =
-            functor_reducer.get_reducer();
+            const CombinedFunctorReducer<
+                FunctorType, typename Analysis::Reducer>& functor_reducer =
+                functor_wrapper.get_functor();
+            const FunctorType& functor = functor_reducer.get_functor();
+            const typename Analysis::Reducer& reducer =
+                functor_reducer.get_reducer();
 
-        const auto n_wgroups  = item.get_group_range()[0];
-        const int wgroup_size = item.get_local_range()[0];
+            const auto n_wgroups  = item.get_group_range()[0];
+            const int wgroup_size = item.get_local_range()[0];
 
-        const int local_id         = item.get_local_linear_id();
-        const index_type global_id = item.get_global_linear_id();
+            const int local_id         = item.get_local_linear_id();
+            const index_type global_id = item.get_global_linear_id();
 
-        // Initialize local memory
-        value_type local_value;
-        reducer.init(&local_value);
-        if (global_id < size) {
-          if constexpr (std::is_void<WorkTag>::value)
-            functor(global_id + begin, local_value, false);
-          else
-            functor(WorkTag(), global_id + begin, local_value, false);
-        }
-
-        workgroup_scan<>(item, reducer, local_mem, local_value, wgroup_size);
-
-        // Write results to global memory
-        if (global_id < size) global_mem[global_id] = local_value;
-
-        if (local_id == wgroup_size - 1) {
-          group_results[item.get_group_linear_id()] =
-              local_mem[item.get_sub_group().get_group_range()[0] - 1];
-
-          sycl::atomic_ref<unsigned, sycl::memory_order::acq_rel,
-                           sycl::memory_scope::device,
-                           sycl::access::address_space::global_space>
-              scratch_flags_ref(*scratch_flags);
-          num_teams_done[0] = ++scratch_flags_ref;
-        }
-        item.barrier(sycl::access::fence_space::global_space);
-        if (num_teams_done[0] == n_wgroups) {
-          if (local_id == 0) *scratch_flags = 0;
-          value_type total;
-          reducer.init(&total);
-
-          for (unsigned int offset = 0; offset < n_wgroups;
-               offset += wgroup_size) {
-            index_type id = local_id + offset;
-            if (id < static_cast<index_type>(n_wgroups))
-              local_value = group_results[id];
-            else
-              reducer.init(&local_value);
-            workgroup_scan<>(
-                item, reducer, local_mem, local_value,
-                std::min<index_type>(n_wgroups - offset, wgroup_size));
-            if (id < static_cast<index_type>(n_wgroups)) {
-              reducer.join(&local_value, &total);
-              group_results[id] = local_value;
+            // Initialize local memory
+            value_type local_value;
+            reducer.init(&local_value);
+            if (global_id < size) {
+              if constexpr (std::is_void_v<WorkTag>)
+                functor(global_id + begin, local_value, false);
+              else
+                functor(WorkTag(), global_id + begin, local_value, false);
             }
-            reducer.join(
-                &total,
-                &local_mem[item.get_sub_group().get_group_range()[0] - 1]);
-            if (offset + wgroup_size < n_wgroups)
-              item.barrier(sycl::access::fence_space::global_space);
-          }
-        }
-      };
-      return lambda;
-    };
+
+            workgroup_scan<>(item, reducer, local_mem, local_value,
+                             wgroup_size);
+
+            // Write results to global memory
+            if (global_id < size) global_mem[global_id] = local_value;
+
+            if (local_id == wgroup_size - 1) {
+              group_results[item.get_group_linear_id()] =
+                  local_mem[item.get_sub_group().get_group_range()[0] - 1];
+
+              sycl::atomic_ref<unsigned, sycl::memory_order::acq_rel,
+                               sycl::memory_scope::device,
+                               sycl::access::address_space::global_space>
+                  scratch_flags_ref(*scratch_flags);
+              num_teams_done[0] = ++scratch_flags_ref;
+            }
+            sycl::group_barrier(item.get_group());
+            if (num_teams_done[0] == n_wgroups) {
+              if (local_id == 0) *scratch_flags = 0;
+              value_type total;
+              reducer.init(&total);
+
+              for (unsigned int offset = 0; offset < n_wgroups;
+                   offset += wgroup_size) {
+                index_type id = local_id + offset;
+                if (id < static_cast<index_type>(n_wgroups))
+                  local_value = group_results[id];
+                else
+                  reducer.init(&local_value);
+                workgroup_scan<>(
+                    item, reducer, local_mem, local_value,
+                    std::min<index_type>(n_wgroups - offset, wgroup_size));
+                if (id < static_cast<index_type>(n_wgroups)) {
+                  reducer.join(&local_value, &total);
+                  group_results[id] = local_value;
+                }
+                reducer.join(
+                    &total,
+                    &local_mem[item.get_sub_group().get_group_range()[0] - 1]);
+                if (offset + wgroup_size < n_wgroups)
+                  sycl::group_barrier(item.get_group());
+              }
+            }
+          };
+          return lambda;
+        };
 
     size_t wgroup_size;
     size_t n_wgroups;
-    sycl_device_ptr<value_type> global_mem;
-    sycl_device_ptr<value_type> group_results;
+    sycl::global_ptr<value_type> global_mem;
+    sycl::global_ptr<value_type> group_results;
 
     desul::ensure_sycl_lock_arrays_on_device(q);
 
@@ -289,9 +278,9 @@ class ParallelScanSYCLBase {
       // FIXME_SYCL consider only storing one value per block and recreate
       // initial results in the end before doing the final pass
       global_mem =
-          static_cast<sycl_device_ptr<value_type>>(instance.scratch_space(
+          static_cast<sycl::global_ptr<value_type>>(instance.scratch_space(
               n_wgroups * (wgroup_size + 1) * sizeof(value_type)));
-      m_scratch_host = static_cast<sycl_host_ptr<value_type>>(
+      m_scratch_host = static_cast<sycl::global_ptr<value_type>>(
           instance.scratch_host(sizeof(value_type)));
 
       group_results = global_mem + n_wgroups * wgroup_size;
@@ -346,7 +335,7 @@ class ParallelScanSYCLBase {
 
               reducer.join(&update, &group_results[item.get_group_linear_id()]);
 
-              if constexpr (std::is_void<WorkTag>::value)
+              if constexpr (std::is_void_v<WorkTag>)
                 functor(global_id + begin, update, true);
               else
                 functor(WorkTag(), global_id + begin, update, true);
@@ -374,11 +363,11 @@ class ParallelScanSYCLBase {
     std::scoped_lock<std::mutex> scratch_buffers_lock(
         instance.m_mutexScratchSpace);
 
-    Kokkos::Experimental::Impl::SYCLInternal::IndirectKernelMem&
-        indirectKernelMem = instance.get_indirect_kernel_mem();
+    Kokkos::Impl::SYCLInternal::IndirectKernelMem& indirectKernelMem =
+        instance.get_indirect_kernel_mem();
 
-    auto functor_wrapper = Experimental::Impl::make_sycl_function_wrapper(
-        m_functor_reducer, indirectKernelMem);
+    auto functor_wrapper =
+        Impl::make_sycl_function_wrapper(m_functor_reducer, indirectKernelMem);
 
     sycl::event event =
         sycl_direct_launch(functor_wrapper, functor_wrapper.get_copy_event());
@@ -399,7 +388,7 @@ class ParallelScanSYCLBase {
 
 template <class FunctorType, class... Traits>
 class Kokkos::Impl::ParallelScan<FunctorType, Kokkos::RangePolicy<Traits...>,
-                                 Kokkos::Experimental::SYCL>
+                                 Kokkos::SYCL>
     : private ParallelScanSYCLBase<FunctorType, void, Traits...> {
  public:
   using Base = ParallelScanSYCLBase<FunctorType, void, Traits...>;
@@ -417,13 +406,12 @@ class Kokkos::Impl::ParallelScan<FunctorType, Kokkos::RangePolicy<Traits...>,
 
 template <class FunctorType, class ReturnType, class... Traits>
 class Kokkos::Impl::ParallelScanWithTotal<
-    FunctorType, Kokkos::RangePolicy<Traits...>, ReturnType,
-    Kokkos::Experimental::SYCL>
+    FunctorType, Kokkos::RangePolicy<Traits...>, ReturnType, Kokkos::SYCL>
     : public ParallelScanSYCLBase<FunctorType, ReturnType, Traits...> {
  public:
   using Base = ParallelScanSYCLBase<FunctorType, ReturnType, Traits...>;
 
-  const Kokkos::Experimental::SYCL& m_exec;
+  const Kokkos::SYCL& m_exec;
 
   inline void execute() {
     Base::impl_execute([&]() {
@@ -435,7 +423,8 @@ class Kokkos::Impl::ParallelScanWithTotal<
             "Kokkos::Impl::ParallelReduce<SYCL, MDRangePolicy>::execute: "
             "result not device-accessible");
         const int size = Base::m_functor_reducer.get_reducer().value_size();
-        std::memcpy(Base::m_result_ptr, Base::m_scratch_host, size);
+        std::memcpy(static_cast<void*>(Base::m_result_ptr),
+                    static_cast<const void*>(Base::m_scratch_host), size);
       }
     });
   }
@@ -445,7 +434,7 @@ class Kokkos::Impl::ParallelScanWithTotal<
                         const typename Base::Policy& arg_policy,
                         const ViewType& arg_result_view)
       : Base(arg_functor, arg_policy, arg_result_view.data(),
-             MemorySpaceAccess<Experimental::SYCLDeviceUSMSpace,
+             MemorySpaceAccess<SYCLDeviceUSMSpace,
                                typename ViewType::memory_space>::accessible),
         m_exec(arg_policy.space()) {}
 };

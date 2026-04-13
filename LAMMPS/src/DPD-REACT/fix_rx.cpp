@@ -27,6 +27,7 @@
 #include "neigh_list.h"
 #include "neighbor.h"
 #include "pair_dpd_fdt_energy.h"
+#include "safe_pointers.h"
 #include "update.h"
 
 #include <algorithm> // std::max
@@ -55,7 +56,7 @@ static constexpr double MY_EPSILON = 10.0*2.220446049250313e-16;
 namespace /* anonymous */
 {
 
-typedef double TimerType;
+using TimerType = double;
 TimerType getTimeStamp() { return platform::walltime(); }
 double getElapsedTime( const TimerType &t0, const TimerType &t1) { return t1-t0; }
 
@@ -119,7 +120,7 @@ FixRX::FixRX(LAMMPS *lmp, int narg, char **arg) :
                     + " expected \"sparse\" or \"dense\"\n");
 
     if (comm->me == 0 && Verbosity > 1)
-      error->message(FLERR, fmt::format("FixRX: matrix format is {}",word));
+      utils::logmesg(lmp, "FixRX: matrix format is {}\n", word);
   }
 
   // Determine the ODE solver/stepper strategy in arg[6].
@@ -157,7 +158,7 @@ FixRX::FixRX(LAMMPS *lmp, int narg, char **arg) :
     minSteps = utils::inumeric(FLERR,arg[iarg++],false,lmp);
 
     if (comm->me == 0 && Verbosity > 1)
-      error->message(FLERR,fmt::format("FixRX: RK4 numSteps= {}", minSteps));
+      utils::logmesg(lmp, "FixRX: RK4 numSteps= {}\n", minSteps);
   } else if (odeIntegrationFlag == ODE_LAMMPS_RK4 && narg>8) {
     error->all(FLERR,"Illegal fix rx command.  Too many arguments for RK4 solver.");
   } else if (odeIntegrationFlag == ODE_LAMMPS_RKF45) {
@@ -177,9 +178,9 @@ FixRX::FixRX(LAMMPS *lmp, int narg, char **arg) :
     maxIters = std::max( minSteps, maxIters );
 
     if (comm->me == 0 && Verbosity > 1)
-      error->message(FLERR, fmt::format("FixRX: RKF45 minSteps= {} maxIters= {} "
-                                        "relTol= {:.1e} absTol= {:.1e} diagnosticFrequency= {}",
-                                        minSteps, maxIters, relTol, absTol, diagnosticFrequency));
+      utils::logmesg(lmp, "FixRX: RKF45 minSteps= {} maxIters= {} "
+                     "relTol= {:.1e} absTol= {:.1e} diagnosticFrequency= {}\n",
+                     minSteps, maxIters, relTol, absTol, diagnosticFrequency);
   }
 
   // Initialize/Create the sparse matrix database.
@@ -232,14 +233,13 @@ void FixRX::post_constructor()
   int nUniqueSpecies = 0;
   bool match;
 
-  auto tmpspecies = new char*[maxspecies];
+  auto *tmpspecies = new char*[maxspecies];
   for (int jj=0; jj < maxspecies; jj++)
     tmpspecies[jj] = nullptr;
 
   // open file on proc 0
 
-  FILE *fp;
-  fp = nullptr;
+  SafeFilePtr fp;
   if (comm->me == 0) {
     fp = utils::open_potential(kineticsFile,lmp,nullptr);
     if (fp == nullptr)
@@ -259,7 +259,6 @@ void FixRX::post_constructor()
       ptr = fgets(line,MAXLINE,fp);
       if (ptr == nullptr) {
         eof = 1;
-        fclose(fp);
       } else n = strlen(line) + 1;
     }
     MPI_Bcast(&eof,1,MPI_INT,0,world);
@@ -307,12 +306,19 @@ void FixRX::post_constructor()
   id_fix_species = utils::strdup(std::string(id)+"_SPECIES");
   id_fix_species_old = utils::strdup(std::string(id)+"_SPECIES_OLD");
 
-  const std::string fmtstr = "{} {} property/atom ";
-  auto newcmd1 = fmt::format(fmtstr,id_fix_species,group->names[igroup]);
-  auto newcmd2 = fmt::format(fmtstr,id_fix_species_old,group->names[igroup]);
+  std::string newcmd1 = id_fix_species;
+  newcmd1 += " ";
+  newcmd1 += group->names[igroup];
+  newcmd1 += " property/atom ";
+
+  std::string newcmd2 = id_fix_species_old;
+  newcmd2 += " ";
+  newcmd2 += group->names[igroup];
+  newcmd2 += " property/atom ";
+
   for (int ii=0; ii<nspecies; ii++) {
-    newcmd1 += fmt::format(" d_{}",tmpspecies[ii]);
-    newcmd2 += fmt::format(" d_{}Old",tmpspecies[ii]);
+    newcmd1 += fmt::format(" d_{}", tmpspecies[ii]);
+    newcmd2 += fmt::format(" d_{}Old", tmpspecies[ii]);
   }
   newcmd1 += " ghost yes";
   newcmd2 += " ghost yes";
@@ -429,15 +435,13 @@ void FixRX::initSparse()
     mxspec = std::max( mxspec, nreac_i + nprod_i );
   }
 
-  if (comm->me == 0 && Verbosity > 1) {
-    auto msg = fmt::format("FixRX: Sparsity of Stoichiometric Matrix= {:.1f}% non-zeros= {} "
-                           "nspecies= {} nreactions= {} maxReactants= {} maxProducts= {} "
-                           "maxSpecies= {} integralReactions= {}",
-                           100*(double(nzeros) / (nspecies * nreactions)), nzeros, nspecies,
-                           nreactions, mxreac, mxprod, (mxreac + mxprod),
-                           SparseKinetics_enableIntegralReactions);
-    error->message(FLERR, msg);
-  }
+  if (comm->me == 0 && Verbosity > 1)
+        utils::logmesg(lmp, "FixRX: Sparsity of Stoichiometric Matrix= {:.1f}% non-zeros= {} "
+                       "nspecies= {} nreactions= {} maxReactants= {} maxProducts= {} "
+                       "maxSpecies= {} integralReactions= {}\n",
+                       100*(double(nzeros) / (nspecies * nreactions)), nzeros, nspecies,
+                       nreactions, mxreac, mxprod, (mxreac + mxprod),
+                       SparseKinetics_enableIntegralReactions);
 
   // Allocate the sparse matrix data.
   {
@@ -621,7 +625,7 @@ void FixRX::setup_pre_force(int /*vflag*/)
     userData.kFor = new double[nreactions];
     userData.rxnRateLaw = new double[nreactions];
 
-    auto rwork = new double[8*nspecies];
+    auto *rwork = new double[8*nspecies];
 
     if (localTempFlag) {
       int count = nlocal + (newton_pair ? nghost : 0);
@@ -691,7 +695,7 @@ void FixRX::pre_force(int /*vflag*/)
   }
 
   {
-    auto rwork = new double[8*nspecies];
+    auto *rwork = new double[8*nspecies];
 
     UserRHSData userData;
     userData.kFor = new double[nreactions];
@@ -770,8 +774,7 @@ void FixRX::read_file(char *file)
 
   // open file on proc 0
 
-  FILE *fp;
-  fp = nullptr;
+  SafeFilePtr fp;
   if (comm->me == 0) {
     fp = utils::open_potential(file,lmp,nullptr);
     if (fp == nullptr) {
@@ -793,7 +796,6 @@ void FixRX::read_file(char *file)
       ptr = fgets(line,MAXLINE,fp);
       if (ptr == nullptr) {
         eof = 1;
-        fclose(fp);
       } else n = strlen(line) + 1;
     }
     MPI_Bcast(&eof,1,MPI_INT,0,world);
@@ -846,7 +848,6 @@ void FixRX::read_file(char *file)
       ptr = fgets(line,MAXLINE,fp);
       if (ptr == nullptr) {
         eof = 1;
-        fclose(fp);
       } else n = strlen(line) + 1;
     }
     MPI_Bcast(&eof,1,MPI_INT,0,world);
@@ -1223,7 +1224,7 @@ void FixRX::odeDiagnostics()
   const int numCounters = numDiagnosticCounters-1;
 
   // # of time-steps for averaging.
-  const int nTimes = this->diagnosticCounter[numDiagnosticCounters-1];
+  const int nTimes = this->diagnosticCounter[numDiagnosticCounters-1];  // NOLINT
 
   // # of ODE's per time-step (on average).
   //const int nODEs  = this->diagnosticCounter[AtomSum] / nTimes;
@@ -1409,7 +1410,7 @@ void FixRX::odeDiagnostics()
     }
 
     utils::logmesg(lmp, "  AVG'd over {} time-steps\n", nTimes);
-    utils::logmesg(lmp, "  AVG'ing took {} sec", time_local);
+    utils::logmesg(lmp, "  AVG'ing took {} sec\n", time_local);
   }
 
   // Reset the counters.
@@ -1566,7 +1567,7 @@ int FixRX::rhs(double t, const double *y, double *dydt, void *params)
 
 int FixRX::rhs_dense(double /*t*/, const double *y, double *dydt, void *params)
 {
-  auto userData = (UserRHSData *) params;
+  auto *userData = (UserRHSData *) params;
 
   double *rxnRateLaw = userData->rxnRateLaw;
   double *kFor       = userData->kFor;
@@ -1600,7 +1601,7 @@ int FixRX::rhs_dense(double /*t*/, const double *y, double *dydt, void *params)
 
 int FixRX::rhs_sparse(double /*t*/, const double *y, double *dydt, void *v_params) const
 {
-   auto userData = (UserRHSData *) v_params;
+   auto *userData = (UserRHSData *) v_params;
 
    const double VDPD = domain->xprd * domain->yprd * domain->zprd / atom->natoms;
 

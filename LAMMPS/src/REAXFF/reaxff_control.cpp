@@ -28,17 +28,11 @@
 #include "reaxff_api.h"
 
 #include "error.h"
-#include "utils.h"
 #include "text_file_reader.h"
 
 #include <exception>
 #include <string>
 #include <unordered_set>
-
-using LAMMPS_NS::utils::getsyserror;
-using LAMMPS_NS::utils::sfgets;
-using LAMMPS_NS::utils::logmesg;
-using LAMMPS_NS::ValueTokenizer;
 
 namespace ReaxFF {
   static std::unordered_set<std::string> inactive_keywords = {
@@ -57,17 +51,17 @@ namespace ReaxFF {
   class control_parser_error : public std::exception {
     std::string message;
   public:
-    explicit control_parser_error(const std::string &format, const std::string &keyword) {
-      message = fmt::format(format, keyword);
+    explicit control_parser_error(const std::string &msg) {
+      message = msg;
     }
-    const char *what() const noexcept override { return message.c_str(); }
+    [[nodiscard]] const char *what() const noexcept override { return message.c_str(); }
   };
 
   // NOTE: this function is run on MPI rank 0 only
 
   void Read_Control_File(const char *control_file, control_params *control)
   {
-    auto error = control->error_ptr;
+    auto *error = control->error_ptr;
 
     /* assign default values */
     control->nthreads = 1;
@@ -92,11 +86,11 @@ namespace ReaxFF {
         auto keyword = values.next_string();
 
         if (!values.has_next())
-          throw control_parser_error("No value(s) for control parameter: {}\n", keyword);
+          throw control_parser_error(fmt::format("No value(s) for control parameter: {}\n",
+                                                 keyword));
 
         if (inactive_keywords.find(keyword) != inactive_keywords.end()) {
-          error->warning(FLERR,fmt::format("Ignoring inactive control "
-                                           "parameter: {}",keyword));
+          error->warning(FLERR, "Ignoring inactive control parameter: {}", keyword);
         } else if (keyword == "nbrhood_cutoff") {
           control->bond_cut = values.next_double();
         } else if (keyword == "bond_graph_cutoff") {
@@ -114,7 +108,7 @@ namespace ReaxFF {
             error->warning(FLERR,"Support for writing native trajectories has "
                            "been removed after LAMMPS version 8 April 2021");
         } else {
-          throw control_parser_error("Unknown parameter {} in control file", keyword);
+          throw control_parser_error(fmt::format("Unknown parameter {} in control file", keyword));
         }
       }
     } catch (LAMMPS_NS::EOFException &) {

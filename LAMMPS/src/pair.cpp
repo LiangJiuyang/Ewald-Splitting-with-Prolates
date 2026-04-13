@@ -438,9 +438,7 @@ void Pair::init_tables(double cut_coul, double *cut_respa)
       fgamma = 1.0 + ((double)rsq_lookup.f/cut_coulsq)*
         force->kspace->dgamma(r/cut_coul);
     } else if (espflag) {
-      // This block is currently empty and does not perform any operations.
-    }
-    else {
+    } else {
       grij = g_ewald * r;
       expm2 = exp(-grij*grij);
       derfc = erfc(grij);

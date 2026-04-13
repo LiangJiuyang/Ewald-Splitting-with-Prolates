@@ -76,7 +76,7 @@ class KSpace : protected Pointers {
 
   int ewaldflag;         // 1 if a Ewald solver
   int pppmflag;          // 1 if a PPPM solver
-  int espflag;           // 1 if a ESP solver
+  int espflag;           // 1 if an ESP solver
   int msmflag;           // 1 if a MSM solver
   int dispersionflag;    // 1 if a LJ/dispersion solver
   int tip4pflag;         // 1 if a TIP4P solver

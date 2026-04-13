@@ -122,7 +122,7 @@ void ESP::settings(int narg, char **arg)
 {
   if (narg < 1) error->all(FLERR,"Illegal kspace_style {} command", force->kspace_style);
 
-  accuracy_relative = fabs(utils::numeric(FLERR, arg[0], false, lmp)); // will be used for splitting accuracy
+  accuracy_relative = fabs(utils::numeric(FLERR, arg[0], false, lmp));
 
   if (narg == 1){
     spreading_accuracy = 0.5 * accuracy_relative;
@@ -152,10 +152,6 @@ ESP::~ESP()
   if (peratom_allocate_flag) ESP::deallocate_peratom();
   if (group_allocate_flag) ESP::deallocate_groups();
   memory->destroy(part2grid);
-  // memory->destroy(force_poly_coeff);
-  // memory->destroy(energy_poly_coeff);
-  // memory->destroy(fourier_split_poly_coeff);
-  // memory->destroy(fourier_spread_poly_coeff);
 }
 
 /* ----------------------------------------------------------------------

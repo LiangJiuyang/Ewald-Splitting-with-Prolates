@@ -1,0 +1,28 @@
+newton on
+units real
+atom_style full
+read_data numerical_examples/water_trajectory_benchmark/water.data
+reset_timestep 0
+
+bond_style harmonic
+angle_style harmonic
+bond_coeff 1 0.0 1.000
+angle_coeff 1 0.0 109.47
+special_bonds lj/coul 0 0 0.5
+
+pair_style coul/esp 9
+kspace_style esp 0.0001 0.0001
+kspace_modify order 5 mesh 12 12 12 diff ad cspread 12.023999999999999
+pair_coeff * *
+
+
+neighbor 1.0 bin
+neigh_modify every 1 delay 0 check yes one 4000
+thermo_style custom step atoms ecoul elong
+thermo_modify flush yes
+thermo 100
+
+dump force all custom 1 new_manuscript/numerical_examples/redesigned_section5/fig5_ik_ad_order_scan/raw/fig5_ad_1e-4_p5_m12/forces.dump id fx fy fz
+dump_modify force sort id format line "%d %.17g %.17g %.17g"
+
+rerun numerical_examples/water_trajectory_benchmark/water_short_traj.lammpstrj dump x y z ix iy iz box yes format native

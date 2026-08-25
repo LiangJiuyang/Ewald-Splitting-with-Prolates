@@ -1,0 +1,27 @@
+newton on
+units real
+atom_style charge
+read_data new_manuscript/numerical_examples/redesigned_section5/lammps_ad_total_validation/runs_operator_fig3/fig3_P_P5_M24_c12p024/random/random_base.data
+reset_timestep 0
+
+pair_style coul/esp 9
+kspace_style esp 0.0001 0.0001
+kspace_modify order 5 mesh 24 24 24 diff ad cspread 12.023999999999999
+pair_coeff * *
+
+
+neighbor 1.0 bin
+neigh_modify every 1 delay 0 check yes one 4000
+thermo_style custom step atoms ecoul elong
+thermo_modify flush yes
+thermo 100
+
+dump force all custom 1 new_manuscript/numerical_examples/redesigned_section5/lammps_ad_total_validation/runs_operator_fig3/fig3_P_P5_M24_c12p024/random/forces.random.dump id fx fy fz
+dump_modify force sort id format line "%d %.17g %.17g %.17g"
+
+compute adpid all property/local patom1 patom2
+compute adpf all pair/local fx fy fz
+dump adpair all local 1 new_manuscript/numerical_examples/redesigned_section5/lammps_ad_total_validation/runs_operator_fig3/fig3_P_P5_M24_c12p024/random/pairs.random.dump index c_adpid[1] c_adpid[2] c_adpf[1] c_adpf[2] c_adpf[3]
+dump_modify adpair format line "%d %.0f %.0f %.17g %.17g %.17g"
+
+rerun new_manuscript/numerical_examples/redesigned_section5/lammps_ad_total_validation/runs_operator_fig3/fig3_P_P5_M24_c12p024/random/random_10.lammpstrj dump x y z ix iy iz box yes format native

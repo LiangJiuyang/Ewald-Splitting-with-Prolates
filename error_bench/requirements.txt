@@ -1,0 +1,5 @@
+numpy==1.26.4
+scipy==1.11.4
+finufft==2.5.0
+matplotlib==3.10.8
+Pillow==12.1.1

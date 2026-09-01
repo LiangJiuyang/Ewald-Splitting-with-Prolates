@@ -503,12 +503,19 @@ def fixed_ik_mesh_force(
     what = (
         what1[:, None, None] * what1[None, :, None] * what1[None, None, :]
     )
-    stability = float(np.min(np.abs(what[np.nonzero(kernel)])))
+    nonzero = kernel != 0.0
+    zeroed = nonzero & (what == 0.0)
+    retained = nonzero & ~zeroed
+    if not np.any(retained):
+        raise FloatingPointError("all active fixed-influence modes have zero deconvolution")
+    stability = float(np.min(np.abs(what[retained])))
     if stability <= 1.0e-14:
         raise FloatingPointError(f"unstable fixed deconvolution: min |W|={stability:.3e}")
     green = np.zeros_like(kernel)
-    nonzero = kernel != 0.0
-    green[nonzero] = kernel[nonzero] / (what[nonzero] * what[nonzero])
+    # LAMMPS leaves a zero deconvolution mode inactive.  The associated direct
+    # Fourier-mode mismatch is accounted for by the discrete estimator rather
+    # than by dividing through a vanishing polynomial.
+    green[retained] = kernel[retained] / (what[retained] * what[retained])
     stencil = particle_stencil(xyz, mesh, box_length, order, coeff.real)
     density = spread_density(q, stencil, mesh, box_length)
     rho_hat = np.fft.fftn(density)
@@ -519,6 +526,7 @@ def fixed_ik_mesh_force(
     return force, {
         "operator": operator_name,
         "minimum_abs_dimensionless_window_product": stability,
+        "zeroed_active_mode_count": int(np.count_nonzero(zeroed)),
         "split_kernel_normalization": "2*pi*(lambda*psi/C0)/k^2 = 4*pi*a_c/k^2",
     }
 

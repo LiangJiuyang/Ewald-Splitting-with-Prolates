@@ -48,6 +48,7 @@ class AliasPopulation:
     shell_weight_sums: dict[int, float]
     homogeneous_chi2: float
     base_mode_count: int
+    zeroed_active_mode_count: int
 
 
 def _aggregate_modes(modes: np.ndarray, weights: np.ndarray):
@@ -113,10 +114,26 @@ def prepare_alias_population(
             inside = t <= 1.0
             fitted[inside] = ref.horner_array(2.0 * t[inside] - 1.0, coeff.spread)
             denominator_w2 *= fitted * fitted
-        if np.any(denominator_w2 <= 0.0):
-            raise FloatingPointError("LAMMPS polynomial deconvolution vanishes on an active mode")
     else:
         raise ValueError(f"unknown base deconvolution: {base_deconvolution}")
+
+    # The LAMMPS implementation sets the Green multiplier to zero if its
+    # Fourier-polynomial deconvolution denominator vanishes.  Such a resolved
+    # mode is not an undefined estimator contribution: its mesh response is
+    # exactly zero, so its complete direct-Fourier mismatch is retained as a
+    # base (l=0) residual.  It must *not* generate source or gather aliases,
+    # because the zeroed multiplier suppresses the entire mesh response.
+    zeroed = denominator_w2 == 0.0
+    retained = ~zeroed
+    full_base_modes = base_modes
+    full_base_k2 = base_k2
+    full_base_kernel = base_kernel
+    full_base_w2 = base_w2
+    base_modes = full_base_modes[retained]
+    base_k2 = full_base_k2[retained]
+    base_kernel = full_base_kernel[retained]
+    base_w2 = full_base_w2[retained]
+    denominator_w2 = denominator_w2[retained]
     # Each single source/gather image contains W_actual(k) W_actual(k+G)
     # divided by W_deconv(k)^2.  Squaring leaves the prefactor below, followed
     # by the aliased W_actual(k+G)^2 in the shell loop.
@@ -124,14 +141,26 @@ def prepare_alias_population(
         base_k2 * base_kernel * base_kernel / box_length**6
         * base_w2 / (denominator_w2 * denominator_w2)
     )
-    zero_weights_raw = (
+    retained_zero_weights_raw = (
         base_k2 * base_kernel * base_kernel / box_length**6
         * (base_w2 / denominator_w2 - 1.0) ** 2
     )
-    zero_positive = zero_weights_raw > 0.0
+    zero_mode_blocks = []
+    zero_weight_blocks = []
+    zero_positive = retained_zero_weights_raw > 0.0
     if np.any(zero_positive):
+        zero_mode_blocks.append(base_modes[zero_positive])
+        zero_weight_blocks.append(retained_zero_weights_raw[zero_positive])
+    if np.any(zeroed):
+        # With Green(k)=0, F_mesh(k)=0 while the direct reference retains
+        # i k K(k) rho(k); therefore the squared mismatch is k^2 K(k)^2.
+        zero_mode_blocks.append(full_base_modes[zeroed])
+        zero_weight_blocks.append(
+            full_base_k2[zeroed] * full_base_kernel[zeroed] ** 2 / box_length**6
+        )
+    if zero_mode_blocks:
         zero_modes, zero_weights = _aggregate_modes(
-            base_modes[zero_positive], zero_weights_raw[zero_positive]
+            np.concatenate(zero_mode_blocks), np.concatenate(zero_weight_blocks)
         )
     else:
         zero_modes = np.empty((0, 3), dtype=np.int64)
@@ -185,7 +214,8 @@ def prepare_alias_population(
         zero_weights=zero_weights,
         shell_weight_sums=shell_sums,
         homogeneous_chi2=2.0 * sum(shell_sums.values()) + float(zero_weights.sum()),
-        base_mode_count=len(base_modes),
+        base_mode_count=len(full_base_modes),
+        zeroed_active_mode_count=int(np.count_nonzero(zeroed)),
     )
 
 
@@ -345,18 +375,30 @@ def homogeneous_chi2_convergence(
             inside = t <= 1.0
             fitted[inside] = ref.horner_array(2.0 * t[inside] - 1.0, coeff.spread)
             denominator_w2 *= fitted * fitted
-        if np.any(denominator_w2 <= 0.0):
-            raise FloatingPointError(
-                "LAMMPS polynomial deconvolution vanishes on an active mode"
-            )
     else:
         raise ValueError(f"unknown base deconvolution: {base_deconvolution}")
+
+    # Mirror the LAMMPS zero-denominator convention used above: a zeroed
+    # multiplier contributes the direct-mode mismatch k^2 K(k)^2 and no mesh
+    # aliases.  Retained modes use the ordinary all-alias expression.
+    zeroed = denominator_w2 == 0.0
+    retained = ~zeroed
+    zeroed_chi2 = float(
+        np.sum(
+            base_k2[zeroed] * base_kernel[zeroed] * base_kernel[zeroed] / box_length**6
+        )
+    )
+    base_modes = base_modes[retained]
+    base_k2 = base_k2[retained]
+    base_kernel = base_kernel[retained]
+    base_w2 = base_w2[retained]
+    denominator_w2 = denominator_w2[retained]
 
     prefactor = (
         base_k2 * base_kernel * base_kernel / box_length**6
         * base_w2 / (denominator_w2 * denominator_w2)
     )
-    zero = float(
+    zero = zeroed_chi2 + float(
         np.sum(
             base_k2 * base_kernel * base_kernel / box_length**6
             * (base_w2 / denominator_w2 - 1.0) ** 2

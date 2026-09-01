@@ -2,7 +2,8 @@
 
 This directory contains the source code, fixed configurations, trajectories,
 reference forces, LAMMPS patch, and representative LAMMPS inputs used to
-regenerate the numerical source data for manuscript Figures 2-6.
+regenerate the theoretical screens and independent validation data for
+manuscript Figures 2-6.
 
 All commands below assume that this `error_bench/` directory is the current
 working directory. LAMMPS input paths are relative to this directory.
@@ -45,7 +46,9 @@ error_bench/
   `numerical_examples/inhomogeneous_charges/` contain ten fixed 512-charge
   configurations used by Figures 2-4.
 - `numerical_examples/water_trajectory_benchmark/` contains the 51-frame
-  SPC/E trajectory, topology, and converged Ewald force reference.
+  SPC/E trajectory, topology, converged Ewald force reference, and a coarse
+  PPPM mesh-20 force evaluation used only to normalize the Figure 5 relative
+  theoretical screen.  The latter is not an Ewald reference.
 - `numerical_examples/large_water_window_upsampling/` contains the 21,624-atom
   trajectory, five Ewald reference frames, and the Figure 6 scan runners.
 - `inputs/representative_lammps/` contains representative IK, AD, ESP,
@@ -160,14 +163,31 @@ python3 "$FIGDIR/lammps_ad_total_validation/run_operator_fig3_validation.py"
 
 ### Figure 5
 
-Run the ESP and fixed-G PPPM scans with the freshly built executable:
+The current main-text Figure 5 is a fixed-influence \(i\mathbf{k}\)
+theory/validation comparison.  First freeze the theoretical screen, which
+uses only frames 1--25, the coarse PPPM force scale, the closed Fourier
+estimate (Eq. 55), and the measured-\(S_q\) all-alias mesh estimate (Eq. 90).
+It does not access Ewald force differences or frames 26--51:
+
+```bash
+python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage prediction
+```
+
+Next generate the nonoverlapping ESP and PPPM validation data, then attach
+those measurements to the already frozen theoretical record:
 
 ```bash
 python3 "$FIGDIR/fig5_ik_ad_order_scan/run_fig5_ik_ad_order_scan.py" \
   --lmp "$LMP"
 python3 "$FIGDIR/fig5_pppm_ik_ad_fixed_g_scan/run_fig5_pppm_ik_ad_fixed_g_scan.py" \
   --lmp "$LMP"
+python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage validation
 ```
+
+The main plot contains no AD theoretical curve, because the present workflow
+does not establish a matched molecular AD acceptance estimator.  The former
+25-frame Ewald-force pilot calibration remains available only as an archival
+diagnostic; it is not invoked by the main plotting workflow.
 
 Each runner records the actual executable SHA-256 in its manifest. To require
 a specific archived build, add `--require-lmp-sha256 SHA256`; the manuscript

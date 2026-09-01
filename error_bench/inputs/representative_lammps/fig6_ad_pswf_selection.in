@@ -24,6 +24,6 @@ kspace_style esp 1.0e-04 1.0e-10
         neigh_modify every 1 delay 0 check yes one 2000
         thermo_style custom step pe ecoul elong press
         thermo 1
-        dump f all custom 1 numerical_examples/large_water_window_upsampling/ad/runs/selection/1e-4_pswf_m30_p5_g1p50000000_frame1000/forces.dump id fx fy fz
+        dump f all custom 1 inputs/representative_lammps/fig6_ad_pswf_selection.forces.dump id fx fy fz
         dump_modify f sort id format line "%d %.17g %.17g %.17g"
         rerun numerical_examples/large_water_window_upsampling/large_water_short_traj.lammpstrj first 1000 last 1000 every 1 dump x y z ix iy iz box yes format native

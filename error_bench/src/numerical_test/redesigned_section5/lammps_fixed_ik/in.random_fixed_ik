@@ -1,0 +1,22 @@
+newton on
+units real
+atom_style charge
+read_data numerical_examples/random_charges/config_01/random_charges.data
+reset_timestep 0
+
+pair_style coul/esp 9.0
+kspace_style esp 1.0e-4 1.0e-4
+kspace_modify order 6 diff ik mesh 24 24 24 cspread 12.024 influence fixed
+pair_coeff * *
+
+# Suppress the real-space pair term so the dump contains only the smooth
+# fixed-influence ik force compared by validate_lammps_fixed_ik.py.
+pair_modify compute no
+
+neighbor 1.0 bin
+neigh_modify every 1 delay 0 check yes
+thermo_style custom step atoms
+thermo 1
+dump f all custom 1 src/numerical_test/redesigned_section5/lammps_fixed_ik/work/forces.esp_fixed_test.dump id q x y z fx fy fz
+dump_modify f sort id format line "%d %.17g %.17g %.17g %.17g %.17g %.17g %.17g"
+run 0 post no

@@ -23,6 +23,6 @@ kspace_modify diff ik
 kspace_modify gewald 0.34166005
 pair_coeff * *
 
-dump force all custom 1 new_manuscript/numerical_examples/redesigned_section5/fig5_pppm_ik_ad_fixed_g_scan/raw/fig5_pppm_ik_1e-4_p5_m12/forces.dump id fx fy fz
+dump force all custom 1 inputs/representative_lammps/fig5_pppm_ik_p5_m12.forces.dump id fx fy fz
 dump_modify force sort id format line "%d %.17g %.17g %.17g"
 rerun numerical_examples/water_trajectory_benchmark/water_short_traj.lammpstrj dump x y z ix iy iz box yes format native

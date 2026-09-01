@@ -24,6 +24,6 @@ kspace_style ewald 1.0e-12
         neigh_modify every 1 delay 0 check yes one 2000
         thermo_style custom step pe ecoul elong press
         thermo 1
-        dump f all custom 1 numerical_examples/large_water_window_upsampling/ad/reference/forces.ewald_frame1750.dump id fx fy fz
+        dump f all custom 1 numerical_examples/large_water_window_upsampling/reference/forces.ewald_frame1250.dump id fx fy fz
         dump_modify f sort id format line "%d %.17g %.17g %.17g"
-        rerun numerical_examples/large_water_window_upsampling/large_water_short_traj.lammpstrj first 1750 last 1750 every 1 dump x y z ix iy iz box yes format native
+        rerun numerical_examples/large_water_window_upsampling/large_water_short_traj.lammpstrj first 1250 last 1250 every 1 dump x y z ix iy iz box yes format native

@@ -4,11 +4,6 @@ This directory contains the source code, fixed configurations, trajectories,
 reference forces, LAMMPS patch, and representative LAMMPS inputs used to
 regenerate the numerical source data for manuscript Figures 2-6.
 
-This is a lean regeneration bundle, not a precomputed redraw archive. Final
-CSV tables, rendered figures, transient scan directories, LAMMPS logs, and
-compiled executables are intentionally not distributed. Run the data
-generators before invoking the plotting driver.
-
 All commands below assume that this `error_bench/` directory is the current
 working directory. LAMMPS input paths are relative to this directory.
 
@@ -80,7 +75,7 @@ The combined patch contains the ESP analytical-differentiation (AD) and
 ```text
 repository: https://github.com/lammps/lammps.git
 commit:     c4fe7a5bcf91f6b1ee634b1f79c55d671fa0badf
-patch SHA-256: f9d22fc4e0185361850ab9c41681990f0e01169a2f70ae30c69337ad30da5467
+patch SHA-256: 218c12f5e6a4d8a0a07300aec9d9fc9d50df1fd14cd2d88a8ab46f5310a3bced
 ```
 
 Clone and build beside `error_bench/`:
@@ -126,6 +121,9 @@ kspace_modify diff ik
 kspace_modify diff ad
 ```
 
+Both modes are available with `kspace_style esp` and the controlled
+`kspace_style esp/bspline` window used by the Figure 6 comparison.
+
 ## Regenerate source data
 
 The main entry points are listed below. They write generated CSV and JSON
@@ -162,21 +160,19 @@ python3 "$FIGDIR/lammps_ad_total_validation/run_operator_fig3_validation.py"
 
 ### Figure 5
 
-The Figure 5 scan runners are:
+Run the ESP and fixed-G PPPM scans with the freshly built executable:
 
-```text
-src/numerical_test/redesigned_section5/fig5_ik_ad_order_scan/
-src/numerical_test/redesigned_section5/fig5_pppm_ik_ad_fixed_g_scan/
+```bash
+python3 "$FIGDIR/fig5_ik_ad_order_scan/run_fig5_ik_ad_order_scan.py" \
+  --lmp "$LMP"
+python3 "$FIGDIR/fig5_pppm_ik_ad_fixed_g_scan/run_fig5_pppm_ik_ad_fixed_g_scan.py" \
+  --lmp "$LMP"
 ```
 
-These archival runners intentionally require the original validation
-executable SHA-256
+Each runner records the actual executable SHA-256 in its manifest. To require
+a specific archived build, add `--require-lmp-sha256 SHA256`; the manuscript
+validation executable used SHA-256
 `34332fa52c4e2ba72b9561cffbc841c9b4fdbf5809eb745b1c1656e4ac960d6a`.
-That platform-specific executable is not distributed in this lean bundle.
-The scripts therefore preserve the exact Figure 5 protocol and analysis, but
-a byte-for-byte rerun requires the archived executable. The representative
-inputs under `inputs/representative_lammps/` can be run with a fresh patched
-build for independent spot checks.
 
 ### Figure 6
 
@@ -206,10 +202,7 @@ python3 "$FIGDIR/plot_redesigned_main_figures.py"
 ```
 
 It writes editable PDF/SVG files, 300 dpi PNG previews, and 600 dpi TIFF
-files beside the plotting script. Because this lean bundle intentionally
-omits final CSV tables and historical rendered outputs, the plotting command
-is not expected to succeed immediately after cloning without first running
-the data-generation workflow.
+files beside the plotting script.
 
 ## Representative LAMMPS inputs
 

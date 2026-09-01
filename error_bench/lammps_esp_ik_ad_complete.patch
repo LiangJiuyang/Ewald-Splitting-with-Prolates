@@ -1,5 +1,5 @@
 diff --git a/src/.gitignore b/src/.gitignore
-index e4b37051ac9d8be3972e9569f13fc2c547f7b20d..243705e403393868976844dcaba7536532586a5b 100644
+index e4b37051ac..243705e403 100644
 --- a/src/.gitignore
 +++ b/src/.gitignore
 @@ -893,6 +893,12 @@
@@ -40,7 +40,7 @@ index e4b37051ac9d8be3972e9569f13fc2c547f7b20d..243705e403393868976844dcaba75365
  /pair_lj_cut_tgpu.h
  /pair_lj_expand_sphere.cpp
 diff --git a/src/KSPACE/esp.cpp b/src/KSPACE/esp.cpp
-index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf17514eab860 100644
+index 0a26681c78..2a677948ce 100644
 --- a/src/KSPACE/esp.cpp
 +++ b/src/KSPACE/esp.cpp
 @@ -29,15 +29,16 @@
@@ -235,7 +235,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    // error check
  
-@@ -171,26 +258,36 @@ void ESP::init()
+@@ -171,26 +258,33 @@ void ESP::init()
    if (triclinic != domain->triclinic)
      error->all(FLERR,"Must redefine kspace_style after changing to triclinic box");
  
@@ -249,9 +249,6 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
 -  if (!atom->q_flag)
 -    error->all(FLERR,"Kspace style requires atom attribute q");
-+  if (bspline_window && differentiation_flag != 0)
-+    error->all(FLERR, "Benchmark kspace style esp/bspline currently requires kspace_modify diff ik");
-+
 +  if (fixed_influence_ik) {
 +    if (bspline_window)
 +      error->all(FLERR,
@@ -282,7 +279,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    // compute two charge force
  
-@@ -203,8 +300,7 @@ void ESP::init()
+@@ -203,8 +297,7 @@ void ESP::init()
  
    int itmp = 0;
    auto *p_cutoff = (double *) force->pair->extract("cut_coul",itmp);
@@ -292,7 +289,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    cutoff = *p_cutoff;
  
    qdist = 0.0;
-@@ -225,14 +321,12 @@ void ESP::init()
+@@ -225,14 +318,12 @@ void ESP::init()
      int typeA = *p_typeA;
      int typeB = *p_typeB;
  
@@ -311,7 +308,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
        error->all(FLERR,"Bad TIP4P bond type for ESP/TIP4P");
      double theta = force->angle->equilibrium_angle(typeA);
      double blen = force->bond->equilibrium_distance(typeB);
-@@ -248,8 +342,10 @@ void ESP::init()
+@@ -248,8 +339,10 @@ void ESP::init()
  
    // set accuracy (force units) from accuracy_relative or accuracy_absolute
  
@@ -324,7 +321,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    // free all arrays previously allocated
  
-@@ -267,12 +363,13 @@ void ESP::init()
+@@ -267,12 +360,13 @@ void ESP::init()
    int iteration = 0;
  
    MathPSWF::prolc180(accuracy_relative, select_c);
@@ -341,7 +338,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
                       "beyond nearest neighbor processor");
  
      set_grid_global();
-@@ -285,8 +382,8 @@ void ESP::init()
+@@ -285,8 +379,8 @@ void ESP::init()
      gc->set_shift_atom(shiftatom_lo,shiftatom_hi);
      gc->set_zfactor(slab_volfactor);
  
@@ -352,7 +349,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
      int tmp1,tmp2;
      gc->setup_comm(tmp1,tmp2);
-@@ -297,7 +394,10 @@ void ESP::init()
+@@ -297,7 +391,10 @@ void ESP::init()
      iteration++;
  
      if (me == 0)
@@ -364,7 +361,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    }
  
    if (order < minorder) error->all(FLERR,"ESP order < minimum allowed order");
-@@ -326,16 +426,18 @@ void ESP::init()
+@@ -326,16 +423,18 @@ void ESP::init()
      mesg += fmt::format("  Splitting parameter c = {:.8g}\n",select_c);
      mesg += fmt::format("  grid = {} {} {}\n",nx_pppm,ny_pppm,nz_pppm);
      mesg += fmt::format("  stencil order = {}\n",order);
@@ -390,7 +387,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  }
  
  /* ----------------------------------------------------------------------
-@@ -354,8 +456,8 @@ void ESP::setup()
+@@ -354,8 +453,8 @@ void ESP::setup()
    if (slabflag == 0 && domain->nonperiodic > 0)
      error->all(FLERR,"Cannot use non-periodic boundaries with ESP");
    if (slabflag) {
@@ -401,7 +398,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
        error->all(FLERR,"Incorrect boundaries with slab ESP");
    }
  
-@@ -366,8 +468,10 @@ void ESP::setup()
+@@ -366,8 +465,10 @@ void ESP::setup()
    // adjust z dimension for 2d slab ESP
    // z dimension for 3d ESP is zprd since slab_volfactor = 1.0
  
@@ -414,7 +411,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    double xprd = prd[0];
    double yprd = prd[1];
-@@ -408,7 +512,7 @@ void ESP::setup()
+@@ -408,7 +509,7 @@ void ESP::setup()
  
    double sqk,vterm;
  
@@ -423,7 +420,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    for (k = nzlo_fft; k <= nzhi_fft; k++) {
      for (j = nylo_fft; j <= nyhi_fft; j++) {
        for (i = nxlo_fft; i <= nxhi_fft; i++) {
-@@ -446,8 +550,12 @@ void ESP::setup()
+@@ -446,8 +547,12 @@ void ESP::setup()
      }
    }
  
@@ -438,7 +435,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  }
  
  /* ----------------------------------------------------------------------
-@@ -540,7 +648,13 @@ void ESP::setup_triclinic()
+@@ -540,7 +645,13 @@ void ESP::setup_triclinic()
      }
    }
  
@@ -453,7 +450,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  }
  
  /* ----------------------------------------------------------------------
-@@ -558,7 +672,8 @@ void ESP::reset_grid()
+@@ -558,7 +669,8 @@ void ESP::reset_grid()
  
    // reset splitting/spreading c
    MathPSWF::prolc180(accuracy_relative, select_c);
@@ -463,7 +460,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    // reset portion of global grid that each proc owns
  
-@@ -570,7 +685,6 @@ void ESP::reset_grid()
+@@ -570,7 +682,6 @@ void ESP::reset_grid()
  
    allocate();
  
@@ -471,7 +468,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    build_table(spreading_accuracy);
  
    if (!overlap_allowed && !gc->ghost_adjacent())
-@@ -580,8 +694,6 @@ void ESP::reset_grid()
+@@ -580,8 +691,6 @@ void ESP::reset_grid()
  
    if (differentiation_flag == 1) compute_sf_precoeff();
  
@@ -480,7 +477,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    // pre-compute volume-dependent coeffs for portion of grid I now own
  
    setup();
-@@ -615,7 +727,8 @@ void ESP::compute(int eflag, int vflag)
+@@ -615,7 +724,8 @@ void ESP::compute(int eflag, int vflag)
  
    // convert atoms from box to lamda coords
  
@@ -490,7 +487,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    else {
      boxlo = domain->boxlo_lamda;
      domain->x2lamda(atom->nlocal);
-@@ -639,8 +752,8 @@ void ESP::compute(int eflag, int vflag)
+@@ -639,8 +749,8 @@ void ESP::compute(int eflag, int vflag)
    //   to fully sum contribution in their 3d bricks
    // remap from 3d decomposition to FFT decomposition
  
@@ -501,7 +498,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    brick2fft();
  
    // compute potential gradient on my FFT grid and
-@@ -654,21 +767,21 @@ void ESP::compute(int eflag, int vflag)
+@@ -654,21 +764,21 @@ void ESP::compute(int eflag, int vflag)
    // to fill ghost cells surrounding their 3d bricks
  
    if (differentiation_flag == 1)
@@ -531,7 +528,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    }
  
    // calculate the force on my particles
-@@ -690,8 +803,7 @@ void ESP::compute(int eflag, int vflag)
+@@ -690,8 +800,7 @@ void ESP::compute(int eflag, int vflag)
  
      double self_coeff = 0.00;
  
@@ -541,7 +538,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
        self_coeff += 2 * (i+0.00) * energy_poly_coeff[i] * (i%2==1?1.0:-1.0);
      }
  
-@@ -721,8 +833,7 @@ void ESP::compute(int eflag, int vflag)
+@@ -721,8 +830,7 @@ void ESP::compute(int eflag, int vflag)
  
      if (eflag_atom) {
        double self_coeff = 0.00;
@@ -551,7 +548,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
          self_coeff += 2 * (i+0.00) * energy_poly_coeff[i] * (i%2==1?1.0:-1.0);
        }
        for (i = 0; i < nlocal; i++) {
-@@ -749,6 +860,45 @@ void ESP::compute(int eflag, int vflag)
+@@ -749,6 +857,45 @@ void ESP::compute(int eflag, int vflag)
    if (triclinic) domain->lamda2x(atom->nlocal);
  }
  
@@ -597,7 +594,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  /* ----------------------------------------------------------------------
     allocate memory that depends on # of K-vectors and order
  ------------------------------------------------------------------------- */
-@@ -765,13 +915,15 @@ void ESP::allocate()
+@@ -765,13 +912,15 @@ void ESP::allocate()
    gc->set_shift_atom(shiftatom_lo,shiftatom_hi);
    gc->set_zfactor(slab_volfactor);
  
@@ -617,7 +614,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    memory->create(gc_buf1,npergrid*ngc_buf1,"esp:gc_buf1");
    memory->create(gc_buf2,npergrid*ngc_buf2,"esp:gc_buf2");
-@@ -783,21 +935,18 @@ void ESP::allocate()
+@@ -783,21 +932,18 @@ void ESP::allocate()
    // nfft = FFT points in x-pencil FFT decomposition on this proc
    // nfft_both = greater of nfft and nfft_brick
  
@@ -644,7 +641,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    memory->create(density_fft,nfft_both,"esp:density_fft");
    memory->create(greensfn,nfft_both,"esp:greensfn");
-@@ -818,8 +967,8 @@ void ESP::allocate()
+@@ -818,8 +964,8 @@ void ESP::allocate()
    }
  
    if (differentiation_flag == 1) {
@@ -655,7 +652,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
      memory->create(sf_precoeff1,nfft_both,"esp:sf_precoeff1");
      memory->create(sf_precoeff2,nfft_both,"esp:sf_precoeff2");
-@@ -829,12 +978,12 @@ void ESP::allocate()
+@@ -829,12 +975,12 @@ void ESP::allocate()
      memory->create(sf_precoeff6,nfft_both,"esp:sf_precoeff6");
  
    } else {
@@ -674,7 +671,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    }
  
    // summation coeffs
-@@ -850,20 +999,17 @@ void ESP::allocate()
+@@ -850,20 +996,17 @@ void ESP::allocate()
  
    int tmp;
  
@@ -703,7 +700,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  }
  
  /* ----------------------------------------------------------------------
-@@ -915,17 +1061,13 @@ void ESP::deallocate()
+@@ -915,17 +1058,13 @@ void ESP::deallocate()
    memory->destroy2d_offset(rho_coeff, 0, (1-order_allocated)/2);
    memory->destroy2d_offset(drho_coeff, 0, (1-order_allocated)/2);
  
@@ -725,7 +722,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    delete fft1;
    delete fft2;
-@@ -941,28 +1083,30 @@ void ESP::allocate_peratom()
+@@ -941,28 +1080,30 @@ void ESP::allocate_peratom()
    peratom_allocate_flag = 1;
  
    if (differentiation_flag != 1)
@@ -774,7 +771,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    memory->destroy(gc_buf1);
    memory->destroy(gc_buf2);
-@@ -985,8 +1129,7 @@ void ESP::deallocate_peratom()
+@@ -985,8 +1126,7 @@ void ESP::deallocate_peratom()
    memory->destroy3d_offset(v4_brick,nzlo_out,nylo_out,nxlo_out);
    memory->destroy3d_offset(v5_brick,nzlo_out,nylo_out,nxlo_out);
  
@@ -784,7 +781,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  }
  
  /* ----------------------------------------------------------------------
-@@ -1017,7 +1160,7 @@ void ESP::set_grid_global()
+@@ -1017,7 +1157,7 @@ void ESP::set_grid_global()
  
      if (differentiation_flag == 1) {
  
@@ -793,7 +790,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
        nx_pppm = static_cast<int>(ceil(xprd/h_x));
        ny_pppm = static_cast<int>(ceil(yprd/h_y));
-@@ -1029,7 +1172,7 @@ void ESP::set_grid_global()
+@@ -1029,7 +1169,7 @@ void ESP::set_grid_global()
  
      } else {
  
@@ -802,7 +799,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
        nx_pppm = static_cast<int>(xprd/h_x) + 1;
        ny_pppm = static_cast<int>(yprd/h_y) + 1;
-@@ -1075,6 +1218,13 @@ void ESP::set_grid_global()
+@@ -1075,6 +1215,13 @@ void ESP::set_grid_global()
      error->all(FLERR,"ESP grid is too large");
  }
  
@@ -816,7 +813,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  /* ----------------------------------------------------------------------
     check if all factors of n are in list of factors
     return 1 if yes, 0 if no
-@@ -1110,11 +1260,15 @@ void ESP::set_grid_local()
+@@ -1110,11 +1257,15 @@ void ESP::set_grid_local()
    // add/subtract OFFSET to avoid int(-0.75) = 0 when want it to be -1
    // used in particle_map() and make_rho() and fieldforce()
  
@@ -836,7 +833,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    // nlower/nupper = stencil size for mapping particles to grid
  
-@@ -1128,8 +1282,7 @@ void ESP::set_grid_local()
+@@ -1128,8 +1279,7 @@ void ESP::set_grid_local()
    if (order % 2) {
      shiftatom_lo = 0.5;
      shiftatom_hi = 0.5;
@@ -846,21 +843,13 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      shiftatom_lo = 0.0;
      shiftatom_hi = 0.0;
    }
-@@ -1172,123 +1325,105 @@ void ESP::compute_gf_ik()
+@@ -1172,123 +1322,105 @@ void ESP::compute_gf_ik()
    const double yprd = prd[1];
    const double zprd = prd[2];
    const double zprd_slab = zprd*slab_volfactor;
 -  const double unitkx = (MY_2PI/xprd);
 -  const double unitky = (MY_2PI/yprd);
 -  const double unitkz = (MY_2PI/zprd_slab);
--
--  double snx,sny,snz;
--  double wx,wy,wz,qx,qy,qz;
--  double sum1,dot1,dot2;
--  double numerator,denominator;
--  double sqk;
--
--  int k,l,m,n,nx,ny,nz,kper,lper,mper;
 +  const double unitkx = MY_2PI / xprd;
 +  const double unitky = MY_2PI / yprd;
 +  const double unitkz = MY_2PI / zprd_slab;
@@ -876,33 +865,41 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
 +  const int nbz =
 +      static_cast<int>(select_c * zprd_slab / (MY_2PI * cutoff * nz_pppm) * alias_scale);
  
--  const int nbx = static_cast<int>(static_cast<int>(select_c * xprd / (MY_2PI * cutoff * nx_pppm)) * pow(-log(EPS_HOC),0.25));
--  const int nby = static_cast<int>(static_cast<int>(select_c * yprd / (MY_2PI * cutoff * ny_pppm)) * pow(-log(EPS_HOC),0.25));
--  const int nbz = static_cast<int>(static_cast<int>(select_c * zprd / (MY_2PI * cutoff * nz_pppm)) * pow(-log(EPS_HOC),0.25));
+-  double snx,sny,snz;
+-  double wx,wy,wz,qx,qy,qz;
+-  double sum1,dot1,dot2;
+-  double numerator,denominator;
+-  double sqk;
 -
--  n = 0;
--  for (m = nzlo_fft; m <= nzhi_fft; m++) {
--    mper = m - nz_pppm*(2*m/nz_pppm);
--    snz = unitkz*mper;
+-  int k,l,m,n,nx,ny,nz,kper,lper,mper;
 +  int n = 0;
 +  for (int m = nzlo_fft; m <= nzhi_fft; m++) {
 +    const int mper = m - nz_pppm * (2 * m / nz_pppm);
 +    const double snz = unitkz * mper;
  
--    for (l = nylo_fft; l <= nyhi_fft; l++) {
--      lper = l - ny_pppm*(2*l/ny_pppm);
--      sny = unitky*lper;
+-  const int nbx = static_cast<int>(static_cast<int>(select_c * xprd / (MY_2PI * cutoff * nx_pppm)) * pow(-log(EPS_HOC),0.25));
+-  const int nby = static_cast<int>(static_cast<int>(select_c * yprd / (MY_2PI * cutoff * ny_pppm)) * pow(-log(EPS_HOC),0.25));
+-  const int nbz = static_cast<int>(static_cast<int>(select_c * zprd / (MY_2PI * cutoff * nz_pppm)) * pow(-log(EPS_HOC),0.25));
 +    for (int l = nylo_fft; l <= nyhi_fft; l++) {
 +      const int lper = l - ny_pppm * (2 * l / ny_pppm);
 +      const double sny = unitky * lper;
  
--      for (k = nxlo_fft; k <= nxhi_fft; k++) {
--        kper = k - nx_pppm*(2*k/nx_pppm);
--        snx = unitkx*kper;
+-  n = 0;
+-  for (m = nzlo_fft; m <= nzhi_fft; m++) {
+-    mper = m - nz_pppm*(2*m/nz_pppm);
+-    snz = unitkz*mper;
 +      for (int k = nxlo_fft; k <= nxhi_fft; k++) {
 +        const int kper = k - nx_pppm * (2 * k / nx_pppm);
 +        const double snx = unitkx * kper;
  
+-    for (l = nylo_fft; l <= nyhi_fft; l++) {
+-      lper = l - ny_pppm*(2*l/ny_pppm);
+-      sny = unitky*lper;
+-
+-      for (k = nxlo_fft; k <= nxhi_fft; k++) {
+-        kper = k - nx_pppm*(2*k/nx_pppm);
+-        snx = unitkx*kper;
+-
 -        sqk = square(unitkx*kper) + square(unitky*lper) + square(unitkz*mper);
 +        const double kvec[3] = {snx, sny, snz};
 +        const double sqk = square(snx) + square(sny) + square(snz);
@@ -1054,7 +1051,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
        }
      }
    }
-@@ -1301,142 +1436,180 @@ void ESP::compute_gf_ik()
+@@ -1301,142 +1433,180 @@ void ESP::compute_gf_ik()
  
  void ESP::compute_gf_ik_triclinic()
  {
@@ -1351,7 +1348,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
        }
      }
    }
-@@ -1464,7 +1637,7 @@ void ESP::compute_gf_ad()
+@@ -1464,7 +1634,7 @@ void ESP::compute_gf_ad()
  
    const double scale_x = (order * MY_PI) / ((double)nx_pppm * spreading_select_c);
    const double scale_y = (order * MY_PI) / ((double)ny_pppm * spreading_select_c);
@@ -1360,7 +1357,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    for (int i = 0; i < 6; i++) sf_coeff[i] = 0.0;
  
-@@ -1548,7 +1721,11 @@ void ESP::compute_gf_ad()
+@@ -1548,7 +1718,11 @@ void ESP::compute_gf_ad()
          const double wxyz = wx * wyz;
  
          // sqk
@@ -1373,7 +1370,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
          g1[n] = 0.0;
          g2[n] = 0.0;
          if (sqk == 0.0) continue;
-@@ -1577,24 +1754,37 @@ void ESP::compute_gf_ad()
+@@ -1577,24 +1751,37 @@ void ESP::compute_gf_ad()
          g2[n] = (MY_2PI * poly_virial) * invden / sqk2;
  
          const double gg = g1[n];
@@ -1419,7 +1416,234 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    sf_coeff[0] *= prex;
    sf_coeff[1] *= prex * 2.0;
-@@ -1835,9 +2025,8 @@ void ESP::particle_map()
+@@ -1615,174 +1802,73 @@ void ESP::compute_gf_ad()
+ 
+ void ESP::compute_sf_precoeff()
+ {
+-  int i,k,l,m,n;
+-  int nx,ny,nz,kper,lper,mper;
+-  double wx0[5],wy0[5],wz0[5],wx1[5],wy1[5],wz1[5],wx2[5],wy2[5],wz2[5];
+-  double qx0,qy0,qz0,qx1,qy1,qz1,qx2,qy2,qz2;
+-  double u0,u1,u2,u3,u4,u5,u6;
+-  double sum1,sum2,sum3,sum4,sum5,sum6;
++  int i, k, l, m, n;
++  int nx, ny, nz, kper, lper, mper;
++  double wx0[5], wy0[5], wz0[5], wx1[5], wy1[5], wz1[5], wx2[5], wy2[5], wz2[5];
++  double qx0, qy0, qz0, qx1, qy1, qz1, qx2, qy2, qz2;
++  double u0, u1, u2, u3, u4, u5, u6;
++  double sum1, sum2, sum3, sum4, sum5, sum6;
+ 
+   n = 0;
+   for (m = nzlo_fft; m <= nzhi_fft; m++) {
+-    mper = m - nz_pppm*(2*m/nz_pppm);
++    mper = m - nz_pppm * (2 * m / nz_pppm);
+ 
+     for (l = nylo_fft; l <= nyhi_fft; l++) {
+-      lper = l - ny_pppm*(2*l/ny_pppm);
++      lper = l - ny_pppm * (2 * l / ny_pppm);
+ 
+       for (k = nxlo_fft; k <= nxhi_fft; k++) {
+-        kper = k - nx_pppm*(2*k/nx_pppm);
++        kper = k - nx_pppm * (2 * k / nx_pppm);
+ 
+         sum1 = sum2 = sum3 = sum4 = sum5 = sum6 = 0.0;
+         for (i = 0; i < 5; i++) {
+-
+-          qx0 = MY_2PI*(kper+nx_pppm*(i-2));
+-          qx1 = MY_2PI*(kper+nx_pppm*(i-1));
+-          qx2 = MY_2PI*(kper+nx_pppm*(i  ));
+-
+-          double ph_2_kx_c = (0.5 * order / nx_pppm) * (std::abs(qx0) / spreading_select_c);
+-          wx0[i] = 0.00;
+-          if(ph_2_kx_c <= 1.00){
+-            ph_2_kx_c = 2.0 * ph_2_kx_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_kx_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wx0[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
+-
+-          ph_2_kx_c = (0.5 * order / nx_pppm) * (std::abs(qx1) / spreading_select_c);
+-          wx1[i] = 0.00;
+-          if(ph_2_kx_c <= 1.00){
+-            ph_2_kx_c = 2.0 * ph_2_kx_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_kx_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wx1[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
+-
+-          ph_2_kx_c = (0.5 * order / nx_pppm) * (std::abs(qx2) / spreading_select_c);
+-          wx2[i] = 0.00;
+-          if(ph_2_kx_c <= 1.00){
+-            ph_2_kx_c = 2.0 * ph_2_kx_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_kx_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wx2[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
+-
+-          qy0 = MY_2PI*(lper+ny_pppm*(i-2));
+-          qy1 = MY_2PI*(lper+ny_pppm*(i-1));
+-          qy2 = MY_2PI*(lper+ny_pppm*(i  ));
+-
+-          double ph_2_ky_c = (0.5 * order / ny_pppm) * (std::abs(qy0) / spreading_select_c);
+-          wy0[i] = 0.00;
+-          if(ph_2_ky_c <= 1.00){
+-            ph_2_ky_c = 2.0 * ph_2_ky_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_ky_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wy0[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
+-
+-          ph_2_ky_c = (0.5 * order / ny_pppm) * (std::abs(qy1) / spreading_select_c);
+-          wy1[i] = 0.00;
+-          if(ph_2_ky_c <= 1.00){
+-            ph_2_ky_c = 2.0 * ph_2_ky_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_ky_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wy1[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
+-
+-          ph_2_ky_c = (0.5 * order / ny_pppm) * (std::abs(qy2) / spreading_select_c);
+-          wy2[i] = 0.00;
+-          if(ph_2_ky_c <= 1.00){
+-            ph_2_ky_c = 2.0 * ph_2_ky_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_ky_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wy2[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
+-
+-          qz0 = MY_2PI*(mper+nz_pppm*(i-2));
+-          qz1 = MY_2PI*(mper+nz_pppm*(i-1));
+-          qz2 = MY_2PI*(mper+nz_pppm*(i  ));
+-
+-          double ph_2_kz_c = (0.5 * order / nz_pppm) * (std::abs(qz0) / spreading_select_c);
+-          wz0[i] = 0.00;
+-          if(ph_2_kz_c <= 1.00){
+-            ph_2_kz_c = 2.0 * ph_2_kz_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_kz_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wz0[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
+-
+-          ph_2_kz_c = (0.5 * order / nz_pppm) * (std::abs(qz1) / spreading_select_c);
+-
+-          wz1[i] = 0.00;
+-          if(ph_2_kz_c <= 1.00){
+-            ph_2_kz_c = 2.0 * ph_2_kz_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_kz_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wz1[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
+-
+-          ph_2_kz_c = (0.5 * order / nz_pppm) * (std::abs(qz2) / spreading_select_c);
+-          wz2[i] = 0.00;
+-          if(ph_2_kz_c <= 1.00){
+-            ph_2_kz_c = 2.0 * ph_2_kz_c - 1.0;
+-            double Fourier_spreading_appx = fourier_spread_poly_coeff[0];
+-            double Fourier_spreading_r = 1.0;
+-            for(int ii=1; ii<fourier_spreading_order; ii++){
+-                Fourier_spreading_r *= ph_2_kz_c;
+-                Fourier_spreading_appx += fourier_spread_poly_coeff[ii] * Fourier_spreading_r;
+-            }
+-            wz2[i] = order / 2.0 * Fourier_spreading_appx;
+-          }
++          qx0 = MY_2PI * (kper + nx_pppm * (i - 2));
++          qx1 = MY_2PI * (kper + nx_pppm * (i - 1));
++          qx2 = MY_2PI * (kper + nx_pppm * i);
++          wx0[i] = spreading_weight_from_t(0.5 * order * std::abs(qx0) /
++                                           (nx_pppm * spreading_select_c));
++          wx1[i] = spreading_weight_from_t(0.5 * order * std::abs(qx1) /
++                                           (nx_pppm * spreading_select_c));
++          wx2[i] = spreading_weight_from_t(0.5 * order * std::abs(qx2) /
++                                           (nx_pppm * spreading_select_c));
++
++          qy0 = MY_2PI * (lper + ny_pppm * (i - 2));
++          qy1 = MY_2PI * (lper + ny_pppm * (i - 1));
++          qy2 = MY_2PI * (lper + ny_pppm * i);
++          wy0[i] = spreading_weight_from_t(0.5 * order * std::abs(qy0) /
++                                           (ny_pppm * spreading_select_c));
++          wy1[i] = spreading_weight_from_t(0.5 * order * std::abs(qy1) /
++                                           (ny_pppm * spreading_select_c));
++          wy2[i] = spreading_weight_from_t(0.5 * order * std::abs(qy2) /
++                                           (ny_pppm * spreading_select_c));
++
++          qz0 = MY_2PI * (mper + nz_pppm * (i - 2));
++          qz1 = MY_2PI * (mper + nz_pppm * (i - 1));
++          qz2 = MY_2PI * (mper + nz_pppm * i);
++          wz0[i] = spreading_weight_from_t(0.5 * order * std::abs(qz0) /
++                                           (nz_pppm * spreading_select_c));
++          wz1[i] = spreading_weight_from_t(0.5 * order * std::abs(qz1) /
++                                           (nz_pppm * spreading_select_c));
++          wz2[i] = spreading_weight_from_t(0.5 * order * std::abs(qz2) /
++                                           (nz_pppm * spreading_select_c));
+         }
+ 
+         for (nx = 0; nx < 5; nx++) {
+           for (ny = 0; ny < 5; ny++) {
+             for (nz = 0; nz < 5; nz++) {
+-              u0 = wx0[nx]*wy0[ny]*wz0[nz];
+-              u1 = wx1[nx]*wy0[ny]*wz0[nz];
+-              u2 = wx2[nx]*wy0[ny]*wz0[nz];
+-              u3 = wx0[nx]*wy1[ny]*wz0[nz];
+-              u4 = wx0[nx]*wy2[ny]*wz0[nz];
+-              u5 = wx0[nx]*wy0[ny]*wz1[nz];
+-              u6 = wx0[nx]*wy0[ny]*wz2[nz];
+-
+-              sum1 += u0*u1;
+-              sum2 += u0*u2;
+-              sum3 += u0*u3;
+-              sum4 += u0*u4;
+-              sum5 += u0*u5;
+-              sum6 += u0*u6;
++              u0 = wx0[nx] * wy0[ny] * wz0[nz];
++              u1 = wx1[nx] * wy0[ny] * wz0[nz];
++              u2 = wx2[nx] * wy0[ny] * wz0[nz];
++              u3 = wx0[nx] * wy1[ny] * wz0[nz];
++              u4 = wx0[nx] * wy2[ny] * wz0[nz];
++              u5 = wx0[nx] * wy0[ny] * wz1[nz];
++              u6 = wx0[nx] * wy0[ny] * wz2[nz];
++
++              sum1 += u0 * u1;
++              sum2 += u0 * u2;
++              sum3 += u0 * u3;
++              sum4 += u0 * u4;
++              sum5 += u0 * u5;
++              sum6 += u0 * u6;
+             }
+           }
+         }
+@@ -1835,9 +1921,8 @@ void ESP::particle_map()
  
      // check that entire stencil around nx,ny,nz will fit in my 3d brick
  
@@ -1431,7 +1655,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
        flag = 1;
    }
  
-@@ -1858,8 +2047,7 @@ void ESP::make_rho()
+@@ -1858,8 +1943,7 @@ void ESP::make_rho()
  
    // clear 3d density array
  
@@ -1441,7 +1665,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    // loop over my charges, add their contribution to nearby grid points
    // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
-@@ -1912,8 +2100,7 @@ void ESP::brick2fft()
+@@ -1912,8 +1996,7 @@ void ESP::brick2fft()
    n = 0;
    for (iz = nzlo_in; iz <= nzhi_in; iz++)
      for (iy = nylo_in; iy <= nyhi_in; iy++)
@@ -1451,7 +1675,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    remap->perform(density_fft,density_fft,work1);
  }
-@@ -1924,8 +2111,10 @@ void ESP::brick2fft()
+@@ -1924,8 +2007,10 @@ void ESP::brick2fft()
  
  void ESP::poisson()
  {
@@ -1464,7 +1688,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  }
  
  /* ----------------------------------------------------------------------
-@@ -1965,8 +2154,7 @@ void ESP::poisson_ik()
+@@ -1965,8 +2050,7 @@ void ESP::poisson_ik()
      } else {
        n = 0;
        for (i = 0; i < nfft; i++) {
@@ -1474,7 +1698,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
          n += 2;
        }
      }
-@@ -2161,8 +2349,7 @@ void ESP::poisson_ad()
+@@ -2161,8 +2245,7 @@ void ESP::poisson_ad()
        for (i = 0; i < nfft; i++) {
          eng = s2 * greensfn[i] * (work1[n]*work1[n] + work1[n+1]*work1[n+1]);
          eng_virial = s2 * greensfn2[i] * (work1[n]*work1[n] + work1[n+1]*work1[n+1]);
@@ -1484,7 +1708,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
            virial[j] += eng*vg[i][j]; // The first term
            virial[j] += eng_virial*vg2[i][j]; // The second term
          }
-@@ -2172,8 +2359,7 @@ void ESP::poisson_ad()
+@@ -2172,8 +2255,7 @@ void ESP::poisson_ad()
      } else {
        n = 0;
        for (i = 0; i < nfft; i++) {
@@ -1494,7 +1718,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
          n += 2;
        }
      }
-@@ -2243,10 +2429,21 @@ void ESP::poisson_peratom()
+@@ -2243,10 +2325,21 @@ void ESP::poisson_peratom()
  
    if (!vflag_atom) return;
  
@@ -1518,7 +1742,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      n += 2;
    }
  
-@@ -2262,8 +2459,9 @@ void ESP::poisson_peratom()
+@@ -2262,8 +2355,9 @@ void ESP::poisson_peratom()
  
    n = 0;
    for (i = 0; i < nfft; i++) {
@@ -1530,7 +1754,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      n += 2;
    }
  
-@@ -2279,8 +2477,9 @@ void ESP::poisson_peratom()
+@@ -2279,8 +2373,9 @@ void ESP::poisson_peratom()
  
    n = 0;
    for (i = 0; i < nfft; i++) {
@@ -1542,7 +1766,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      n += 2;
    }
  
-@@ -2296,8 +2495,9 @@ void ESP::poisson_peratom()
+@@ -2296,8 +2391,9 @@ void ESP::poisson_peratom()
  
    n = 0;
    for (i = 0; i < nfft; i++) {
@@ -1554,7 +1778,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      n += 2;
    }
  
-@@ -2313,8 +2513,9 @@ void ESP::poisson_peratom()
+@@ -2313,8 +2409,9 @@ void ESP::poisson_peratom()
  
    n = 0;
    for (i = 0; i < nfft; i++) {
@@ -1566,7 +1790,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      n += 2;
    }
  
-@@ -2330,8 +2531,9 @@ void ESP::poisson_peratom()
+@@ -2330,8 +2427,9 @@ void ESP::poisson_peratom()
  
    n = 0;
    for (i = 0; i < nfft; i++) {
@@ -1578,7 +1802,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      n += 2;
    }
  
-@@ -2352,8 +2554,10 @@ void ESP::poisson_peratom()
+@@ -2352,8 +2450,10 @@ void ESP::poisson_peratom()
  
  void ESP::fieldforce()
  {
@@ -1591,7 +1815,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  }
  
  /* ----------------------------------------------------------------------
-@@ -2420,10 +2624,11 @@ void ESP::fieldforce_ik()
+@@ -2420,10 +2520,11 @@ void ESP::fieldforce_ik()
  
  void ESP::fieldforce_ad()
  {
@@ -1606,7 +1830,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    double sf = 0.0;
    double *prd;
  
-@@ -2432,9 +2637,16 @@ void ESP::fieldforce_ad()
+@@ -2432,9 +2533,16 @@ void ESP::fieldforce_ad()
    double yprd = prd[1];
    double zprd = prd[2];
  
@@ -1626,7 +1850,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    // loop over my charges, interpolate electric field from nearby grid points
    // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
-@@ -2456,19 +2668,26 @@ void ESP::fieldforce_ad()
+@@ -2456,19 +2564,26 @@ void ESP::fieldforce_ad()
      dy = ny+shiftone - (x[i][1]-boxlo[1])*delyinv;
      dz = nz+shiftone - (x[i][2]-boxlo[2])*delzinv;
  
@@ -1659,7 +1883,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
          }
        }
      }
-@@ -2481,28 +2700,35 @@ void ESP::fieldforce_ad()
+@@ -2481,28 +2596,35 @@ void ESP::fieldforce_ad()
  
      const double qfactor = qqrd2e * scale;
  
@@ -1711,7 +1935,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    }
  }
  
-@@ -2592,8 +2818,7 @@ void ESP::pack_forward_grid(int flag, void *vbuf, int nlist, int *list)
+@@ -2592,8 +2714,7 @@ void ESP::pack_forward_grid(int flag, void *vbuf, int nlist, int *list)
      }
    } else if (flag == FORWARD_AD) {
      FFT_SCALAR *src = &u_brick[nzlo_out][nylo_out][nxlo_out];
@@ -1721,7 +1945,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    } else if (flag == FORWARD_IK_PERATOM) {
      FFT_SCALAR *esrc = &u_brick[nzlo_out][nylo_out][nxlo_out];
      FFT_SCALAR *v0src = &v0_brick[nzlo_out][nylo_out][nxlo_out];
-@@ -2652,8 +2877,7 @@ void ESP::unpack_forward_grid(int flag, void *vbuf, int nlist, int *list)
+@@ -2652,8 +2773,7 @@ void ESP::unpack_forward_grid(int flag, void *vbuf, int nlist, int *list)
      }
    } else if (flag == FORWARD_AD) {
      FFT_SCALAR *dest = &u_brick[nzlo_out][nylo_out][nxlo_out];
@@ -1731,7 +1955,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    } else if (flag == FORWARD_IK_PERATOM) {
      FFT_SCALAR *esrc = &u_brick[nzlo_out][nylo_out][nxlo_out];
      FFT_SCALAR *v0src = &v0_brick[nzlo_out][nylo_out][nxlo_out];
-@@ -2701,8 +2925,7 @@ void ESP::pack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
+@@ -2701,8 +2821,7 @@ void ESP::pack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
  
    if (flag == REVERSE_RHO) {
      FFT_SCALAR *src = &density_brick[nzlo_out][nylo_out][nxlo_out];
@@ -1741,7 +1965,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    }
  }
  
-@@ -2716,8 +2939,7 @@ void ESP::unpack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
+@@ -2716,8 +2835,7 @@ void ESP::unpack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
  
    if (flag == REVERSE_RHO) {
      FFT_SCALAR *dest = &density_brick[nzlo_out][nylo_out][nxlo_out];
@@ -1751,7 +1975,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    }
  }
  
-@@ -2746,8 +2968,7 @@ void ESP::procs2grid2d(int nprocs, int nx, int ny, int *px, int *py)
+@@ -2746,8 +2864,7 @@ void ESP::procs2grid2d(int nprocs, int nx, int ny, int *px, int *py)
        boxy = ny/ipy;
        if (ny % ipy) boxy++;
        surf = boxx + boxy;
@@ -1761,7 +1985,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
          bestsurf = surf;
          bestboxx = boxx;
          bestboxy = boxy;
-@@ -2783,7 +3004,7 @@ int ESP::estimate_order(double accuracy)
+@@ -2783,7 +2900,7 @@ int ESP::estimate_order(double accuracy)
      return order;
  }
  
@@ -1770,7 +1994,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
     build table for ESP method
  ------------------------------------------------------------------------- */
  
-@@ -2813,6 +3034,20 @@ void ESP::build_table(double spreading_accuracy)
+@@ -2813,6 +2930,20 @@ void ESP::build_table(double spreading_accuracy)
    for (int i = 0; i < num_of_Fourier_poly; i++) fourier_split_poly_coeff[i] = poly_coeff[i];
    if (me == 0) utils::logmesg(lmp,"  Fourier poly size: {}\n",num_of_Fourier_poly);
  
@@ -1791,7 +2015,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    // spreading kernel in real space - need to be consistent with the spreading accuracy
    poly_coeff.clear();
    MathPSWF::spread_real_poly(order, 0.1*spreading_accuracy, spreading_select_c, poly_coeff);
-@@ -2835,25 +3070,42 @@ void ESP::build_table(double spreading_accuracy)
+@@ -2835,25 +2966,42 @@ void ESP::build_table(double spreading_accuracy)
  
    // spreading kernel in Fourier space
    poly_coeff.clear();
@@ -1839,7 +2063,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    // k: order of spreading points
    // l: order of polynomials
    for (k = (1-order)/2; k <= order/2; k++) {
-@@ -2875,8 +3127,7 @@ void ESP::compute_rho1d(const FFT_SCALAR &dx, const FFT_SCALAR &dy,
+@@ -2875,8 +3023,7 @@ void ESP::compute_rho1d(const FFT_SCALAR &dx, const FFT_SCALAR &dy,
     dx,dy,dz = distance of particle from "lower left" grid point
  ------------------------------------------------------------------------- */
  
@@ -1849,7 +2073,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  {
    int k,l;
    FFT_SCALAR r1,r2,r3;
-@@ -2895,6 +3146,61 @@ void ESP::compute_drho1d(const FFT_SCALAR &dx, const FFT_SCALAR &dy,
+@@ -2895,6 +3042,61 @@ void ESP::compute_drho1d(const FFT_SCALAR &dx, const FFT_SCALAR &dy,
    }
  }
  
@@ -1911,7 +2135,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  void ESP::compute_rho_coeff()
  {
    int j,k,l,m;
-@@ -2904,8 +3210,7 @@ void ESP::compute_rho_coeff()
+@@ -2904,8 +3106,7 @@ void ESP::compute_rho_coeff()
    memory->create2d_offset(a,order,-order,order,"esp:a");
  
    for (k = -order; k <= order; k++)
@@ -1921,7 +2145,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    a[0][0] = 1.0;
    for (j = 1; j < order; j++) {
-@@ -2914,11 +3219,11 @@ void ESP::compute_rho_coeff()
+@@ -2914,11 +3115,11 @@ void ESP::compute_rho_coeff()
        for (l = 0; l < j; l++) {
          a[l+1][k] = (a[l][k+1]-a[l][k-1]) / (l+1);
  #ifdef FFT_SINGLE
@@ -1937,7 +2161,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  #endif
        }
        a[0][k] = s;
-@@ -2927,8 +3232,7 @@ void ESP::compute_rho_coeff()
+@@ -2927,8 +3128,7 @@ void ESP::compute_rho_coeff()
  
    m = (1-order)/2;
    for (k = -(order-1); k < order; k += 2) {
@@ -1947,7 +2171,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      for (l = 1; l < order; l++)
        drho_coeff[l-1][m] = l*a[l][k]; // Coefficients for l x^l-1 terms
      m++;
-@@ -2967,8 +3271,7 @@ void ESP::slabcorr()
+@@ -2967,8 +3167,7 @@ void ESP::slabcorr()
  
    double dipole_r2 = 0.0;
    if (eflag_atom || fabs(qsum) > SMALL) {
@@ -1957,7 +2181,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
      // sum local contributions
  
-@@ -2979,19 +3282,30 @@ void ESP::slabcorr()
+@@ -2979,19 +3178,30 @@ void ESP::slabcorr()
  
    // compute corrections
  
@@ -1992,7 +2216,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    }
  
    // add on force corrections
-@@ -3070,8 +3384,7 @@ double ESP::memory_usage()
+@@ -3070,8 +3280,7 @@ double ESP::memory_usage()
  {
    double bytes = (double)nmax*3 * sizeof(double);
  
@@ -2002,7 +2226,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    if (differentiation_flag == 1) {
      bytes += (double)2 * nbrick * sizeof(FFT_SCALAR);
    } else {
-@@ -3083,8 +3396,7 @@ double ESP::memory_usage()
+@@ -3083,8 +3292,7 @@ double ESP::memory_usage()
    bytes += (double)nfft_both * sizeof(double);
    bytes += (double)nfft_both*5 * sizeof(FFT_SCALAR);
  
@@ -2012,7 +2236,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    if (group_allocate_flag) {
      bytes += (double)2 * nbrick * sizeof(FFT_SCALAR);
-@@ -3109,18 +3421,21 @@ double ESP::memory_usage()
+@@ -3109,18 +3317,21 @@ double ESP::memory_usage()
  void ESP::compute_group_group(int groupbit_A, int groupbit_B, int AA_flag)
  {
    if (slabflag && triclinic)
@@ -2037,7 +2261,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    else {
      boxlo = domain->boxlo_lamda;
      domain->x2lamda(atom->nlocal);
-@@ -3151,8 +3466,8 @@ void ESP::compute_group_group(int groupbit_A, int groupbit_B, int AA_flag)
+@@ -3151,8 +3362,8 @@ void ESP::compute_group_group(int groupbit_A, int groupbit_B, int AA_flag)
    density_brick = density_A_brick;
    density_fft = density_A_fft;
  
@@ -2048,7 +2272,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    brick2fft();
  
    // group B
-@@ -3160,8 +3475,8 @@ void ESP::compute_group_group(int groupbit_A, int groupbit_B, int AA_flag)
+@@ -3160,8 +3371,8 @@ void ESP::compute_group_group(int groupbit_A, int groupbit_B, int AA_flag)
    density_brick = density_B_brick;
    density_fft = density_B_fft;
  
@@ -2059,7 +2283,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    brick2fft();
  
    // switch back pointers
-@@ -3198,8 +3513,7 @@ void ESP::compute_group_group(int groupbit_A, int groupbit_B, int AA_flag)
+@@ -3198,8 +3409,7 @@ void ESP::compute_group_group(int groupbit_A, int groupbit_B, int AA_flag)
  
    if (triclinic) domain->lamda2x(atom->nlocal);
  
@@ -2069,7 +2293,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  }
  
  /* ----------------------------------------------------------------------
-@@ -3210,10 +3524,10 @@ void ESP::allocate_groups()
+@@ -3210,10 +3420,10 @@ void ESP::allocate_groups()
  {
    group_allocate_flag = 1;
  
@@ -2084,7 +2308,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    memory->create(density_A_fft,nfft_both,"esp:density_A_fft");
    memory->create(density_B_fft,nfft_both,"esp:density_B_fft");
  }
-@@ -3246,11 +3560,9 @@ void ESP::make_rho_groups(int groupbit_A, int groupbit_B, int AA_flag)
+@@ -3246,11 +3456,9 @@ void ESP::make_rho_groups(int groupbit_A, int groupbit_B, int AA_flag)
  
    // clear 3d density arrays
  
@@ -2098,7 +2322,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
  
    // loop over my charges, add their contribution to nearby grid points
    // (nx,ny,nz) = global coords of grid pt to "lower left" of charge
-@@ -3290,13 +3602,11 @@ void ESP::make_rho_groups(int groupbit_A, int groupbit_B, int AA_flag)
+@@ -3290,13 +3498,11 @@ void ESP::make_rho_groups(int groupbit_A, int groupbit_B, int AA_flag)
  
              // group A
  
@@ -2114,7 +2338,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
            }
          }
        }
-@@ -3351,8 +3661,7 @@ void ESP::poisson_groups(int AA_flag)
+@@ -3351,8 +3557,7 @@ void ESP::poisson_groups(int AA_flag)
  
    n = 0;
    for (i = 0; i < nfft; i++) {
@@ -2124,7 +2348,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
      n += 2;
    }
  
-@@ -3523,8 +3832,9 @@ void ESP::slabcorr_groups(int groupbit_A, int groupbit_B, int AA_flag)
+@@ -3523,8 +3728,9 @@ void ESP::slabcorr_groups(int groupbit_A, int groupbit_B, int AA_flag)
    const double qscale = qqrd2e * scale;
    const double efact = qscale * MY_2PI/volume;
  
@@ -2137,7 +2361,7 @@ index 0a26681c78d957524c2f00950c6a849decb9748f..e8f0dbb73dc8c2175ee42d5812acf175
    // add on force corrections
  
 diff --git a/src/KSPACE/esp.h b/src/KSPACE/esp.h
-index 4d8a4840c1f84c297c0b35bd2b177543a254351d..0446a77b2cf6c9d492993ab41428f783a6f424be 100644
+index 4d8a4840c1..1ff093cf6c 100644
 --- a/src/KSPACE/esp.h
 +++ b/src/KSPACE/esp.h
 @@ -14,6 +14,7 @@
@@ -2206,20 +2430,38 @@ index 4d8a4840c1f84c297c0b35bd2b177543a254351d..0446a77b2cf6c9d492993ab41428f783
    void compute_rho_coeff();
    virtual void slabcorr();
  
-@@ -185,6 +190,12 @@ class ESP : public KSpace {
-   [[nodiscard]] double spreading_weight2_from_t(const double t) const
+@@ -182,16 +187,26 @@ class ESP : public KSpace {
+     }
+   }
+ 
+-  [[nodiscard]] double spreading_weight2_from_t(const double t) const
++  [[nodiscard]] double spreading_weight_from_t(const double t) const
    {
      // t = (order * h / 2) * |q| / spreading_select_c
+-    // returns ( (order/2 * poly(2t-1))^2 ), or 0 if t>1
 +    if (bspline_window) {
 +      const double x = t * spreading_select_c / order;
 +      if (x == 0.0) return 1.0;
-+      const double sinc = sin(x) / x;
-+      return pow(fabs(sinc), 2 * order);
++      return pow(sin(x) / x, order);
 +    }
-     // returns ( (order/2 * poly(2t-1))^2 ), or 0 if t>1
++    // returns order/2 * poly(2t-1), or 0 if t>1
      if (t > 1.0) return 0.0;
      const double x = 2.0 * t - 1.0;
-@@ -201,31 +212,31 @@ class ESP : public KSpace {
+     // apply Horner rule for polynomial evaluation
+     const double appx = poly_horner(x, fourier_spread_poly_coeff, fourier_spreading_order);
+-    const double w = 0.5 * order * appx;
+-    return w * w;
++    return 0.5 * order * appx;
++  }
++
++  [[nodiscard]] double spreading_weight2_from_t(const double t) const
++  {
++    const double weight = spreading_weight_from_t(t);
++    return weight * weight;
+   }
+ 
+   [[nodiscard]] double spreading_weight2_from_abs_index(const int abs_index,
+@@ -201,31 +216,31 @@ class ESP : public KSpace {
      return spreading_weight2_from_t(scale * (double) abs_index);
    }
  
@@ -2260,7 +2502,7 @@ index 4d8a4840c1f84c297c0b35bd2b177543a254351d..0446a77b2cf6c9d492993ab41428f783
        const double qz = kz + stepz * (double) nz;
        const double t = (0.5 * order * hz * fabs(qz)) / spreading_select_c;
        sumz += spreading_weight2_from_t(t);
-@@ -233,7 +244,7 @@ class ESP : public KSpace {
+@@ -233,7 +248,7 @@ class ESP : public KSpace {
  
      const double denom = sumx * sumy * sumz;
      return denom * denom;
@@ -2271,7 +2513,7 @@ index 4d8a4840c1f84c297c0b35bd2b177543a254351d..0446a77b2cf6c9d492993ab41428f783
  }    // namespace LAMMPS_NS
 diff --git a/src/KSPACE/esp_disp.cpp b/src/KSPACE/esp_disp.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..790bde4c54087ae1c51f13b04b03f93ed813df1c
+index 0000000000..790bde4c54
 --- /dev/null
 +++ b/src/KSPACE/esp_disp.cpp
 @@ -0,0 +1,2329 @@
@@ -4606,7 +4848,7 @@ index 0000000000000000000000000000000000000000..790bde4c54087ae1c51f13b04b03f93e
 +}
 diff --git a/src/KSPACE/esp_disp.h b/src/KSPACE/esp_disp.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..d797fee312e216778ee55de605d28c712d5ac168
+index 0000000000..d797fee312
 --- /dev/null
 +++ b/src/KSPACE/esp_disp.h
 @@ -0,0 +1,143 @@
@@ -4755,7 +4997,7 @@ index 0000000000000000000000000000000000000000..d797fee312e216778ee55de605d28c71
 +#endif
 diff --git a/src/KSPACE/esp_disp_tip4p.cpp b/src/KSPACE/esp_disp_tip4p.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..0d083376bb4208f97bac34904f71b48416681954
+index 0000000000..0d083376bb
 --- /dev/null
 +++ b/src/KSPACE/esp_disp_tip4p.cpp
 @@ -0,0 +1,770 @@
@@ -5531,7 +5773,7 @@ index 0000000000000000000000000000000000000000..0d083376bb4208f97bac34904f71b484
 +}
 diff --git a/src/KSPACE/esp_disp_tip4p.h b/src/KSPACE/esp_disp_tip4p.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..926ef457e4b156f081cca2803008b4f20c79f3a0
+index 0000000000..926ef457e4
 --- /dev/null
 +++ b/src/KSPACE/esp_disp_tip4p.h
 @@ -0,0 +1,53 @@
@@ -5590,7 +5832,7 @@ index 0000000000000000000000000000000000000000..926ef457e4b156f081cca2803008b4f2
 +#endif
 diff --git a/src/KSPACE/esp_tip4p.cpp b/src/KSPACE/esp_tip4p.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..8d2b525e2f21400871cdb8db6584b0934ff14f6f
+index 0000000000..8d2b525e2f
 --- /dev/null
 +++ b/src/KSPACE/esp_tip4p.cpp
 @@ -0,0 +1,769 @@
@@ -6365,7 +6607,7 @@ index 0000000000000000000000000000000000000000..8d2b525e2f21400871cdb8db6584b093
 +}
 diff --git a/src/KSPACE/esp_tip4p.h b/src/KSPACE/esp_tip4p.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..29fdad1f3defd71254f7545f872a9ccd5f92277a
+index 0000000000..29fdad1f3d
 --- /dev/null
 +++ b/src/KSPACE/esp_tip4p.h
 @@ -0,0 +1,53 @@
@@ -6423,7 +6665,7 @@ index 0000000000000000000000000000000000000000..29fdad1f3defd71254f7545f872a9ccd
 +#endif
 +#endif
 diff --git a/src/KSPACE/math_pswf.cpp b/src/KSPACE/math_pswf.cpp
-index 7f49e1ff421dcd3ae01663181f2ffe989609ce7f..f24bc9933ce59b66b9e941a3647ad2fa20cc277d 100644
+index 7f49e1ff42..f24bc9933c 100644
 --- a/src/KSPACE/math_pswf.cpp
 +++ b/src/KSPACE/math_pswf.cpp
 @@ -259,6 +259,35 @@ static inline void legeFDER(double x, double &val, double &der, const double *pe
@@ -6801,7 +7043,7 @@ index 7f49e1ff421dcd3ae01663181f2ffe989609ce7f..f24bc9933ce59b66b9e941a3647ad2fa
 -}    // namespace MathPSWF
 +}    // namespace LAMMPS_NS::MathPSWF
 diff --git a/src/KSPACE/math_pswf.h b/src/KSPACE/math_pswf.h
-index 21b4d27b34401391642ba0c4373ca630f64e9ce5..62a9fd5f57276b7e39aa1c7ab3aadbc6d96c6cfa 100644
+index 21b4d27b34..62a9fd5f57 100644
 --- a/src/KSPACE/math_pswf.h
 +++ b/src/KSPACE/math_pswf.h
 @@ -27,6 +27,11 @@ double prolate0_int_eval(double c, double r);
@@ -6817,7 +7059,7 @@ index 21b4d27b34401391642ba0c4373ca630f64e9ce5..62a9fd5f57276b7e39aa1c7ab3aadbc6
                           std::vector<double> &coeffs);
  void spread_real_poly(int P, double r_tol, const double &c, std::vector<double> &coeffs);
 diff --git a/src/KSPACE/pair_coul_esp.cpp b/src/KSPACE/pair_coul_esp.cpp
-index f727f1753931d39bc85e333c6ff3258eca039d5c..b77b8c3921747a6cacadd3e266fbf0810f7b4447 100644
+index f727f17539..b77b8c3921 100644
 --- a/src/KSPACE/pair_coul_esp.cpp
 +++ b/src/KSPACE/pair_coul_esp.cpp
 @@ -39,7 +39,6 @@ PairCoulEsp::PairCoulEsp(LAMMPS *lmp) :
@@ -6829,7 +7071,7 @@ index f727f1753931d39bc85e333c6ff3258eca039d5c..b77b8c3921747a6cacadd3e266fbf081
    ftable = nullptr;
    qdist = 0.0;
 diff --git a/src/KSPACE/pair_lj_cut_coul_esp.cpp b/src/KSPACE/pair_lj_cut_coul_esp.cpp
-index 79a58cfc91dd5813c05fe611a56b549ce6d200c4..3210bde8a661e1a046b2140350d407e89cb9fff1 100644
+index 79a58cfc91..3210bde8a6 100644
 --- a/src/KSPACE/pair_lj_cut_coul_esp.cpp
 +++ b/src/KSPACE/pair_lj_cut_coul_esp.cpp
 @@ -43,9 +43,9 @@ using namespace EwaldConst;
@@ -7252,7 +7494,7 @@ index 79a58cfc91dd5813c05fe611a56b549ce6d200c4..3210bde8a661e1a046b2140350d407e8
  }
 -
 diff --git a/src/KSPACE/pair_lj_cut_coul_esp.h b/src/KSPACE/pair_lj_cut_coul_esp.h
-index ab359e609eef6a601401bb2818b96b542baf4222..d48be1a7217f9ec49a66189d70043186c162aeae 100644
+index ab359e609e..d48be1a721 100644
 --- a/src/KSPACE/pair_lj_cut_coul_esp.h
 +++ b/src/KSPACE/pair_lj_cut_coul_esp.h
 @@ -58,8 +58,11 @@ class PairLJCutCoulEsp : public Pair {
@@ -7269,7 +7511,7 @@ index ab359e609eef6a601401bb2818b96b542baf4222..d48be1a7217f9ec49a66189d70043186
  }    // namespace LAMMPS_NS
 diff --git a/src/KSPACE/pair_lj_cut_tip4p_esp.cpp b/src/KSPACE/pair_lj_cut_tip4p_esp.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..1e4fbff54b3b58c51cd61701bf5bfbd6e3cba41e
+index 0000000000..1e4fbff54b
 --- /dev/null
 +++ b/src/KSPACE/pair_lj_cut_tip4p_esp.cpp
 @@ -0,0 +1,651 @@
@@ -7926,7 +8168,7 @@ index 0000000000000000000000000000000000000000..1e4fbff54b3b58c51cd61701bf5bfbd6
 +}
 diff --git a/src/KSPACE/pair_lj_cut_tip4p_esp.h b/src/KSPACE/pair_lj_cut_tip4p_esp.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..befb0cad6cf6c5dded243870a5e8b24863f713b1
+index 0000000000..befb0cad6c
 --- /dev/null
 +++ b/src/KSPACE/pair_lj_cut_tip4p_esp.h
 @@ -0,0 +1,58 @@
@@ -7990,7 +8232,7 @@ index 0000000000000000000000000000000000000000..befb0cad6cf6c5dded243870a5e8b248
 +#endif
 diff --git a/src/KSPACE/pair_lj_long_coul_esp.cpp b/src/KSPACE/pair_lj_long_coul_esp.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..05bc29b6b2a9d72c2f1a5f24b60404741920b44b
+index 0000000000..05bc29b6b2
 --- /dev/null
 +++ b/src/KSPACE/pair_lj_long_coul_esp.cpp
 @@ -0,0 +1,163 @@
@@ -8159,7 +8401,7 @@ index 0000000000000000000000000000000000000000..05bc29b6b2a9d72c2f1a5f24b6040474
 +}
 diff --git a/src/KSPACE/pair_lj_long_coul_esp.h b/src/KSPACE/pair_lj_long_coul_esp.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..8ef4fa4d96f17883728f8cec8e381ac886e05588
+index 0000000000..8ef4fa4d96
 --- /dev/null
 +++ b/src/KSPACE/pair_lj_long_coul_esp.h
 @@ -0,0 +1,44 @@
@@ -8209,7 +8451,7 @@ index 0000000000000000000000000000000000000000..8ef4fa4d96f17883728f8cec8e381ac8
 +#endif
 diff --git a/src/KSPACE/pair_lj_long_tip4p_esp.cpp b/src/KSPACE/pair_lj_long_tip4p_esp.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..81fadf00bfdc23eb9f4e962a861ea1486a3f959a
+index 0000000000..81fadf00bf
 --- /dev/null
 +++ b/src/KSPACE/pair_lj_long_tip4p_esp.cpp
 @@ -0,0 +1,300 @@
@@ -8515,7 +8757,7 @@ index 0000000000000000000000000000000000000000..81fadf00bfdc23eb9f4e962a861ea148
 +}
 diff --git a/src/KSPACE/pair_lj_long_tip4p_esp.h b/src/KSPACE/pair_lj_long_tip4p_esp.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..a2bbbd332ca67bcfae910a39fb262587f076914b
+index 0000000000..a2bbbd332c
 --- /dev/null
 +++ b/src/KSPACE/pair_lj_long_tip4p_esp.h
 @@ -0,0 +1,46 @@
@@ -8566,7 +8808,7 @@ index 0000000000000000000000000000000000000000..a2bbbd332ca67bcfae910a39fb262587
 +#endif
 +#endif
 diff --git a/src/kspace.cpp b/src/kspace.cpp
-index e4e05e51c85185b89ea9cda1ec30448e1f5d6585..15285822580ab40577df645317b9cdfff18c8f56 100644
+index e4e05e51c8..1528582258 100644
 --- a/src/kspace.cpp
 +++ b/src/kspace.cpp
 @@ -202,6 +202,7 @@ void KSpace::pair_check()
@@ -8578,7 +8820,7 @@ index e4e05e51c85185b89ea9cda1ec30448e1f5d6585..15285822580ab40577df645317b9cdff
    if (dispersionflag && !force->pair->dispersionflag) compatible = false;
    if (dipoleflag && !force->pair->dipoleflag) compatible = false;
 diff --git a/src/pair_hybrid.cpp b/src/pair_hybrid.cpp
-index cf244a2c3e4cfe0d045094e163c06ba748748cf8..36f37ee47e433f46da3af677d4c71ea5d63344af 100644
+index cf244a2c3e..36f37ee47e 100644
 --- a/src/pair_hybrid.cpp
 +++ b/src/pair_hybrid.cpp
 @@ -408,7 +408,7 @@ void PairHybrid::flags()

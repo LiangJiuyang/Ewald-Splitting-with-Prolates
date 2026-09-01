@@ -4949,7 +4949,7 @@ def figure7_archived_random_charge() -> float:
     return crossover
 
 
-def figure7() -> float:
+def figure7() -> None:
     """Plot the large-SPC/E-water grid--window trade-off for Figure 6.
 
     The two ESP branches share a target-matched PSWF splitting kernel at each
@@ -5325,9 +5325,6 @@ def figure7() -> float:
         "fig7_window_upsampling",
         "Large all-atom SPC/E-water grid-window trade-off under target-matched PSWF splitting",
     )
-    # The prior operation-count crossover remains an archival SI illustration.
-    # It is intentionally not used by the main-text water figure.
-    return 0.0
 
 
 def write_source_inventory() -> None:
@@ -5524,14 +5521,6 @@ def write_source_inventory() -> None:
             "uncertainty": "one water configuration selects the PSWF c_spread; every selected point then satisfies the target on each of four later frozen-parameter configurations. The source table retains their mean, standard deviation, and maximum; these short-spaced configurations are not treated as independent samples.",
             "operator_or_grid_convention": "orange/blue branches have c_split=14.471, r_c=9 Angstrom, the same all-atom water configurations and Ewald reference, and the same AD Green function/self-force convention within the row; only spreading changes. The near-band M=30 PSWF-spread point is feasible at P=8, whereas B-spline spreading remains above target through P=12 and begins at the resolved M=32 point. Gray diamonds are a separate native Gaussian-split/B-spline PPPM reference under AD differentiation. The displayed M=128,P=5 point has maximum four-frame error 1.072e-5, within the stated 10% near-target margin; the matched M=128,P=4 record fails strongly. The M=48 and 64 records are source-only display omissions.",
         },
-        {
-            "figure": "SI window--upsampling diagnostics",
-            "panel": "a-b",
-            "source_csv": "figS_window_upsampling_diagnostics_plot_source.csv; numerical_examples/window_upsampling_optimized_benchmark/window_upsampling_validation_summary.csv; numerical_examples/window_upsampling_m16_extension/window_upsampling_validation_summary_m16.csv; numerical_examples/gaussian_pppm_window_control/gaussian_pppm_validation_summary.csv; numerical_examples/window_upsampling_optimized_benchmark/window_upsampling_cost_envelope.csv",
-            "role": "archived small-random-charge PSWF-split window/order diagnostic and w_FFT operation-count illustration; it is distinct from the all-atom-water main Figure 6",
-            "uncertainty": "panel a: standard deviation across nine validation configurations; panel b is a deterministic operation-count proxy",
-            "operator_or_grid_convention": "archived common-PSWF-split optimal-influence ik random-charge benchmark; M=16 and M=20 are diagnostic only. The operation-count proxy has no processor-count mapping and omits implementation, cache, and communication costs.",
-        },
     ]
     fieldnames = list(rows[0])
     with (HERE / "figure_source_inventory.csv").open("w", newline="", encoding="utf-8") as handle:
@@ -5542,7 +5531,6 @@ def write_source_inventory() -> None:
 
 def write_plot_manifest(
     figure5_summary: dict[str, object],
-    window_cost_crossover: float,
 ) -> None:
     manifest = {
         "purpose": "Reproducible plotting manifest for redesigned main-text Figures 2-6",
@@ -5791,65 +5779,6 @@ def write_plot_manifest(
             "panel_parameter_annotations_drawn": False,
             "unresolved_scan": "AD P=5 at 1e-5 does not pass through M=80",
         },
-        "archived_small_random_charge_window_diagnostic": {
-            "legacy_output_basename": "fig7_window_upsampling",
-            "layout": "1 x 2",
-            "plot_source": "fig7_window_upsampling_plot_source.csv",
-            "accuracy_source": "numerical_examples/window_upsampling_optimized_benchmark/window_upsampling_validation_summary.csv",
-            "m16_extension_source": "numerical_examples/window_upsampling_m16_extension/window_upsampling_validation_summary_m16.csv",
-            "m16_extension_manifest": "numerical_examples/window_upsampling_m16_extension/manifest.json",
-            "gaussian_pppm_control_source": "numerical_examples/gaussian_pppm_window_control/gaussian_pppm_validation_summary.csv",
-            "gaussian_pppm_control_manifest": "numerical_examples/gaussian_pppm_window_control/manifest.json",
-            "panel_a": "fixed-PSWF-split minimum measured feasible P versus actual M^3 at target 1e-4, including the near-band-edge M=20 observation and a separate conventional-PPPM baseline",
-            "panel_b": "fixed-PSWF-split minimum measured feasible P versus actual M^3 at target 1e-5, with a separate conventional-PPPM baseline",
-            "common_split": "PSWF splitting with the same r_c and c_split in both branches",
-            "branch_difference": "spreading window only: PSWF or B-spline",
-            "conventional_control": "native Gaussian-split/B-spline-spread PPPM, with the same configurations, reference, cutoff, ik differentiation, and measured target but a target-selected Gaussian split",
-            "nominal_band_edge_mesh": FIGURE7_NOMINAL_BAND_EDGE_M,
-            "below_band_main_meshes": [20],
-            "resolved_main_meshes": list(FIGURE7_RESOLVED_MESHES),
-            "targets_for_order_panels": [FIGURE7_TARGET, FIGURE7_TIGHT_TARGET],
-            "resolved_band_based_actual_sigma_up": [
-                1.1757457535889946,
-                1.469682191986243,
-                1.7636186303834918,
-                1.9595762559816576,
-            ],
-            "minimum_feasible_orders": {
-                "PSWF-split/PSWF-spread": [5, 5, 5, 4],
-                "PSWF-split/B-spline-spread": [6, 5, 4, 4],
-            },
-            "conventional_pppm_minimum_feasible_orders": {
-                "M16": "not reached through P=7",
-                "M20": "not reached through P=7",
-                "M24": "not reached through P=7",
-                "M30": 6,
-                "M36": 5,
-                "M40": 4,
-                "M48": 4,
-            },
-            "below_band_calibration": {
-                "M16": {
-                    "sigma_up": 0.783830502392663,
-                    "PSWF-split/PSWF-spread": "target not reached for P<=8; P=8 error 1.066512739278812e-3",
-                    "PSWF-split/B-spline-spread": "target not reached for P<=8; P=8 error 1.3353324586046409e-3",
-                },
-                "M20": {
-                    "sigma_up": 0.9797881279908288,
-                    "PSWF-split/PSWF-spread_minimum_P": 6,
-                    "PSWF-split/B-spline-spread_minimum_P": 8,
-                },
-            },
-            "claim_limit": "controlled random-charge optimal-influence ik benchmark; accuracy feasibility alone does not establish a universal or hardware-specific timing crossover",
-            "supporting_information_diagnostic": {
-                "basename": "figS_window_upsampling_diagnostics",
-                "plot_source": "figS_window_upsampling_diagnostics_plot_source.csv",
-                "accuracy_scope": "full P=3--8 sweeps on M=16,20,24,30,36,40; M=16 and M=20 have sigma_up=0.784 and 0.980 and are below-band diagnostics",
-                "cost_envelope_source": "numerical_examples/window_upsampling_optimized_benchmark/window_upsampling_cost_envelope.csv",
-                "fft_weight_crossover": window_cost_crossover,
-                "proxy_limit": "simple operation-count illustration only; no processor-count mapping; omits implementation arithmetic, cache effects, and communication",
-            },
-        },
         "exports": {
             str(number): [
                 f"{stem}.pdf",
@@ -5870,15 +5799,8 @@ def write_plot_manifest(
             "figS_charge_spectrum.svg",
             "figS_charge_spectrum.png",
             "figS_charge_spectrum.tiff",
-            "figS_window_upsampling_diagnostics.pdf",
-            "figS_window_upsampling_diagnostics.svg",
-            "figS_window_upsampling_diagnostics.png",
-            "figS_window_upsampling_diagnostics.tiff",
         ],
     }
-    # The archived small-random-charge calculation above remains explicit in
-    # the manifest as an SI diagnostic.  The main Figure 6 provenance below
-    # is solely the large all-atom SPC/E-water benchmark.
     manifest["figure6"] = {
         "legacy_output_basename": "fig7_window_upsampling",
         "layout": "2 x 2",
@@ -6049,11 +5971,6 @@ def write_plot_manifest(
             },
         },
         "claim_limit": "accuracy feasibility maps the grid--stencil exchange but does not establish a universal timing crossover or universal optimal spreading window",
-        "supporting_information_diagnostic": {
-            "basename": "figS_window_upsampling_diagnostics",
-            "scope": "archived small-random-charge window/order and operation-count diagnostic, distinct from the large-water main Figure 6",
-            "fft_weight_crossover": "SI-only illustrative operation-count quantity; not used for the large-water main-text result",
-        },
     }
     with (HERE / "plot_redesigned_main_figures_manifest.json").open(
         "w", encoding="utf-8"
@@ -6080,7 +5997,6 @@ def verify_outputs() -> None:
         "figS_charge_spectrum": FIGURE_SI_SPECTRUM_SIZE,
         "fig6_pppm_efficiency": (7.1, 5.0),
         "fig7_window_upsampling": LARGE_WATER_WINDOW_FIGURE_SIZE,
-        "figS_window_upsampling_diagnostics": FIGURE_SI_WINDOW_SIZE,
     }
     for stem, (width, height) in sizes.items():
         for suffix in (".pdf", ".svg", ".png", ".tiff"):
@@ -6107,9 +6023,9 @@ def main() -> None:
     figure_si_charge_spectrum()
     figure4()
     figure5_summary = figure6()
-    window_cost_crossover = figure7()
+    figure7()
     write_source_inventory()
-    write_plot_manifest(figure5_summary, window_cost_crossover)
+    write_plot_manifest(figure5_summary)
     verify_outputs()
     print("Created Figures 2--6 as PDF/SVG, 300 dpi PNG, and 600 dpi TIFF.")
     print(

@@ -257,7 +257,7 @@ def write_manifest(lmp: Path, cases: dict[int, tuple[int, ...]]) -> None:
             str(lmp.relative_to(REPO)) if lmp.is_relative_to(REPO) else str(lmp)
         ),
         "lammps_executable_sha256": sha256(lmp),
-        "expected_lammps_executable_sha256": EXPECTED_LMP_SHA256,
+        "archived_lammps_executable_sha256": EXPECTED_LMP_SHA256,
         "lammps_versions": sorted(versions),
         "fft_backends": sorted(fft_backends),
         "single_rank": True,
@@ -279,6 +279,7 @@ def write_manifest(lmp: Path, cases: dict[int, tuple[int, ...]]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lmp", type=Path, default=DEFAULT_LMP)
+    parser.add_argument("--require-lmp-sha256")
     parser.add_argument(
         "--case",
         action="append",
@@ -296,9 +297,10 @@ def main() -> None:
     if not os.access(lmp, os.X_OK):
         raise PermissionError(f"LAMMPS executable is not executable: {lmp}")
     digest = sha256(lmp)
-    if digest != EXPECTED_LMP_SHA256:
+    if args.require_lmp_sha256 and digest != args.require_lmp_sha256.lower():
         raise RuntimeError(
-            f"LAMMPS SHA-256 mismatch: expected {EXPECTED_LMP_SHA256}, found {digest}"
+            f"LAMMPS SHA-256 mismatch: expected {args.require_lmp_sha256.lower()}, "
+            f"found {digest}"
         )
 
     if args.case:

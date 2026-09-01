@@ -31,7 +31,8 @@ SOURCE = PROJECT / "numerical_examples" / "water_trajectory_benchmark"
 DATA = SOURCE / "water.data"
 TRAJECTORY = SOURCE / "water_short_traj.lammpstrj"
 REFERENCE = SOURCE / "forces.ref_ewald.dump"
-LMP = REDESIGNED / "pppm_symmetric_scan" / "lmp.pppm_symmetric_scan"
+DEFAULT_LMP = REDESIGNED / "pppm_symmetric_scan" / "lmp.pppm_symmetric_scan"
+LMP = DEFAULT_LMP
 EXPECTED_LMP_SHA256 = (
     "34332fa52c4e2ba72b9561cffbc841c9b4fdbf5809eb745b1c1656e4ac960d6a"
 )
@@ -86,7 +87,11 @@ def sha256(path: Path) -> str:
 
 
 def relpath(path: Path) -> str:
-    return str(path.resolve().relative_to(PROJECT))
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(PROJECT).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 def file_record(path: Path) -> dict[str, object]:
@@ -451,6 +456,7 @@ def analyze(calibrations: dict[str, dict[str, object]]) -> None:
         "single_rank": True,
         "omp_num_threads": 1,
         "lammps_executable": file_record(LMP),
+        "archived_lammps_executable_sha256": EXPECTED_LMP_SHA256,
         "water_data": file_record(DATA),
         "trajectory": file_record(TRAJECTORY),
         "ewald_reference": file_record(REFERENCE),
@@ -466,18 +472,32 @@ def analyze(calibrations: dict[str, dict[str, object]]) -> None:
 
 
 def main() -> None:
+    global LMP
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--lmp",
+        type=Path,
+        default=Path(os.environ.get("ESP_LAMMPS_BIN", DEFAULT_LMP)),
+    )
+    parser.add_argument("--require-lmp-sha256")
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--analyze-only", action="store_true")
     args = parser.parse_args()
+    LMP = args.lmp.resolve()
     if args.jobs < 1:
         parser.error("--jobs must be positive")
     for path in (DATA, TRAJECTORY, REFERENCE, LMP):
         if not path.is_file():
             raise FileNotFoundError(path)
-    if sha256(LMP) != EXPECTED_LMP_SHA256:
-        raise RuntimeError("LAMMPS executable hash does not match the archived binary")
+    if not os.access(LMP, os.X_OK):
+        raise PermissionError(f"LAMMPS executable is not executable: {LMP}")
+    digest = sha256(LMP)
+    if args.require_lmp_sha256 and digest != args.require_lmp_sha256.lower():
+        raise RuntimeError(
+            f"LAMMPS SHA-256 mismatch: expected {args.require_lmp_sha256.lower()}, "
+            f"found {digest}"
+        )
 
     calibrations = {
         branch.panel: run_calibration(branch, args.force) for branch in BRANCHES

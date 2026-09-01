@@ -586,9 +586,11 @@ def analyze(lmp: Path) -> None:
             f"{target:.0e}": list(meshes)
             for target, meshes in PANEL_B_ESP_GRIDS_BY_TARGET.items()
         },
-        "lammps_executable": str(lmp.relative_to(PROJECT)),
+        "lammps_executable": (
+            str(lmp.relative_to(PROJECT)) if lmp.is_relative_to(PROJECT) else str(lmp)
+        ),
         "lammps_executable_sha256": sha256(lmp),
-        "expected_lammps_executable_sha256": EXPECTED_LMP_SHA256,
+        "archived_lammps_executable_sha256": EXPECTED_LMP_SHA256,
         "reference": str(REFERENCE.relative_to(PROJECT)),
         "reference_sha256": sha256(REFERENCE),
         "trajectory": str(TRAJECTORY.relative_to(PROJECT)),
@@ -630,6 +632,7 @@ def analyze(lmp: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lmp", type=Path, default=DEFAULT_LMP)
+    parser.add_argument("--require-lmp-sha256")
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--analyze-only", action="store_true")
     parser.add_argument("--force", action="store_true")
@@ -640,8 +643,14 @@ def main() -> None:
     for path in (lmp, DATA, TRAJECTORY, REFERENCE):
         if not path.is_file():
             raise FileNotFoundError(path)
-    if sha256(lmp) != EXPECTED_LMP_SHA256:
-        raise RuntimeError("LAMMPS executable hash does not match the manuscript build")
+    if not os.access(lmp, os.X_OK):
+        raise PermissionError(f"LAMMPS executable is not executable: {lmp}")
+    digest = sha256(lmp)
+    if args.require_lmp_sha256 and digest != args.require_lmp_sha256.lower():
+        raise RuntimeError(
+            f"LAMMPS SHA-256 mismatch: expected {args.require_lmp_sha256.lower()}, "
+            f"found {digest}"
+        )
 
     if not args.analyze_only:
         with ThreadPoolExecutor(max_workers=args.jobs) as pool:

@@ -1,0 +1,23 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Runtime output from reproducibility scans.
+error_bench/**/runs*/
+error_bench/**/raw/
+error_bench/**/*.log
+error_bench/**/*.screen
+error_bench/**/log.*.lammps
+error_bench/**/screen.*.txt
+
+# Locally built helper and LAMMPS executables.
+error_bench/src/numerical_test/redesigned_section5/dump_pswf_coeff
+error_bench/src/numerical_test/redesigned_section5/eval_pswf_profile
+error_bench/**/lmp.*
+
+# Generated force dumps and publication renderings.
+error_bench/inputs/representative_lammps/*.forces.dump
+error_bench/src/numerical_test/redesigned_section5/*.pdf
+error_bench/src/numerical_test/redesigned_section5/*.svg
+error_bench/src/numerical_test/redesigned_section5/*.png
+error_bench/src/numerical_test/redesigned_section5/*.tiff

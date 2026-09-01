@@ -56,9 +56,13 @@ DIFFERENTIATION = "ik"
 
 
 def bundle_relative(path: Path) -> str:
-    """Return a path relative to the reproducibility-bundle root."""
+    """Use a bundle-relative path when possible, otherwise an absolute path."""
 
-    return path.resolve().relative_to(BUNDLE_ROOT).as_posix()
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(BUNDLE_ROOT).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 def configure_output_root(output_root: Path | None) -> None:

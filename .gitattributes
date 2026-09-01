@@ -1,0 +1,2 @@
+# Unified-diff context markers are single spaces by format, not source whitespace.
+error_bench/lammps_esp_ik_ad_complete.patch -whitespace

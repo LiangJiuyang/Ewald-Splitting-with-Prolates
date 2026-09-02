@@ -44,6 +44,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "lammps_ad_total_validation"))
 import ad_sq_descriptor as adsq  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
+import ad_validation_common as adcommon  # noqa: E402
 from ad_validation_common import (  # noqa: E402
     ADCase,
     RCUT,
@@ -523,11 +524,18 @@ def main() -> None:
     parser.add_argument("--alias-shell", type=int, default=4)
     parser.add_argument("--samples-per-shell", type=int, default=8192)
     parser.add_argument(
+        "--lmp",
+        type=Path,
+        default=None,
+        help="ESP-LAMMPS executable (defaults to ESP_LAMMPS_BIN or the in-tree build)",
+    )
+    parser.add_argument(
         "--prediction-only",
         action="store_true",
         help="write the a-priori table but do not open the AD/Ewald holdout archive",
     )
     args = parser.parse_args()
+    adcommon.configure_lmp(args.lmp)
     if args.alias_shell < 1:
         raise ValueError("--alias-shell must be at least one")
     if args.samples_per_shell < 64:

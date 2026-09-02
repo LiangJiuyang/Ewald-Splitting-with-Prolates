@@ -38,6 +38,7 @@ sys.path[:0] = [str(HERE), str(AD_VALIDATION)]
 import fixed_ad_reference as adref  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
 import build_fig5_ad_rigid_sq_theory as baseline  # noqa: E402
+import ad_validation_common as adcommon  # noqa: E402
 from ad_validation_common import coefficients, correction_force, operator  # noqa: E402
 
 
@@ -868,11 +869,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="rerun selected-candidate LAMMPS validation rather than reuse a matching archive",
     )
+    parser.add_argument(
+        "--lmp",
+        type=Path,
+        default=None,
+        help="ESP-LAMMPS executable (defaults to ESP_LAMMPS_BIN or the in-tree build)",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    adcommon.configure_lmp(args.lmp)
     if args.baseline:
         write_baseline(args.rebuild_direct_cache)
     elif args.join_baseline_validation:

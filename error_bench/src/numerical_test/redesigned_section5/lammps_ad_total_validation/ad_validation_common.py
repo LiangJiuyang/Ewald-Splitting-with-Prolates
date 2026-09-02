@@ -18,6 +18,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -38,9 +39,28 @@ import fixed_ad_reference as adref  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
 
 
-LMP = REDESIGNED / "pppm_symmetric_scan/lmp.pppm_symmetric_scan"
+DEFAULT_LMP = REDESIGNED / "pppm_symmetric_scan/lmp.pppm_symmetric_scan"
+LMP = Path(os.environ.get("ESP_LAMMPS_BIN", DEFAULT_LMP)).expanduser().resolve()
 RCUT = 9.0
 COULOMB_REAL = ikref.COULOMB_REAL
+
+
+def configure_lmp(value: str | Path | None = None) -> Path:
+    """Configure the ESP-LAMMPS executable for an AD calculation.
+
+    Entry-point scripts may pass ``--lmp`` explicitly; otherwise the shared
+    ``ESP_LAMMPS_BIN`` environment variable is honored.  The fallback retains
+    the historical in-tree location for existing local workflows.
+    """
+
+    global LMP
+    candidate = (
+        value
+        if value is not None
+        else os.environ.get("ESP_LAMMPS_BIN", DEFAULT_LMP)
+    )
+    LMP = Path(candidate).expanduser().resolve()
+    return LMP
 
 
 def project_relative(path: Path) -> str:
@@ -415,6 +435,8 @@ rerun {project_relative(trajectory_path)} dump x y z ix iy iz box yes format nat
 def run_lammps(input_path: Path, log_path: Path, screen_path: Path) -> None:
     if not LMP.is_file():
         raise FileNotFoundError(f"development LAMMPS executable is missing: {LMP}")
+    if not os.access(LMP, os.X_OK):
+        raise PermissionError(f"LAMMPS executable is not executable: {LMP}")
     subprocess.run(
         [
             str(LMP),

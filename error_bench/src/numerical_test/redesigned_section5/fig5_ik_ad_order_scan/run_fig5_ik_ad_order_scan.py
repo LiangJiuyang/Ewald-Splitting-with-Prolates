@@ -163,19 +163,38 @@ def reused_paths(case: Case) -> dict[str, Path] | None:
     return None
 
 
-def paths_for(case: Case) -> tuple[dict[str, Path], str]:
-    reused = reused_paths(case)
-    if reused is not None:
-        return reused, "reused audited Figure-5 force record"
+def dedicated_paths(case: Case) -> dict[str, Path]:
+    """Return the canonical, rerunnable storage location for one case."""
+
     base = RAW / case.case_id
-    return (
-        {
-            "input": base / "in.lammps",
-            "dump": base / "forces.dump",
-            "log": base / "log.lammps",
-        },
-        "dedicated four-panel Figure-5 order scan",
-    )
+    return {
+        "input": base / "in.lammps",
+        "dump": base / "forces.dump",
+        "log": base / "log.lammps",
+    }
+
+
+def paths_for(
+    case: Case, *, rerun_missing: bool = False
+) -> tuple[dict[str, Path], str]:
+    """Resolve an archived record or a canonical rerunnable replacement.
+
+    Some manuscript records predate this runner and live in legacy directories.
+    Those records remain preferred when complete, but their absence must not make
+    the corresponding Figure-5 case impossible to reproduce.
+    """
+
+    reused = reused_paths(case)
+    dedicated = dedicated_paths(case)
+    if reused is None:
+        return dedicated, "dedicated four-panel Figure-5 order scan"
+    if complete(case, reused):
+        return reused, "reused audited Figure-5 force record"
+    if complete(case, dedicated):
+        return dedicated, "rerun-missing replacement Figure-5 force record"
+    if rerun_missing:
+        return dedicated, "rerun-missing replacement Figure-5 force record"
+    return reused, "missing archived Figure-5 force record"
 
 
 def input_text(case: Case, dump: Path) -> str:
@@ -274,12 +293,15 @@ def complete(case: Case, paths: dict[str, Path]) -> bool:
     return len(frames) == TOTAL_FRAMES
 
 
-def run_case(case: Case, force: bool) -> str:
-    paths, role = paths_for(case)
+def run_case(case: Case, force: bool, rerun_missing: bool) -> str:
+    paths, role = paths_for(case, rerun_missing=rerun_missing)
     if role.startswith("reused"):
-        if not complete(case, paths):
-            raise RuntimeError(f"{case.case_id}: reused source is incomplete")
         return f"{case.case_id}: reused"
+    if role.startswith("missing archived"):
+        raise RuntimeError(
+            f"{case.case_id}: archived source is incomplete; rerun with "
+            "--rerun-missing to generate a canonical replacement"
+        )
 
     paths["input"].parent.mkdir(parents=True, exist_ok=True)
     paths["input"].write_text(input_text(case, paths["dump"]), encoding="utf-8")
@@ -346,7 +368,7 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer.writerows(rows)
 
 
-def analyze() -> None:
+def analyze(*, rerun_missing: bool = False) -> None:
     reference = ikscan.core.parse_force_dump(REFERENCE)
     if len(reference) != TOTAL_FRAMES:
         raise RuntimeError("tight Ewald reference does not contain 51 frames")
@@ -355,7 +377,7 @@ def analyze() -> None:
     by_frame: list[dict[str, object]] = []
     raw_artifacts: list[dict[str, object]] = []
     for case in CASES:
-        paths, role = paths_for(case)
+        paths, role = paths_for(case, rerun_missing=rerun_missing)
         if not complete(case, paths):
             raise RuntimeError(f"{case.case_id}: output is incomplete")
         metadata = parse_metadata(case, paths["log"])
@@ -468,6 +490,7 @@ def analyze() -> None:
     expected *= len(ORDERS) * 2
     if len(summaries) != expected:
         raise RuntimeError("four-panel scan has the wrong number of cases")
+    lammps_available = LMP.is_file() and os.access(LMP, os.X_OK)
     manifest = {
         "schema_version": 1,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
@@ -487,7 +510,8 @@ def analyze() -> None:
             for target, settings in TARGET_SETTINGS.items()
         },
         "lammps_executable": relpath(LMP),
-        "lammps_executable_sha256": sha256(LMP),
+        "lammps_executable_sha256": sha256(LMP) if lammps_available else None,
+        "lammps_executable_available": lammps_available,
         "archived_lammps_executable_sha256": EXPECTED_LMP_SHA256,
         "single_rank_per_case": True,
         "omp_num_threads": 1,
@@ -539,28 +563,42 @@ def main() -> None:
     parser.add_argument("--analyze-only", action="store_true")
     parser.add_argument("--skip-analyze", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--rerun-missing",
+        action="store_true",
+        help=(
+            "generate a canonical raw/<case_id>/ replacement when a legacy "
+            "archived Figure-5 record is absent or incomplete"
+        ),
+    )
     args = parser.parse_args()
     LMP = args.lmp.resolve()
     if args.jobs < 1:
         raise ValueError("--jobs must be positive")
     if args.analyze_only and (args.case or args.skip_analyze or args.force):
         raise ValueError("--analyze-only cannot be combined with run controls")
-    for path in (LMP, DATA, TRAJECTORY, REFERENCE):
+    for path in (DATA, TRAJECTORY, REFERENCE):
         if not path.is_file():
             raise FileNotFoundError(path)
-    if not os.access(LMP, os.X_OK):
-        raise PermissionError(f"LAMMPS executable is not executable: {LMP}")
-    digest = sha256(LMP)
-    if args.require_lmp_sha256 and digest != args.require_lmp_sha256.lower():
-        raise RuntimeError(
-            f"LAMMPS SHA-256 mismatch: expected {args.require_lmp_sha256.lower()}, "
-            f"found {digest}"
-        )
+    if not args.analyze_only:
+        if not LMP.is_file():
+            raise FileNotFoundError(LMP)
+        if not os.access(LMP, os.X_OK):
+            raise PermissionError(f"LAMMPS executable is not executable: {LMP}")
+        digest = sha256(LMP)
+        if args.require_lmp_sha256 and digest != args.require_lmp_sha256.lower():
+            raise RuntimeError(
+                f"LAMMPS SHA-256 mismatch: expected {args.require_lmp_sha256.lower()}, "
+                f"found {digest}"
+            )
 
     if not args.analyze_only:
         selected = select_cases(args.case)
         with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            futures = {pool.submit(run_case, case, args.force): case for case in selected}
+            futures = {
+                pool.submit(run_case, case, args.force, args.rerun_missing): case
+                for case in selected
+            }
             for future in as_completed(futures):
                 case = futures[future]
                 try:
@@ -570,7 +608,7 @@ def main() -> None:
         if args.case and not args.skip_analyze:
             raise ValueError("filtered runs require --skip-analyze until the full matrix exists")
     if not args.skip_analyze:
-        analyze()
+        analyze(rerun_missing=args.rerun_missing)
 
 
 if __name__ == "__main__":

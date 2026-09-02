@@ -34,6 +34,7 @@ if str(AD_VALIDATION) not in sys.path:
 import fixed_ad_reference as adref  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
 import build_fig5_ad_rigid_sq_theory as rigid_theory  # noqa: E402
+import ad_validation_common as adcommon  # noqa: E402
 from ad_validation_common import (  # noqa: E402
     coefficients,
     correction_force,
@@ -364,11 +365,18 @@ def parse_args() -> argparse.Namespace:
             "molecular trajectory or Ewald-force holdout"
         ),
     )
+    parser.add_argument(
+        "--lmp",
+        type=Path,
+        default=None,
+        help="ESP-LAMMPS executable (defaults to ESP_LAMMPS_BIN or the in-tree build)",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    adcommon.configure_lmp(args.lmp)
     configure_target(args.target)
     started = time.time()
     OUTDIR.mkdir(parents=True, exist_ok=True)

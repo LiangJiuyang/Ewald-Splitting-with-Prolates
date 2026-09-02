@@ -620,7 +620,7 @@ def main() -> None:
             "pair_estimator": "exact AD cell-moment baseline plus rigid target-conditioned diagonal source-spectrum correction",
             "rigid_model": "orientationally averaged SPC/E intramolecular geometry",
             "residual_self": "unit-charge-probed two-harmonic LAMMPS correction plus converged cell quadrature",
-            "total_error": "rigid pair, residual self, and Eq. (55) Fourier terms combined in quadrature",
+            "total_error": "rigid pair, residual self, and Eq. (56) Fourier terms combined in quadrature",
             "closure_limit": "no intermolecular correlations, off-diagonal physical-mode aliases, or pair-self cross terms",
             "alias_shell": args.alias_shell,
             "samples_per_shell": args.samples_per_shell,

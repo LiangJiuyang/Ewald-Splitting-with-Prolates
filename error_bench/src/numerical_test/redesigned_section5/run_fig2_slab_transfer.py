@@ -198,7 +198,7 @@ def main() -> None:
             raise RuntimeError("pooled component and total RMS values disagree")
         baseline = homogeneous[float(csplit)]
         eq46 = float(baseline["eq46_discrete_abs_rms_kcal_per_mol_A"])
-        eq55 = float(baseline["eq55_closed_abs_rms_kcal_per_mol_A"])
+        eq56 = float(baseline["eq56_closed_abs_rms_kcal_per_mol_A"])
         transverse = math.sqrt(
             0.5 * (pooled_components[1] ** 2 + pooled_components[2] ** 2)
         )
@@ -238,9 +238,9 @@ def main() -> None:
                     pooled_components[0] / transverse
                 ),
                 "eq46_homogeneous_abs_rms_kcal_per_mol_A": eq46,
-                "eq55_homogeneous_abs_rms_kcal_per_mol_A": eq55,
+                "eq56_homogeneous_abs_rms_kcal_per_mol_A": eq56,
                 "measured_over_eq46_homogeneous": pooled_total / eq46,
-                "measured_over_eq55_homogeneous": pooled_total / eq55,
+                "measured_over_eq56_homogeneous": pooled_total / eq56,
                 "homogeneous_baseline_source": RANDOM_SUMMARY.name,
             }
         )

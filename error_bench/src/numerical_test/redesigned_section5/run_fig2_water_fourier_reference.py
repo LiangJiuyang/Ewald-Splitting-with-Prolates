@@ -45,7 +45,7 @@ from fig2_fourier_reference import (
     direct_force_from_kernel,
     discrete_eq46_sum,
     eq46_force_error,
-    eq55_closed_force_error,
+    eq56_closed_force_error,
     exact_inside_profile,
     lattice_shell_counts,
     symmetric_kernel_grid,
@@ -678,7 +678,7 @@ def main() -> None:
         homogeneous_eq46 = eq46_force_error(
             mode_sum, qsum, len(first_q), box_length**3
         )
-        closed_eq55 = eq55_closed_force_error(
+        closed_eq56 = eq56_closed_force_error(
             pswf,
             qsum,
             len(first_q),
@@ -724,7 +724,7 @@ def main() -> None:
                     ),
                     **block_summary,
                     "homogeneous_eq46_discrete_kcal_per_mol_A": homogeneous_eq46,
-                    "closed_eq55_kcal_per_mol_A": closed_eq55,
+                    "closed_eq56_kcal_per_mol_A": closed_eq56,
                     "measured_over_homogeneous_eq46": measured
                     / homogeneous_eq46,
                     "eq46_tail_radius_index": EQ46_TAIL_RADIUS,

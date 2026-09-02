@@ -514,7 +514,7 @@ def eq46_force_error(mode_sum: float, qsum: float, natoms: int, volume: float) -
     return COULOMB_REAL * qsum / (math.sqrt(natoms) * volume) * math.sqrt(mode_sum)
 
 
-def eq55_closed_force_error(
+def eq56_closed_force_error(
     pswf: ExactPSWFContinuation,
     qsum: float,
     natoms: int,

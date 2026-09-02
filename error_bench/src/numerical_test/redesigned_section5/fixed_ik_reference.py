@@ -903,12 +903,12 @@ def closed_fourier_estimate(
     coeff: PSWFCoefficients,
     kmax: float | None = None,
 ) -> float:
-    """Evaluate Eq. (55) without the undocumented 5.46 asymptotic proxy."""
+    """Evaluate Eq. (56) without the undocumented 5.46 asymptotic proxy."""
 
     if kmax is None:
         kmax = csplit / rcut
     if kmax * rcut < csplit:
-        raise ValueError("Eq. (55) outside-tail form requires Kmax*rc >= csplit")
+        raise ValueError("Eq. (56) outside-tail form requires Kmax*rc >= csplit")
     split = split_continuation(coeff, csplit)
     values = split.value(np.asarray([0.0, 1.0]))
     psi1_over_psi0 = abs(float(values[1] / values[0]))

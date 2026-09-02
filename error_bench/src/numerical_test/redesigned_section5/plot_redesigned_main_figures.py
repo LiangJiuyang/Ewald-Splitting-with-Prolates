@@ -470,8 +470,8 @@ def figure2() -> None:
     eq46 = np.array(
         [value(row, "eq46_discrete_abs_rms_kcal_per_mol_A") for row in random_rows]
     )
-    eq55 = np.array(
-        [value(row, "eq55_closed_abs_rms_kcal_per_mol_A") for row in random_rows]
+    eq56 = np.array(
+        [value(row, "eq56_closed_abs_rms_kcal_per_mol_A") for row in random_rows]
     )
 
     random_measured = np.array(
@@ -574,7 +574,7 @@ def figure2() -> None:
         label="Discrete sum", zorder=3,
     )
     ax.plot(
-        x, eq55, "^--", color=figure_colors["ochre"], markerfacecolor="white",
+        x, eq56, "^--", color=figure_colors["ochre"], markerfacecolor="white",
         markeredgewidth=0.85, markersize=3.9, linewidth=1.35,
         label="Closed form", zorder=2,
     )
@@ -3985,7 +3985,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
     """Draw the theory/holdout Figure 5 from a frozen fixed-IK screen.
 
     The data source is generated in two stages.  The prediction table contains
-    Eq. (55)+Eq. (90) values based only on frames 1--25 and a coarse PPPM force
+    Eq. (56)+Eq. (90) values based only on frames 1--25 and a coarse PPPM force
     scale; it is hash-frozen before the source table is joined to Ewald-force
     measurements on frames 26--50.  This deliberately replaces the former
     Figure-5 pilot-force-calibration curves.
@@ -4027,7 +4027,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
     ):
         raise ValueError("Figure 5 theory/holdout partition is invalid")
     if any(
-        "Eq. (55)" not in row["prediction_operator"]
+        "Eq. (56)" not in row["prediction_operator"]
         or "Eq. (90)" not in row["prediction_operator"]
         for row in theory_rows
     ):
@@ -4229,7 +4229,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
     fig.text(
         0.50,
         0.975,
-        r"ESP: dashed lines, Eq. (55)+Eq. (90) theory; filled symbols, Ewald validation (frames 26--50)",
+        r"ESP: dashed lines, Eq. (56)+Eq. (90) theory; filled symbols, Ewald validation (frames 26--50)",
         ha="center",
         va="top",
         fontsize=8.0,
@@ -4341,7 +4341,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
     ):
         raise ValueError("Figure 5 theory/holdout partition is invalid")
     if any(
-        "Eq. (55)" not in row["prediction_operator"]
+        "Eq. (56)" not in row["prediction_operator"]
         or "Eq. (90)" not in row["prediction_operator"]
         for row in theory_rows
     ):

@@ -26,7 +26,7 @@ from fig2_fourier_reference import (
     direct_periodic_coulomb_ewald_force,
     discrete_eq46_sum,
     eq46_force_error,
-    eq55_closed_force_error,
+    eq56_closed_force_error,
     lattice_shell_counts,
     pooled_rms_jackknife_sem,
     rms_vector_error,
@@ -202,7 +202,7 @@ def main() -> None:
                 mode_metadata = candidate_metadata
         assert mode_sum is not None and mode_metadata is not None
         eq46 = eq46_force_error(mode_sum, qsum, natoms, volume)
-        eq55 = eq55_closed_force_error(pswf, qsum, natoms, volume, kmax, RCUT)
+        eq56 = eq56_closed_force_error(pswf, qsum, natoms, volume, kmax, RCUT)
         config_errors_array = np.asarray(config_errors)
         pooled = float(np.sqrt(np.mean(config_errors_array**2)))
         summary_rows.append(
@@ -229,9 +229,9 @@ def main() -> None:
                     pooled_rms_jackknife_sem(config_errors_array)
                 ),
                 "eq46_discrete_abs_rms_kcal_per_mol_A": eq46,
-                "eq55_closed_abs_rms_kcal_per_mol_A": eq55,
+                "eq56_closed_abs_rms_kcal_per_mol_A": eq56,
                 "measured_over_eq46": pooled / eq46,
-                "eq55_over_eq46": eq55 / eq46,
+                "eq56_over_eq46": eq56 / eq46,
                 "eq46_tail_radius_index": TAIL_RADIUS,
                 "eq46_tail_fraction_of_omitted_sum": mode_metadata[
                     "tail_fraction_of_omitted_sum"
@@ -301,7 +301,7 @@ def main() -> None:
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "scientific_question": (
             "Does discrete Eq. (46) predict the measured exact-PSWF Fourier-truncation "
-            "error, and how accurate is closed Eq. (55)?"
+            "error, and how accurate is closed Eq. (56)?"
         ),
         "system": {
             "source": str(RANDOM_ROOT.relative_to(PROJECT_ROOT)),
@@ -382,15 +382,15 @@ def main() -> None:
         json.dumps(manifest, indent=2) + "\n"
     )
 
-    print("c_split measured_pooled Eq46 Eq55 measured/Eq46 Eq55/Eq46")
+    print("c_split measured_pooled Eq46 Eq56 measured/Eq46 Eq56/Eq46")
     for row in summary_rows:
         print(
             f"{row['c_split']:8g} "
             f"{row['measured_pooled_abs_rms_kcal_per_mol_A']:.8e} "
             f"{row['eq46_discrete_abs_rms_kcal_per_mol_A']:.8e} "
-            f"{row['eq55_closed_abs_rms_kcal_per_mol_A']:.8e} "
+            f"{row['eq56_closed_abs_rms_kcal_per_mol_A']:.8e} "
             f"{row['measured_over_eq46']:.5f} "
-            f"{row['eq55_over_eq46']:.5f}"
+            f"{row['eq56_over_eq46']:.5f}"
         )
     print(f"maximum direct-Ewald crosscheck residual: {reference_residual:.3e}")
 

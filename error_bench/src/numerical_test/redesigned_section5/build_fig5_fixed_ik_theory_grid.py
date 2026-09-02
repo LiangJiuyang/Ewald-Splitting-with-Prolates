@@ -5,7 +5,7 @@ The prediction stage deliberately reads only (i) the first 25 SPC/E coordinate
 frames and (ii) a coarse PPPM force evaluation used solely to normalize a
 relative tolerance.  It does *not* read Ewald reference forces, LAMMPS ESP
 force differences, or frames 26--50.  For each fixed-influence ``i k`` ESP
-candidate it evaluates the quadrature of the closed Fourier estimate (Eq. 55)
+candidate it evaluates the quadrature of the closed Fourier estimate (Eq. 56)
 and the measured-``S_q`` all-alias mesh estimate (Eq. 90), using the LAMMPS
 Fourier-polynomial deconvolution convention.
 
@@ -200,7 +200,7 @@ def prediction_specifications() -> list[tuple[float, int, int]]:
 
 
 def predict_case(spec: tuple[float, int, int]) -> dict[str, object]:
-    """Evaluate one Eq. (55)+Eq. (90) candidate from pilot-only data."""
+    """Evaluate one Eq. (56)+Eq. (90) candidate from pilot-only data."""
 
     if _PILOT_FRAMES is None or _FORCE_SCALE is None or _FORCE_SCALE_BY_FRAME is None:
         initialize_worker()
@@ -307,7 +307,7 @@ def predict_case(spec: tuple[float, int, int]) -> dict[str, object]:
         "pilot_mode_count": len(modes),
         "zeroed_active_mode_count": population.zeroed_active_mode_count,
         "prediction_operator": (
-            "quadrature of Eq. (55) closed Fourier estimate and Eq. (90) "
+            "quadrature of Eq. (56) closed Fourier estimate and Eq. (90) "
             "measured-S_q all-alias fixed-influence ik mesh estimate; "
             "LAMMPS Fourier-polynomial deconvolution"
         ),
@@ -356,7 +356,7 @@ def freeze_prediction(rows: list[dict[str, object]]) -> None:
             "radial PSWF reciprocal band"
         ),
         "prediction": {
-            "fourier": "Eq. (55) closed estimate",
+            "fourier": "Eq. (56) closed estimate",
             "mesh": "Eq. (90) measured-S_q all-alias estimate",
             "error_combination": "quadrature; Fourier/mesh covariance not modeled",
             "alias_shell": MAX_ALIAS_SHELL,

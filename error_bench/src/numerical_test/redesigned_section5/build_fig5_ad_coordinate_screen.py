@@ -471,7 +471,7 @@ def evaluate_candidate(
         "prediction_molecular_coordinates_accessed": True,
         "prediction_structure_input": "SPC/E pilot configurations, frames 1--25",
         "direct_reference": "finite-band PSWF Fourier reference",
-        "closed_terms": "Eq. (55) closed Fourier contribution",
+        "closed_terms": "Eq. (56) closed Fourier contribution",
         "selection_scope": "finite-band theoretical analysis with a 25-frame pilot correction; not a universal molecular AD estimator",
         "direct_mode_signature": direct_signature,
         "direct_active_mode_count": direct_mode_count,

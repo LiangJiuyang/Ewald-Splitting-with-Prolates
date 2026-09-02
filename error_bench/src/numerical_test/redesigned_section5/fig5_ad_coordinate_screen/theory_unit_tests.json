@@ -1,0 +1,12 @@
+{
+  "evaluate_tagged_pair_spectrum_direct_sum_max_abs": 3.3306690738754696e-16,
+  "homogeneous_chi2": 1.689298102410938e-05,
+  "homogeneous_recovery_bitwise_exact": true,
+  "ordinary_sq_direct_sum_max_abs": 1.1102230246251565e-16,
+  "passed": true,
+  "prefix_reader_first_timestep": 0,
+  "prefix_reader_frame_count": 25,
+  "prefix_reader_last_timestep": 1200,
+  "prefix_reader_sha256": "fd3b17d10220c14ce39a9304c5842b34238be0e70a3b58af3af806b2598dde88",
+  "schema_version": 1
+}

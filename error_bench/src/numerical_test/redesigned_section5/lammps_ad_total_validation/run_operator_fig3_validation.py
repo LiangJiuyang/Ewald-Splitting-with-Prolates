@@ -24,9 +24,10 @@ from pathlib import Path
 
 import numpy as np
 
+import ad_validation_common as adcommon
+
 from ad_validation_common import (
     HERE,
-    LMP,
     PROJECT,
     RCUT,
     ADCase,
@@ -406,11 +407,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="reuse existing force/pair dumps while recomputing all estimators",
     )
+    parser.add_argument(
+        "--lmp",
+        type=Path,
+        default=None,
+        help="ESP-LAMMPS executable; defaults to ESP_LAMMPS_BIN",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    adcommon.configure_lmp(args.lmp)
     started = time.time()
     rerun = not args.reuse_lammps
     valid_cases, invalid_cases, key_to_id = unique_valid_cases()
@@ -545,8 +553,8 @@ def main() -> None:
         MANIFEST,
         {
             "purpose": "direct production-LAMMPS AD single/two-charge and Figure-3 total-force validation",
-            "lammps_executable": str(LMP.relative_to(PROJECT)),
-            "lammps_executable_sha256": sha256(LMP),
+            "lammps_executable": "$LMP",
+            "lammps_executable_sha256": sha256(adcommon.LMP),
             "lammps_version": lammps_version(),
             "lammps_source_provenance": {
                 "path": str(SOURCE_SNAPSHOT_MANIFEST.relative_to(PROJECT)),

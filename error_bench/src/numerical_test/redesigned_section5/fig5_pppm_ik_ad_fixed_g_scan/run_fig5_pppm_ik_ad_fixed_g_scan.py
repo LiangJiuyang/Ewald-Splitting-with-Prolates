@@ -39,7 +39,7 @@ EXPECTED_LMP_SHA256 = (
 
 ORDER = 5
 RCUT = 9.0
-TOTAL_FRAMES = 50
+TOTAL_FRAMES = 51
 HOLDOUT_START = 25
 MESHES = (12, 15, 18, 20, 24, 32, 36, 40, 48, 64, 80)
 PANEL_MESHES = {
@@ -100,6 +100,14 @@ def file_record(path: Path) -> dict[str, object]:
         "size_bytes": path.stat().st_size,
         "sha256": sha256(path),
     }
+
+
+def lammps_record() -> dict[str, object]:
+    """Record the configured executable without embedding a host path."""
+
+    record = file_record(LMP)
+    record["path"] = "$LMP"
+    return record
 
 
 def case_id(branch: Branch, mesh: int) -> str:
@@ -307,7 +315,7 @@ def pooled_error(rows: list[dict[str, object]]) -> float:
 
 
 def balanced_block_sem(rows: list[dict[str, object]]) -> float:
-    blocks = (rows[0:5], rows[5:10], rows[10:15], rows[15:20], rows[20:25])
+    blocks = (rows[0:5], rows[5:10], rows[10:15], rows[15:20], rows[20:26])
     values = [pooled_error(block) for block in blocks]
     return statistics.stdev(values) / math.sqrt(len(values))
 
@@ -351,8 +359,8 @@ def measure_case(
                     "sum_reference_squared": ref2,
                 }
             )
-    if len(frame_rows) != 25:
-        raise RuntimeError(f"{case_id(branch, mesh)}: expected 25 holdout frames")
+    if len(frame_rows) != 26:
+        raise RuntimeError(f"{case_id(branch, mesh)}: expected 26 holdout frames")
     holdout_error = pooled_error(frame_rows)
     summary = {
         "case_id": case_id(branch, mesh),
@@ -400,7 +408,9 @@ def measure_case(
 
 def write_csv(path: Path, records: list[dict[str, object]]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(records[0]))
+        writer = csv.DictWriter(
+            handle, fieldnames=list(records[0]), lineterminator="\n"
+        )
         writer.writeheader()
         writer.writerows(records)
 
@@ -408,7 +418,7 @@ def write_csv(path: Path, records: list[dict[str, object]]) -> None:
 def analyze(calibrations: dict[str, dict[str, object]]) -> None:
     reference = core.read_force_dump(REFERENCE)
     if len(reference) != TOTAL_FRAMES:
-        raise RuntimeError("Ewald reference does not contain 50 frames")
+        raise RuntimeError("Ewald reference does not contain 51 frames")
     summaries: list[dict[str, object]] = []
     by_frame: list[dict[str, object]] = []
     audits: list[dict[str, object]] = []
@@ -455,7 +465,7 @@ def analyze(calibrations: dict[str, dict[str, object]]) -> None:
         "holdout_frames_zero_based": [25, 50],
         "single_rank": True,
         "omp_num_threads": 1,
-        "lammps_executable": file_record(LMP),
+        "lammps_executable": lammps_record(),
         "archived_lammps_executable_sha256": EXPECTED_LMP_SHA256,
         "water_data": file_record(DATA),
         "trajectory": file_record(TRAJECTORY),

@@ -105,7 +105,8 @@ def evaluate_tagged_pair_spectrum(
     modes: np.ndarray,
     *,
     chunk_size: int = 512,
-) -> np.ndarray:
+    return_charge_spectrum: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """Evaluate the target-conditioned diagonal pair spectrum.
 
     The direct definition would require one source sum for every target
@@ -146,12 +147,19 @@ def evaluate_tagged_pair_spectrum(
     ez = np.exp(-2j * math.pi * np.outer(unique_z, frac[:, 2]))
     q3 = charges * charges * charges
     result = np.empty(len(modes), dtype=np.float64)
+    charge_spectrum = (
+        np.empty(len(modes), dtype=np.float64) if return_charge_spectrum else None
+    )
     for start in range(0, len(modes), chunk_size):
         stop = min(start + chunk_size, len(modes))
         phase = ex[inverse_x[start:stop]] * ey[inverse_y[start:stop]]
         phase *= ez[inverse_z[start:stop]]
         rho1 = phase @ charges
         rho3 = phase @ q3
+        if charge_spectrum is not None:
+            charge_spectrum[start:stop] = (
+                rho1.real * rho1.real + rho1.imag * rho1.imag
+            ) / q2
         numerator = q2 * (rho1.real * rho1.real + rho1.imag * rho1.imag) + q4
         numerator -= 2.0 * np.real(rho1 * np.conjugate(rho3))
         # The expression is a sum of squared magnitudes.  Permit only the
@@ -160,6 +168,8 @@ def evaluate_tagged_pair_spectrum(
         if float(np.min(numerator)) < -128.0 * np.finfo(np.float64).eps * scale:
             raise FloatingPointError("tagged pair spectrum became materially negative")
         result[start:stop] = np.maximum(numerator, 0.0) / denominator
+    if charge_spectrum is not None:
+        return result, charge_spectrum
     return result
 
 

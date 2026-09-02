@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-r"""Generate the AD data used in Figure 5.
+r"""Generate and validate the structure-conditioned AD data for Figure 5.
 
-The lower AD row combines finite-band theoretical analysis with a 25-frame
-pilot correction. Dashed curves use SPC/E configurations from frames 1--25;
-filled markers report independent validation on frames 26--50. The calculation
-uses the production AD operator, a finite PSWF Fourier reference, and the
-closed Fourier term. No Ewald-force difference is used to form a prediction.
+Prediction is deliberately isolated from validation. It reads only trajectory
+frames 1--25, evaluates the target-conditioned pair spectrum on those
+coordinates, inserts that spectrum into the exact cell-moment AD source
+population, and freezes the resulting candidate table. A separate action may
+then run production ESP-AD and tight Ewald on frames 26--51.
 
-``--baseline`` writes the curves, ``--joint-target`` freezes a declared
-candidate set, and the corresponding validation commands append the later
-measurements. The result is a short-trajectory, implementation-specific
-screen for SPC/E water.
+The direct finite-band force difference is retained only behind the
+'--diagnostic-direct-check' action and never participates in selection.
 """
 
 from __future__ import annotations
@@ -21,11 +19,11 @@ import hashlib
 import json
 import math
 import platform
+import statistics
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 
@@ -35,31 +33,38 @@ PROJECT = HERE.parents[2]
 AD_VALIDATION = HERE / "lammps_ad_total_validation"
 sys.path[:0] = [str(HERE), str(AD_VALIDATION)]
 
+import ad_sq_descriptor as adsq  # noqa: E402
 import fixed_ad_reference as adref  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
 import build_fig5_ad_rigid_sq_theory as baseline  # noqa: E402
 import ad_validation_common as adcommon  # noqa: E402
-from ad_validation_common import coefficients, correction_force, operator  # noqa: E402
+from ad_validation_common import (  # noqa: E402
+    coefficients,
+    correction_force,
+    fit_self_correction,
+    operator,
+)
 
 
 TRAJECTORY = baseline.WATER_ROOT / "water_short_traj.lammpstrj"
 SCAN_SUMMARY = HERE / "fig5_ik_ad_order_scan" / "fig5_ik_ad_order_scan_summary.csv"
-BASE_COMPONENTS = HERE / "fig5_ad_rigid_sq_theory_prediction.csv"
-JOINT_COMPONENTS = {
-    1.0e-4: HERE / "fig5_ad_rigid_theory_selection_1e-4" / "prediction_before_validation.csv",
-    1.0e-5: HERE / "fig5_ad_rigid_theory_selection" / "prediction_before_validation.csv",
-}
-
 OUTDIR = HERE / "fig5_ad_coordinate_screen"
+RUNTIME = OUTDIR / "runtime"
+SELF_WORK = RUNTIME / "self_probes"
+
 BASELINE_PREDICTION = OUTDIR / "baseline_prediction.csv"
-BASELINE_BY_FRAME = OUTDIR / "baseline_prediction_by_frame.csv"
+BASELINE_BLOCKS = OUTDIR / "baseline_prediction_by_frame.csv"
+BASELINE_ALIASES = OUTDIR / "baseline_alias_shell.csv"
+BASELINE_SPECTRA = OUTDIR / "baseline_structure_spectra.npz"
 BASELINE_SOURCE = OUTDIR / "baseline_source.csv"
 BASELINE_MANIFEST = OUTDIR / "baseline_manifest.json"
-DIRECT_CACHE = OUTDIR / "direct_target_cache"
+UNIT_TESTS = OUTDIR / "theory_unit_tests.json"
 
 PILOT_N = 25
+PILOT_BLOCKS = ((0, 5), (5, 10), (10, 15), (15, 20), (20, 25))
+HOLDOUT_BLOCKS = ((0, 5), (5, 10), (10, 15), (15, 20), (20, 26))
 ONE_SIDED_T95_DF4 = 2.13184678632665
-DIRECT_BLOCK_SIZE = 96
+SELF_AUDIT_MAX = baseline.SELF_AUDIT_MAX
 
 
 @dataclass(frozen=True)
@@ -73,35 +78,15 @@ class Candidate:
     def case(self):
         return baseline.case_for(self.target, self.order, self.mesh)
 
-    @property
-    def key(self) -> tuple[float, int, int, float]:
-        return (
-            float(self.target.value),
-            int(self.order),
-            int(self.mesh),
-            round(float(self.target.cspread), 6),
-        )
 
-
-def read_csv(path: Path) -> list[dict[str, str]]:
-    with path.open(newline="", encoding="utf-8") as handle:
-        return list(csv.DictReader(handle))
-
-
-def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
-    if not rows:
-        raise RuntimeError(f"refusing to write an empty table: {path}")
-    fields: list[str] = []
-    seen: set[str] = set()
-    for row in rows:
-        for field in row:
-            if field not in seen:
-                seen.add(field)
-                fields.append(field)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(rows)
+@dataclass
+class CandidateTheory:
+    candidate: Candidate
+    population: adsq.ADSourceSpectrumPopulation
+    correction: np.ndarray
+    residual_self: float
+    fourier: float
+    self_metadata: dict[str, object]
 
 
 def sha256(path: Path) -> str:
@@ -114,88 +99,76 @@ def sha256(path: Path) -> str:
 
 def file_record(path: Path) -> dict[str, object]:
     return {
-        "path": str(path.relative_to(PROJECT)),
+        "path": relative_path(path),
         "bytes": path.stat().st_size,
         "sha256": sha256(path),
     }
 
 
-def json_safe_paths(value: object) -> object:
-    """Convert nested generated-artifact paths to JSON-safe strings."""
+def lammps_record() -> dict[str, object]:
+    """Record the configured executable without embedding a host path."""
 
-    if isinstance(value, Path):
-        try:
-            return str(value.relative_to(PROJECT))
-        except ValueError:
-            return str(value)
-    if isinstance(value, dict):
-        return {str(key): json_safe_paths(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [json_safe_paths(item) for item in value]
-    return value
+    record = file_record(adcommon.LMP)
+    record["path"] = "$LMP"
+    return record
 
 
-def value(row: dict[str, str], field: str) -> float:
-    return float(row[field])
+def relative_path(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(PROJECT).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
 
 
-def component_key(row: dict[str, str]) -> tuple[float, int, int, float]:
-    return (
-        float(row["target_relative_rms"]),
-        int(row["order"]),
-        int(row["actual_nx"]),
-        round(float(row["cspread"]), 6),
+def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
+    if not rows:
+        raise RuntimeError(f"refusing to write an empty table: {path}")
+    fields: list[str] = []
+    for row in rows:
+        for field in row:
+            if field not in fields:
+                fields.append(field)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def read_csv(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() == "true"
+
+
+def target_tag(value: float) -> str:
+    return f"{value:.0e}".replace("e-0", "e-")
+
+
+def load_pilot_frames() -> tuple[list[tuple[int, np.ndarray, np.ndarray, float]], str]:
+    frames, prefix_digest = ikref.parse_charge_trajectory_prefix(
+        TRAJECTORY, PILOT_N, return_sha256=True
     )
-
-
-def load_components() -> dict[tuple[float, int, int, float], dict[str, str]]:
-    """Load only the audited self/Fourier components, never rigid pair data."""
-
-    tables = [BASE_COMPONENTS, *JOINT_COMPONENTS.values()]
-    result: dict[tuple[float, int, int, float], dict[str, str]] = {}
-    for path in tables:
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        for row in read_csv(path):
-            key = component_key(row)
-            existing = result.get(key)
-            if existing is not None:
-                for field in (
-                    "residual_self_absolute_rms",
-                    "self_correction_sin1",
-                    "self_correction_sin2",
-                    "fourier_absolute_rms",
-                ):
-                    if not math.isclose(value(existing, field), value(row, field), rel_tol=0.0, abs_tol=2.0e-11):
-                        raise RuntimeError(f"inconsistent operator component {field} for {key}")
-            result[key] = row
-    return result
-
-
-def trajectory_digest(frames: Iterable[tuple[int, np.ndarray, np.ndarray, float]]) -> str:
-    digest = hashlib.sha256()
-    for timestep, q, xyz, box in frames:
-        digest.update(np.asarray([timestep], dtype="<i8").tobytes())
-        digest.update(np.asarray([box], dtype="<f8").tobytes())
-        digest.update(np.asarray(q, dtype="<f8").tobytes())
-        digest.update(np.asarray(xyz, dtype="<f8").tobytes())
-    return digest.hexdigest()
-
-
-def load_pilot_frames() -> list[tuple[int, np.ndarray, np.ndarray, float]]:
-    frames = ikref.parse_charge_trajectory(TRAJECTORY)
-    if len(frames) < PILOT_N:
-        raise RuntimeError("SPC/E trajectory has fewer than 25 screening frames")
-    pilot = frames[:PILOT_N]
-    q0 = pilot[0][1]
-    box0 = pilot[0][3]
-    if not all(np.array_equal(q, q0) and math.isclose(box, box0) for _, q, _, box in pilot):
-        raise RuntimeError("the AD pilot correction requires a constant-charge, cubic SPC/E trajectory")
-    return pilot
+    q0 = frames[0][1]
+    box0 = frames[0][3]
+    if not all(
+        np.array_equal(q, q0) and math.isclose(box, box0)
+        for _, q, _, box in frames
+    ):
+        raise RuntimeError("Figure-5 AD prediction requires fixed charges and a cubic cell")
+    return frames, prefix_digest
 
 
 def baseline_candidates() -> list[Candidate]:
-    return [Candidate(target, order, mesh, "fixed_band") for target, order, mesh in baseline.candidates()]
+    return [
+        Candidate(target, order, mesh, "fixed_band")
+        for target, order, mesh in baseline.candidates()
+    ]
 
 
 def joint_candidates(target_value: float) -> list[Candidate]:
@@ -208,7 +181,8 @@ def joint_candidates(target_value: float) -> list[Candidate]:
         meshes = (16, 18, 20, 24)
         branches = ((14.471, 1.0e-5), (16.894, 1.0e-6))
     else:
-        raise ValueError("joint AD pilot corrections are defined only at 1e-4 and 1e-5")
+        raise ValueError("joint AD screens are defined only for 1e-4 and 1e-5")
+
     result: list[Candidate] = []
     for mesh in meshes:
         for cspread, epsilon_spread in branches:
@@ -225,320 +199,439 @@ def joint_candidates(target_value: float) -> list[Candidate]:
     return result
 
 
-def canonical_modes(kernel: np.ndarray) -> tuple[np.ndarray, np.ndarray, str]:
-    """Return sorted signed modes, coefficients, and a physical-mode hash."""
-
-    mesh = kernel.shape[0]
-    if kernel.shape != (mesh, mesh, mesh):
-        raise ValueError("direct kernel must be cubic")
-    indices = np.nonzero(kernel)
-    axis = np.rint(np.fft.fftfreq(mesh) * mesh).astype(np.int64)
-    modes = np.column_stack((axis[indices[0]], axis[indices[1]], axis[indices[2]])).astype(np.int64)
-    coefficients = kernel[indices].astype(np.float64, copy=False)
-    ordering = np.lexsort((modes[:, 2], modes[:, 1], modes[:, 0]))
-    modes = modes[ordering]
-    coefficients = coefficients[ordering]
-    digest = hashlib.sha256()
-    digest.update(np.asarray(modes, dtype="<i8").tobytes())
-    digest.update(np.asarray(coefficients, dtype="<f8").tobytes())
-    return modes, coefficients, digest.hexdigest()
+def candidate_seed(candidate: Candidate, alias_shell: int) -> int:
+    payload = (
+        f"{candidate.target.value:.17g}|{candidate.mesh}|{candidate.order}|"
+        f"{candidate.target.csplit:.17g}|{candidate.target.cspread:.17g}|"
+        f"{alias_shell}"
+    ).encode("ascii")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:4], "little")
 
 
-def active_mode_force(
-    q: np.ndarray,
-    xyz: np.ndarray,
-    box_length: float,
-    modes: np.ndarray,
-    coefficients: np.ndarray,
-    *,
-    block_size: int,
-) -> np.ndarray:
-    """Direct finite-band force evaluated in blocks of physical Fourier modes."""
-
-    wavevectors = (2.0 * math.pi / box_length) * np.asarray(modes, dtype=np.float64)
-    force = np.zeros((len(q), 3), dtype=np.float64)
-    prefactor = ikref.COULOMB_REAL / box_length**3
-    for start in range(0, len(coefficients), block_size):
-        stop = min(start + block_size, len(coefficients))
-        kblock = wavevectors[start:stop]
-        phase_minus = np.exp(-1j * xyz @ kblock.T)
-        rho = q @ phase_minus
-        mode_force = (-1j * coefficients[start:stop] * rho)[:, None] * kblock
-        force += q[:, None] * (phase_minus.conj() @ mode_force).real
-    return prefactor * force
-
-
-def direct_cache_path(target: baseline.Target, signature: str) -> Path:
-    """Return a cache path for one *actual* finite Fourier target.
-
-    Resolved meshes at fixed ``c_split`` normally share this signature.  A
-    below-band mesh does not: its Nyquist cube removes physical PSWF modes and
-    must therefore receive a different direct target rather than silently
-    borrowing the resolved-band one.
-    """
-
-    tag = f"cs{target.csplit:.3f}".replace(".", "p")
-    return DIRECT_CACHE / f"direct_target_{tag}_{signature[:16]}.npz"
-
-
-def direct_for_candidate(
+def prepare_candidate(
     candidate: Candidate,
-    frames: list[tuple[int, np.ndarray, np.ndarray, float]],
+    charges: np.ndarray,
+    box: float,
     *,
-    force_rebuild: bool,
-    memory: dict[str, tuple[np.ndarray, str, int, float, Path]],
-) -> tuple[np.ndarray, str, int, float]:
-    """Load or create the direct force for this candidate's physical mode set."""
-
+    alias_shell: int,
+    samples_per_shell: int,
+    rerun_self_probes: bool,
+) -> CandidateTheory:
     case = candidate.case
     coeff = coefficients(case)
-    op = operator(case, frames[0][3])
-    modes, kernel_values, signature = canonical_modes(op.kernel)
-    if signature in memory:
-        forces, _, mode_count, regression, _ = memory[signature]
-        return forces, signature, mode_count, regression
-
-    cache_path = direct_cache_path(candidate.target, signature)
-    digest = trajectory_digest(frames)
-    if cache_path.is_file() and not force_rebuild:
-        with np.load(cache_path, allow_pickle=False) as archive:
-            cached_signature = str(archive["signature"].item())
-            cached_digest = str(archive["trajectory_digest"].item())
-            cached_modes = archive["modes"]
-            cached_values = archive["kernel_values"]
-            forces = archive["forces"]
-        if (
-            cached_signature == signature
-            and cached_digest == digest
-            and np.array_equal(cached_modes, modes)
-            and np.array_equal(cached_values, kernel_values)
-            and forces.shape == (len(frames), len(frames[0][1]), 3)
-        ):
-            payload = (forces, signature, len(modes), 0.0, cache_path)
-            memory[signature] = payload
-            return forces, signature, len(modes), 0.0
-
-    DIRECT_CACHE.mkdir(parents=True, exist_ok=True)
-    forces = np.empty((len(frames), len(frames[0][1]), 3), dtype=np.float64)
-    for frame_index, (_, q, xyz, box) in enumerate(frames):
-        forces[frame_index] = active_mode_force(
-            q, xyz, box, modes, kernel_values, block_size=DIRECT_BLOCK_SIZE
-        )
-    # Regression against the pre-existing finite-cube evaluator is deliberately
-    # performed only on the smallest resolved grid, where its tensor form is
-    # inexpensive.  This is an internal numerical check, not a manuscript claim.
-    direct_reference = ikref.direct_truncated_force(
-        frames[0][1], frames[0][2], frames[0][3], op.kernel
+    population = adsq.prepare_ad_source_spectrum_population(
+        q=charges,
+        mesh=candidate.mesh,
+        order=candidate.order,
+        box_length=box,
+        rcut=baseline.RCUT,
+        csplit=candidate.target.csplit,
+        cspread=candidate.target.cspread,
+        coeff=coeff,
+        max_shell=alias_shell,
+        samples_per_shell=samples_per_shell,
+        seed=candidate_seed(candidate, alias_shell),
     )
-    regression = float(np.max(np.abs(forces[0] - direct_reference)))
-    if regression > 3.0e-11:
-        raise RuntimeError(f"finite-band direct-force regression failed: {regression:.3e}")
-    np.savez_compressed(
-        cache_path,
-        signature=np.asarray(signature),
-        trajectory_digest=np.asarray(digest),
-        modes=modes,
-        kernel_values=kernel_values,
-        forces=forces,
+    correction, _, audit = fit_self_correction(
+        case, box, SELF_WORK, rerun=rerun_self_probes
     )
-    payload = (forces, signature, len(modes), regression, cache_path)
-    memory[signature] = payload
-    return forces, signature, len(modes), regression
-
-
-def mean_square(vector: np.ndarray) -> float:
-    return float(np.mean(np.sum(vector * vector, axis=1)))
-
-
-def mean_dot(left: np.ndarray, right: np.ndarray) -> float:
-    return float(np.mean(np.sum(left * right, axis=1)))
-
-
-def block_sem(values: list[float]) -> float:
-    if len(values) != PILOT_N:
-        raise ValueError("screening uncertainty requires exactly 25 frames")
-    blocks = [
-        math.sqrt(float(np.mean(np.asarray(values[start : start + 5], dtype=np.float64) ** 2)))
-        for start in range(0, PILOT_N, 5)
-    ]
-    return float(np.std(blocks, ddof=1) / math.sqrt(len(blocks)))
-
-
-def assert_matching_direct_target(
-    candidate: Candidate,
-    op: adref.ADOperator,
-    expected_signature: str,
-) -> None:
-    modes, _, signature = canonical_modes(op.kernel)
-    if signature != expected_signature:
+    if int(audit["actual_mesh"]) != candidate.mesh:
         raise RuntimeError(
-            "pilot-corrected AD operator and finite-band target do not "
-            f"match: {candidate.case.case_id} ({len(modes)} modes)"
+            f"{case.case_id}: LAMMPS rounded M={candidate.mesh} "
+            f"to M={audit['actual_mesh']}"
         )
-
-
-def evaluate_candidate(
-    candidate: Candidate,
-    component: dict[str, str],
-    frames: list[tuple[int, np.ndarray, np.ndarray, float]],
-    direct_forces: np.ndarray,
-    direct_signature: str,
-    direct_mode_count: int,
-) -> tuple[dict[str, object], list[dict[str, object]]]:
-    """Evaluate finite-band AD theory plus the pilot correction for one candidate."""
-
-    case = candidate.case
-    box = frames[0][3]
-    coeff = coefficients(case)
-    op = operator(case, box)
-    sigma_up = math.pi * baseline.RCUT * candidate.mesh / (candidate.target.csplit * box)
-    assert_matching_direct_target(candidate, op, direct_signature)
-    correction = np.asarray(
-        [value(component, "self_correction_sin1"), value(component, "self_correction_sin2")],
-        dtype=np.float64,
+    if float(audit["holdout_max_abs_component"]) > SELF_AUDIT_MAX:
+        raise RuntimeError(f"{case.case_id}: unit-charge self correction failed")
+    (
+        self_cell,
+        self8,
+        self12,
+        quadrature_order,
+        n8_to_n12,
+        final_refinement,
+    ) = baseline.converged_residual_self_cell_rms(case, box, correction)
+    residual_self = math.sqrt(float(np.mean(charges**4))) * self_cell
+    fourier = ikref.closed_fourier_estimate(
+        charges,
+        box,
+        baseline.RCUT,
+        candidate.target.csplit,
+        coeff,
+        kmax=candidate.target.csplit / baseline.RCUT,
     )
-    fourier2 = value(component, "fourier_absolute_rms") ** 2
-    force_scale = baseline.coarse_force_scale()
+    metadata = {
+        "self_correction_sin1": float(correction[0]),
+        "self_correction_sin2": float(correction[1]),
+        "self_probe_fit_max_abs_component": float(audit["fit_max_abs_component"]),
+        "self_probe_holdout_max_abs_component": float(
+            audit["holdout_max_abs_component"]
+        ),
+        "residual_self_cell_rms": self_cell,
+        "residual_self_cell_rms_n8": self8,
+        "residual_self_cell_rms_n12": self12,
+        "residual_self_quadrature_order_per_half": quadrature_order,
+        "residual_self_n8_to_n12_relative": n8_to_n12,
+        "residual_self_final_refinement_relative": final_refinement,
+    }
+    return CandidateTheory(
+        candidate=candidate,
+        population=population,
+        correction=correction,
+        residual_self=residual_self,
+        fourier=fourier,
+        self_metadata=metadata,
+    )
 
-    frame_rows: list[dict[str, object]] = []
-    frame_relative: list[float] = []
-    for frame_index, (timestep, q, xyz, frame_box) in enumerate(frames):
-        raw_mesh = adref.fixed_ad_mesh_force(q, xyz, op, coeff.real)
-        correction_vector = correction_force(q, xyz, frame_box, candidate.mesh, correction)
-        corrected_mesh = raw_mesh - correction_vector
-        # This exact finite-band difference includes all particle-pair and
-        # residual-self terms, including their molecular covariance, under the
-        # matched AD implementation.  No Ewald/reference-force difference is
-        # taken at this stage.
-        mesh2 = mean_square(corrected_mesh - direct_forces[frame_index])
-        total_relative = math.sqrt(mesh2 + fourier2) / force_scale
-        frame_relative.append(total_relative)
-        frame_rows.append(
+
+def evaluate_pilot_spectra(
+    frames: list[tuple[int, np.ndarray, np.ndarray, float]],
+    modes: np.ndarray,
+    *,
+    chunk_size: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    tagged_sum = np.zeros(len(modes), dtype=np.float64)
+    charge_sum = np.zeros(len(modes), dtype=np.float64)
+    tagged_blocks = np.zeros((len(PILOT_BLOCKS), len(modes)), dtype=np.float64)
+    charge_blocks = np.zeros_like(tagged_blocks)
+    for frame_index, (_, q, xyz, box) in enumerate(frames):
+        tagged, ordinary = adsq.evaluate_tagged_pair_spectrum(
+            q,
+            xyz,
+            box,
+            modes,
+            chunk_size=chunk_size,
+            return_charge_spectrum=True,
+        )
+        tagged_sum += tagged
+        charge_sum += ordinary
+        tagged_blocks[frame_index // 5] += tagged
+        charge_blocks[frame_index // 5] += ordinary
+        print(
+            json.dumps(
+                {
+                    "stage": "pilot_structure_factor",
+                    "frame": frame_index + 1,
+                    "frames": PILOT_N,
+                    "mode_count": len(modes),
+                }
+            ),
+            flush=True,
+        )
+    return (
+        tagged_sum / PILOT_N,
+        charge_sum / PILOT_N,
+        tagged_blocks / 5.0,
+        charge_blocks / 5.0,
+    )
+
+
+def pair_rms(charges: np.ndarray, chi2: float) -> float:
+    q2 = charges * charges
+    pair_factor = float((np.sum(q2) ** 2 - np.sum(q2 * q2)) / len(charges))
+    return ikref.COULOMB_REAL * math.sqrt(max(pair_factor * chi2, 0.0))
+
+
+def alias_relative_sem(
+    charges: np.ndarray,
+    chi2: float,
+    pair: float,
+    total: float,
+    force_scale: float,
+    shell_variances: dict[int, float],
+) -> float:
+    if chi2 <= 0.0 or total <= 0.0:
+        return 0.0
+    chi_sem = math.sqrt(math.fsum(shell_variances.values()))
+    q2 = charges * charges
+    pair_factor = float((np.sum(q2) ** 2 - np.sum(q2 * q2)) / len(charges))
+    pair_sem = (
+        ikref.COULOMB_REAL
+        * math.sqrt(pair_factor)
+        * chi_sem
+        / (2.0 * math.sqrt(chi2))
+    )
+    return (pair / total) * pair_sem / force_scale
+
+
+def evaluate_theory(
+    theory: CandidateTheory,
+    mapping: dict[str, object],
+    charges: np.ndarray,
+    tagged_mean: np.ndarray,
+    charge_mean: np.ndarray,
+    tagged_blocks: np.ndarray,
+    force_scale: float,
+    pilot_prefix_sha256: str,
+    box: float,
+) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
+    candidate = theory.candidate
+    population = theory.population
+    corrected_chi2, shell_values, shell_variances = (
+        adsq.corrected_chi2_with_sampling(population, mapping, tagged_mean)
+    )
+    ordinary_chi2, _, _ = adsq.corrected_chi2_with_sampling(
+        population, mapping, charge_mean
+    )
+    homogeneous_pair = pair_rms(charges, population.homogeneous_chi2)
+    corrected_pair = pair_rms(charges, corrected_chi2)
+    ordinary_pair = pair_rms(charges, ordinary_chi2)
+    total = math.sqrt(
+        corrected_pair**2 + theory.residual_self**2 + theory.fourier**2
+    )
+    relative = total / force_scale
+
+    block_rows: list[dict[str, object]] = []
+    block_relative: list[float] = []
+    for block_index, (start, stop) in enumerate(PILOT_BLOCKS):
+        block_chi2, _, _ = adsq.corrected_chi2_with_sampling(
+            population, mapping, tagged_blocks[block_index]
+        )
+        block_pair = pair_rms(charges, block_chi2)
+        block_total = math.sqrt(
+            block_pair**2 + theory.residual_self**2 + theory.fourier**2
+        )
+        block_relative.append(block_total / force_scale)
+        block_rows.append(
             {
-                "scope": candidate.scope,
-                "candidate_id": case.case_id,
-                "target_relative_rms": candidate.target.value,
-                "order": candidate.order,
-                "actual_nx": candidate.mesh,
-                "actual_grid_points": candidate.mesh**3,
-                "csplit": candidate.target.csplit,
-                "cspread": candidate.target.cspread,
-                "screening_frame": frame_index + 1,
-                "screening_frame_zero_based": frame_index,
-                "timestep": timestep,
-                "mesh_mean_square_direct_coordinate": mesh2,
-                "fourier_mean_square_closed": fourier2,
-                "predicted_total_relative_rms": total_relative,
+                "candidate_id": candidate.case.case_id,
+                "target": candidate.target.value,
+                "block": block_index + 1,
+                "frame_first": start + 1,
+                "frame_last": stop,
+                "measured_stag_corrected_pair_rms": block_pair,
+                "total_predicted_relative_rms": block_total / force_scale,
             }
         )
-
-    mesh2 = float(
-        np.mean([float(row["mesh_mean_square_direct_coordinate"]) for row in frame_rows])
+    frame_sem = statistics.stdev(block_relative) / math.sqrt(len(block_relative))
+    sampling_sem = alias_relative_sem(
+        charges,
+        corrected_chi2,
+        corrected_pair,
+        total,
+        force_scale,
+        shell_variances,
     )
-    total_relative = math.sqrt(mesh2 + fourier2) / force_scale
-    relative_sem = block_sem(frame_relative)
-    upper95 = total_relative + ONE_SIDED_T95_DF4 * relative_sem
+    combined_sem = math.hypot(frame_sem, sampling_sem)
+    upper95 = relative + ONE_SIDED_T95_DF4 * combined_sem
+    sigma_up = (
+        math.pi
+        * baseline.RCUT
+        * candidate.mesh
+        / (candidate.target.csplit * box)
+    )
 
-    row = {
+    row: dict[str, object] = {
         "method": "ESP production AD",
         "scope": candidate.scope,
-        "candidate_id": case.case_id,
+        "candidate_id": candidate.case.case_id,
+        "target": candidate.target.value,
         "target_relative_rms": candidate.target.value,
-        "order": candidate.order,
+        "M": candidate.mesh,
         "actual_nx": candidate.mesh,
         "actual_grid_points": candidate.mesh**3,
-        "sigma_up": sigma_up,
-        "resolved_band": sigma_up >= 1.0,
+        "P": candidate.order,
+        "order": candidate.order,
+        "c_split": candidate.target.csplit,
+        "csplit": candidate.target.csplit,
+        "c_spread": candidate.target.cspread,
+        "cspread": candidate.target.cspread,
         "epsilon_split": candidate.target.epsilon_split,
         "epsilon_spread": candidate.target.epsilon_spread,
-        "csplit": candidate.target.csplit,
-        "cspread": candidate.target.cspread,
-        "screening_frames": PILOT_N,
-        "screening_force_scale": force_scale,
-        "screening_force_scale_source": "coarse PPPM force evaluation on frames 1--25; no Ewald reference",
-        "ad_estimator": "finite-band theoretical analysis + 25-frame pilot correction",
-        "coordinate_mesh_absolute_rms": math.sqrt(mesh2),
-        "coordinate_mesh_direct_absolute_rms": math.sqrt(mesh2),
-        "coordinate_mesh_formula_to_direct_ratio": 1.0,
-        "closed_fourier_absolute_rms": math.sqrt(fourier2),
-        "predicted_total_absolute_rms": math.sqrt(mesh2 + fourier2),
-        "predicted_total_relative_rms": total_relative,
-        "predicted_total_relative_block5_sem": relative_sem,
+        "sigma_up": sigma_up,
+        "resolved_band": sigma_up >= 1.0,
+        "homogeneous_pair_chi2": population.homogeneous_chi2,
+        "measured_stag_corrected_pair_chi2": corrected_chi2,
+        "homogeneous_pair_rms": homogeneous_pair,
+        "homogeneous_pair_absolute_rms": homogeneous_pair,
+        "measured_stag_corrected_pair_rms": corrected_pair,
+        "measured_stag_corrected_pair_absolute_rms": corrected_pair,
+        "ordinary_sq_corrected_pair_rms_diagnostic": ordinary_pair,
+        "residual_self_rms": theory.residual_self,
+        "residual_self_absolute_rms": theory.residual_self,
+        "fourier_rms": theory.fourier,
+        "fourier_absolute_rms": theory.fourier,
+        "total_predicted_absolute_rms": total,
+        "predicted_total_absolute_rms": total,
+        "total_predicted_relative_rms": relative,
+        "predicted_total_relative_rms": relative,
+        "five_block_sem_relative": frame_sem,
+        "predicted_total_relative_five_block_sem": frame_sem,
+        "predicted_total_relative_block5_sem": frame_sem,
+        "alias_sampling_sem_relative": sampling_sem,
+        "predicted_total_relative_alias_sampling_sem": sampling_sem,
+        "combined_sem_relative": combined_sem,
+        "predicted_total_relative_combined_sem": combined_sem,
+        "one_sided_95_upper_relative": upper95,
         "predicted_total_relative_one_sided_95_upper": upper95,
-        "prediction_passes_target": total_relative <= candidate.target.value,
-        "selection_passes_target": sigma_up >= 1.0 and upper95 <= candidate.target.value,
+        "captured_homogeneous_alias_fraction": (
+            population.captured_homogeneous_chi2 / population.homogeneous_chi2
+        ),
+        "captured_homogeneous_chi2_fraction": (
+            population.captured_homogeneous_chi2 / population.homogeneous_chi2
+        ),
+        "unresolved_homogeneous_alias_fraction": (
+            population.unresolved_homogeneous_chi2 / population.homogeneous_chi2
+        ),
+        "unresolved_homogeneous_chi2_fraction": (
+            population.unresolved_homogeneous_chi2 / population.homogeneous_chi2
+        ),
+        "alias_shell": population.alias_shell,
+        "samples_per_alias_shell": population.samples_per_shell,
+        "base_mode_count": population.base_mode_count,
+        "zeroed_active_mode_count": population.zeroed_active_mode_count,
+        "prediction_passes_target": relative <= candidate.target.value,
+        "selection_passes_target": (
+            sigma_up >= 1.0 and upper95 <= candidate.target.value
+        ),
+        "selection_result": (
+            "pass"
+            if sigma_up >= 1.0 and upper95 <= candidate.target.value
+            else "fail"
+        ),
+        "pilot_frames": "1--25",
+        "pilot_frame_count": PILOT_N,
+        "pilot_coordinate_prefix_sha256": pilot_prefix_sha256,
+        "screening_force_scale": force_scale,
+        "screening_force_scale_source": (
+            "coarse PPPM force evaluation on frames 1--25; no Ewald reference"
+        ),
         "prediction_reference_force_accessed": False,
+        "prediction_holdout_coordinates_accessed": False,
         "prediction_molecular_coordinates_accessed": True,
-        "prediction_structure_input": "SPC/E pilot configurations, frames 1--25",
-        "direct_reference": "finite-band PSWF Fourier reference",
-        "closed_terms": "Eq. (56) closed Fourier contribution",
-        "selection_scope": "finite-band theoretical analysis with a 25-frame pilot correction; not a universal molecular AD estimator",
-        "direct_mode_signature": direct_signature,
-        "direct_active_mode_count": direct_mode_count,
-        "zeroed_active_mode_count": op.zeroed_active_mode_count,
+        "prediction_structure_input": (
+            "measured target-conditioned S_tag from frames 1--25"
+        ),
+        "ad_estimator": (
+            "measured target-conditioned S_tag with exact AD cell-moment "
+            "source weights, production residual-self theory, and closed Fourier error"
+        ),
+        "uncertainty_combination": (
+            "quadrature of five-block frame SEM and alias importance-sampling SEM"
+        ),
+        "covariance_approximation": "pair/self/Fourier covariances are neglected",
+        **theory.self_metadata,
     }
-    return row, frame_rows
+    alias_rows = [
+        {
+            "candidate_id": candidate.case.case_id,
+            "target": candidate.target.value,
+            "M": candidate.mesh,
+            "P": candidate.order,
+            "c_spread": candidate.target.cspread,
+            "alias_shell": shell,
+            "homogeneous_shell_chi2": population.shell_weight_sums[shell],
+            "measured_stag_shell_correction_chi2": shell_values[shell],
+            "importance_sampling_chi2_sem": math.sqrt(shell_variances[shell]),
+            "samples": population.samples_per_shell,
+        }
+        for shell in range(1, population.alias_shell + 1)
+    ]
+    return row, block_rows, alias_rows
+
+
+def save_spectra(
+    path: Path,
+    modes: np.ndarray,
+    tagged_mean: np.ndarray,
+    charge_mean: np.ndarray,
+    tagged_blocks: np.ndarray,
+    charge_blocks: np.ndarray,
+    pilot_prefix_sha256: str,
+) -> None:
+    np.savez_compressed(
+        path,
+        modes=np.asarray(modes, dtype=np.int64),
+        mean_target_conditioned_s_tag=tagged_mean,
+        mean_charge_s_q=charge_mean,
+        block_mean_target_conditioned_s_tag=tagged_blocks,
+        block_mean_charge_s_q=charge_blocks,
+        block_frame_bounds=np.asarray(
+            ((1, 5), (6, 10), (11, 15), (16, 20), (21, 25)),
+            dtype=np.int64,
+        ),
+        pilot_coordinate_prefix_sha256=np.asarray(pilot_prefix_sha256),
+    )
 
 
 def evaluate_screen(
-    candidates: list[Candidate], *, force_rebuild_direct: bool
-) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, object]]:
+    candidates: list[Candidate],
+    *,
+    alias_shell: int,
+    samples_per_shell: int,
+    chunk_size: int,
+    rerun_self_probes: bool,
+    spectra_path: Path,
+) -> tuple[
+    list[dict[str, object]],
+    list[dict[str, object]],
+    list[dict[str, object]],
+    dict[str, object],
+]:
     if not candidates:
         raise ValueError("candidate list is empty")
-    components = load_components()
-    frames = load_pilot_frames()
-    grouped: dict[float, list[Candidate]] = {}
-    for candidate in candidates:
-        grouped.setdefault(float(candidate.target.value), []).append(candidate)
-    predictions: list[dict[str, object]] = []
-    by_frame: list[dict[str, object]] = []
-    direct_records: dict[str, object] = {}
-    direct_memory: dict[str, tuple[np.ndarray, str, int, float, Path]] = {}
+    frames, prefix_digest = load_pilot_frames()
+    charges = frames[0][1]
+    box = frames[0][3]
+    force_scale = baseline.coarse_force_scale()
     started = time.time()
-    for target_value, group in sorted(grouped.items(), reverse=True):
-        for local_index, candidate in enumerate(group, start=1):
-            direct_forces, signature, mode_count, direct_regression = direct_for_candidate(
+    prepared: list[CandidateTheory] = []
+    for index, candidate in enumerate(candidates, start=1):
+        prepared.append(
+            prepare_candidate(
                 candidate,
-                frames,
-                force_rebuild=force_rebuild_direct,
-                memory=direct_memory,
+                charges,
+                box,
+                alias_shell=alias_shell,
+                samples_per_shell=samples_per_shell,
+                rerun_self_probes=rerun_self_probes,
             )
-            record_key = f"{target_value:.0e}:{signature[:16]}"
-            if record_key not in direct_records:
-                direct_records[record_key] = {
-                    "signature": signature,
-                    "active_mode_count": mode_count,
-                    "regression_max_component": direct_regression,
-                    "cache": str(
-                        direct_cache_path(candidate.target, signature).relative_to(PROJECT)
-                    ),
+        )
+        print(
+            json.dumps(
+                {
+                    "stage": "prepare_ad_population",
+                    "candidate": index,
+                    "candidate_count": len(candidates),
+                    "id": candidate.case.case_id,
                 }
-            component = components.get(candidate.key)
-            if component is None:
-                raise KeyError(f"missing audited self/Fourier components for {candidate.key}")
-            row, detail = evaluate_candidate(
-                candidate, component, frames, direct_forces, signature, mode_count
-            )
-            predictions.append(row)
-            by_frame.extend(detail)
-            print(
-                json.dumps(
-                    {
-                        "stage": "coordinate_AD_screen",
-                        "scope": candidate.scope,
-                        "target": target_value,
-                        "candidate": local_index,
-                        "target_candidates": len(group),
-                        "P": candidate.order,
-                        "M": candidate.mesh,
-                        "cspread": candidate.target.cspread,
-                        "prediction": row["predicted_total_relative_rms"],
-                        "upper95": row["predicted_total_relative_one_sided_95_upper"],
-                        "elapsed_s": round(time.time() - started, 2),
-                    }
-                ),
-                flush=True,
-            )
+            ),
+            flush=True,
+        )
+    modes, mappings = adsq.population_mode_union(
+        [item.population for item in prepared]
+    )
+    tagged_mean, charge_mean, tagged_blocks, charge_blocks = (
+        evaluate_pilot_spectra(frames, modes, chunk_size=chunk_size)
+    )
+    spectra_path.parent.mkdir(parents=True, exist_ok=True)
+    save_spectra(
+        spectra_path,
+        modes,
+        tagged_mean,
+        charge_mean,
+        tagged_blocks,
+        charge_blocks,
+        prefix_digest,
+    )
+
+    predictions: list[dict[str, object]] = []
+    block_rows: list[dict[str, object]] = []
+    alias_rows: list[dict[str, object]] = []
+    for theory, mapping in zip(prepared, mappings):
+        row, local_blocks, local_aliases = evaluate_theory(
+            theory,
+            mapping,
+            charges,
+            tagged_mean,
+            charge_mean,
+            tagged_blocks,
+            force_scale,
+            prefix_digest,
+            box,
+        )
+        predictions.append(row)
+        block_rows.extend(local_blocks)
+        alias_rows.extend(local_aliases)
     predictions.sort(
         key=lambda row: (
             -float(row["target_relative_rms"]),
@@ -547,131 +640,149 @@ def evaluate_screen(
             float(row["cspread"]),
         )
     )
-    by_frame.sort(
-        key=lambda row: (
-            -float(row["target_relative_rms"]),
-            int(row["actual_grid_points"]),
-            int(row["order"]),
-            float(row["cspread"]),
-            int(row["screening_frame_zero_based"]),
-        )
-    )
-    return predictions, by_frame, {
+    return predictions, block_rows, alias_rows, {
         "elapsed_seconds": time.time() - started,
-        "direct_targets": direct_records,
-        "screening_trajectory_sha256": trajectory_digest(frames),
+        "pilot_coordinate_prefix_sha256": prefix_digest,
+        "pilot_coordinate_frames_read": PILOT_N,
+        "holdout_coordinate_frames_read": 0,
+        "structure_mode_count": len(modes),
+        "alias_shell": alias_shell,
+        "samples_per_shell": samples_per_shell,
+        "covariance_policy": (
+            "pair/self/Fourier terms are combined in quadrature; covariance is ignored"
+        ),
+        "uncertainty_policy": (
+            "frame-block and alias-sampling SEMs are combined in quadrature"
+        ),
     }
 
 
-def write_baseline(force_rebuild_direct: bool) -> None:
-    OUTDIR.mkdir(parents=True, exist_ok=True)
-    predictions, by_frame, runtime = evaluate_screen(
-        baseline_candidates(), force_rebuild_direct=force_rebuild_direct
-    )
-    expected = len(baseline.candidates())
-    if len(predictions) != expected:
-        raise RuntimeError("baseline pilot-corrected AD matrix is incomplete")
-    write_csv(BASELINE_PREDICTION, predictions)
-    write_csv(BASELINE_BY_FRAME, by_frame)
-    payload = {
-        "schema_version": 1,
-        "purpose": "Figure 5 AD theoretical analysis with a 25-frame pilot correction",
+def prediction_manifest(
+    purpose: str,
+    predictions: Path,
+    blocks: Path,
+    aliases: Path,
+    spectra: Path,
+    runtime: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "schema_version": 2,
+        "purpose": purpose,
         "logical_order": [
-            "evaluate the finite-band AD term on frames 1--25",
-            "apply the pilot correction and write the prediction table",
-            "append independent validation only after prediction is frozen",
+            "read only coordinate frames 1--25 with the prefix reader",
+            "average measured target-conditioned S_tag over five 5-frame blocks",
+            "insert S_tag into exact production-AD cell-moment source weights",
+            "add unweighted residual-self and closed Fourier RMS in quadrature",
+            "freeze the complete candidate table and its SHA-256",
+            "permit holdout coordinate/reference access only in a later validation action",
         ],
         "prediction": {
             "reference_force_accessed": False,
             "holdout_coordinates_accessed": False,
-            "molecular_coordinates_accessed": True,
-            "frames": "1--25",
-            "estimator": "finite-band theoretical analysis + 25-frame pilot correction",
-            "selection_limit": "short-trajectory SPC/E-water screen, not a universal molecular AD estimator",
+            "coordinate_frames": "1--25",
+            "coordinate_prefix_sha256": runtime[
+                "pilot_coordinate_prefix_sha256"
+            ],
+            "structure_input": (
+                "measured target-conditioned S_tag from frames 1--25"
+            ),
+            "ordinary_sq_output": (
+                "mean_charge_s_q in the compressed structure-spectrum artifact"
+            ),
+            "pair_formula": "Coulomb*sqrt((Q2^2-Q4)/N * chi_AD,S^2)",
+            "total_formula": "sqrt(pair^2+self^2+Fourier^2)",
+            "covariance_approximation": (
+                "pair/self/Fourier covariances are neglected"
+            ),
+            "frame_uncertainty": (
+                "SEM over five contiguous blocks of five pilot frames"
+            ),
+            "alias_uncertainty": "importance-sampling SEM over alias modes",
+            "combined_uncertainty": (
+                "sqrt(frame_block_SEM^2+alias_sampling_SEM^2)"
+            ),
+            "upper_rule": (
+                "prediction + t_0.95,4 * combined_SEM; t_0.95,4="
+                f"{ONE_SIDED_T95_DF4:.14g}"
+            ),
         },
-        "candidate_count": len(predictions),
-        "inputs": [
-            file_record(path)
-            for path in (TRAJECTORY, BASE_COMPONENTS, *JOINT_COMPONENTS.values(), Path(__file__))
-        ],
-        "outputs": [file_record(path) for path in (BASELINE_PREDICTION, BASELINE_BY_FRAME)],
+        "candidate_count": len(read_csv(predictions)),
+        "inputs": {
+            "trajectory_path": relative_path(TRAJECTORY),
+            "trajectory_prefix_frames": "1--25",
+            "trajectory_prefix_sha256": runtime[
+                "pilot_coordinate_prefix_sha256"
+            ],
+            "runner": file_record(Path(__file__)),
+            "descriptor": file_record(Path(adsq.__file__)),
+            "lammps_executable": lammps_record(),
+        },
+        "outputs": {
+            path.name: file_record(path)
+            for path in (predictions, blocks, aliases, spectra)
+        },
         "runtime": runtime,
         "python": platform.python_version(),
         "numpy": np.__version__,
+        "validation": {"performed": False, "used_for_selection": False},
     }
-    BASELINE_MANIFEST.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def write_baseline(args: argparse.Namespace) -> None:
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    predictions, blocks, aliases, runtime = evaluate_screen(
+        baseline_candidates(),
+        alias_shell=args.alias_shell,
+        samples_per_shell=args.samples_per_shell,
+        chunk_size=args.chunk_size,
+        rerun_self_probes=args.rerun_self_probes,
+        spectra_path=BASELINE_SPECTRA,
+    )
+    if len(predictions) != len(baseline.candidates()):
+        raise RuntimeError("baseline structure-conditioned AD matrix is incomplete")
+    write_csv(BASELINE_PREDICTION, predictions)
+    write_csv(BASELINE_BLOCKS, blocks)
+    write_csv(BASELINE_ALIASES, aliases)
+    manifest = prediction_manifest(
+        "Figure 5 AD curves from measured pilot S_tag",
+        BASELINE_PREDICTION,
+        BASELINE_BLOCKS,
+        BASELINE_ALIASES,
+        BASELINE_SPECTRA,
+        runtime,
+    )
+    manifest["prediction_table_sha256"] = sha256(BASELINE_PREDICTION)
+    BASELINE_MANIFEST.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     print(BASELINE_PREDICTION)
 
 
-def join_baseline_validation() -> None:
-    """Join holdout errors after the baseline prediction matrix is frozen."""
-
-    if not BASELINE_PREDICTION.is_file() or not BASELINE_MANIFEST.is_file():
-        raise FileNotFoundError("write the frozen baseline AD pilot correction before validation join")
-    manifest = json.loads(BASELINE_MANIFEST.read_text(encoding="utf-8"))
-    if bool(manifest["prediction"]["reference_force_accessed"]):
-        raise RuntimeError("baseline prediction manifest indicates reference-force leakage")
-    predictions = read_csv(BASELINE_PREDICTION)
-    validation = {
-        (float(row["target_relative_rms"]), int(row["order"]), int(row["actual_nx"])): row
-        for row in read_csv(SCAN_SUMMARY)
-        if row["method"] == "ad"
-    }
-    joined: list[dict[str, object]] = []
-    for row in predictions:
-        key = (float(row["target_relative_rms"]), int(row["order"]), int(row["actual_nx"]))
-        held = validation.get(key)
-        if held is None:
-            raise KeyError(f"missing AD Ewald holdout result for {key}")
-        joined.append(
-            {
-                **row,
-                "validation_relative_rms": value(held, "holdout_relative_rms"),
-                "validation_relative_rms_balanced_block5_sem": value(
-                    held, "holdout_balanced_block5_sem"
-                ),
-                "validation_passes_target": value(held, "holdout_relative_rms")
-                <= value(row, "target_relative_rms"),
-                "prediction_to_validation_ratio": value(row, "predicted_total_relative_rms")
-                / value(held, "holdout_relative_rms"),
-                "validation_frame_first": 26,
-                "validation_frame_last": 50,
-                "validation_frame_count": 25,
-                "validation_operator": held["operator"],
-                "validation_reference": "pre-existing tight-Ewald total-force error",
-                "validation_used_for_prediction": False,
-                "validation_used_for_selection": False,
-            }
-        )
-    write_csv(BASELINE_SOURCE, joined)
-    manifest["validation"] = {
-        "joined_after_prediction_freeze": True,
-        "source": "archived frames-26--50 production-AD/Ewald total-force errors",
-        "used_for_prediction_or_selection": False,
-        "output": file_record(BASELINE_SOURCE),
-    }
-    BASELINE_MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(BASELINE_SOURCE)
-
-
 def joint_paths(target: float) -> dict[str, Path]:
-    tag = f"{target:.0e}".replace("e-0", "e-")
-    directory = OUTDIR / f"joint_{tag}"
+    directory = OUTDIR / f"joint_{target_tag(target)}"
     return {
         "directory": directory,
         "prediction": directory / "prediction_before_validation.csv",
-        "by_frame": directory / "prediction_by_frame.csv",
+        "blocks": directory / "prediction_blocks.csv",
+        "aliases": directory / "prediction_alias_shell.csv",
+        "spectra": directory / "pilot_structure_spectra.npz",
         "frozen": directory / "frozen_selection.json",
         "detail": directory / "holdout_validation_by_frame.csv",
         "summary": directory / "holdout_validation_summary.csv",
         "manifest": directory / "manifest.json",
+        "diagnostic": directory / "diagnostic_direct_check_summary.csv",
+        "diagnostic_frames": directory / "diagnostic_direct_check_by_frame.csv",
+        "convergence": directory / "alias_shell_convergence.csv",
     }
 
 
 def select_joint(rows: list[dict[str, object]]) -> dict[str, object]:
-    passing = [row for row in rows if bool(row["selection_passes_target"])]
+    passing = [row for row in rows if as_bool(row["selection_passes_target"])]
     if not passing:
-        raise RuntimeError("no declared joint pilot-corrected AD candidate satisfies the one-sided target")
+        raise RuntimeError(
+            "no declared structure-conditioned AD candidate satisfies the "
+            "one-sided prediction target"
+        )
     return min(
         passing,
         key=lambda row: (
@@ -682,65 +793,106 @@ def select_joint(rows: list[dict[str, object]]) -> dict[str, object]:
     )
 
 
-def write_joint(target: float, force_rebuild_direct: bool) -> None:
+def write_joint(target: float, args: argparse.Namespace) -> None:
     paths = joint_paths(target)
     paths["directory"].mkdir(parents=True, exist_ok=True)
-    predictions, by_frame, runtime = evaluate_screen(
-        joint_candidates(target), force_rebuild_direct=force_rebuild_direct
+    predictions, blocks, aliases, runtime = evaluate_screen(
+        joint_candidates(target),
+        alias_shell=args.alias_shell,
+        samples_per_shell=args.samples_per_shell,
+        chunk_size=args.chunk_size,
+        rerun_self_probes=args.rerun_self_probes,
+        spectra_path=paths["spectra"],
     )
-    selected = select_joint(predictions)
     write_csv(paths["prediction"], predictions)
-    write_csv(paths["by_frame"], by_frame)
+    write_csv(paths["blocks"], blocks)
+    write_csv(paths["aliases"], aliases)
+    selected = select_joint(predictions)
+    prediction_sha = sha256(paths["prediction"])
     frozen = {
-        "schema_version": 1,
-        "purpose": "joint AD pilot-correction selection frozen before validation",
-        "logical_order": [
-            "use only frames 1--25 coordinates and a coarse PPPM normalization",
-            "evaluate the complete declared (M, P, c_spread) candidate set",
-            "freeze the resolution-first selection",
-            "only then permit Ewald-reference validation",
-        ],
+        "schema_version": 2,
+        "purpose": (
+            "structure-conditioned AD parameter selection frozen before "
+            "holdout coordinate or Ewald-force access"
+        ),
         "candidate_set": {
-            "target_relative_rms": target,
+            "target": target,
             "c_split": float(predictions[0]["csplit"]),
             "meshes": sorted({int(row["actual_nx"]) for row in predictions}),
             "orders": sorted({int(row["order"]) for row in predictions}),
             "c_spread": sorted({float(row["cspread"]) for row in predictions}),
+            "candidate_count": len(predictions),
         },
-        "selection_rule": "resolved band and pilot-corrected AD prediction plus one-sided 95% five-block uncertainty <= target; minimum M^3, then P, then c_spread",
-        "selected": selected,
+        "selection_rule": (
+            "sigma_up >= 1 and prediction+t_0.95,4*combined_SEM <= target; "
+            "then minimum M^3, P, c_spread"
+        ),
+        "prediction_table_path": relative_path(paths["prediction"]),
+        "prediction_table_sha256": prediction_sha,
+        "pilot_coordinate_prefix_sha256": runtime[
+            "pilot_coordinate_prefix_sha256"
+        ],
         "prediction_reference_force_accessed": False,
-        "prediction_molecular_coordinates_accessed": True,
-        "prediction_table_sha256": sha256(paths["prediction"]),
-        "runtime": runtime,
+        "prediction_holdout_coordinates_accessed": False,
+        "prediction_structure_input": (
+            "measured target-conditioned S_tag from frames 1--25"
+        ),
+        "selected": selected,
     }
-    paths["frozen"].write_text(json.dumps(frozen, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    manifest = {
-        "schema_version": 1,
-        "purpose": "joint AD theoretical analysis with a pilot correction and deferred validation",
-        "frozen_selection": file_record(paths["frozen"]),
-        "prediction": file_record(paths["prediction"]),
-        "screening": {
-            "frames": "1--25",
-            "reference_force_accessed": False,
-            "coordinate_accessed": True,
-            "estimator": "finite-band theoretical analysis + 25-frame pilot correction",
-        },
-        "validation": {"performed": False, "used_for_selection": False},
-    }
-    paths["manifest"].write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"stage": "joint_coordinate_selection_frozen", "target": target, "selected": selected}))
+    paths["frozen"].write_text(
+        json.dumps(frozen, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    manifest = prediction_manifest(
+        "joint AD structure-factor screen with deferred holdout validation",
+        paths["prediction"],
+        paths["blocks"],
+        paths["aliases"],
+        paths["spectra"],
+        runtime,
+    )
+    manifest["frozen_selection"] = file_record(paths["frozen"])
+    paths["manifest"].write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(
+        json.dumps(
+            {
+                "stage": "selection_frozen",
+                "target": target,
+                "selected": selected,
+                "frozen_sha256": sha256(paths["frozen"]),
+            }
+        )
+    )
+
+
+def verify_frozen(target: float) -> tuple[dict[str, object], dict[str, Path]]:
+    paths = joint_paths(target)
+    for key in ("prediction", "frozen", "manifest"):
+        if not paths[key].is_file():
+            raise FileNotFoundError(
+                f"freeze target {target:.0e} before validation: {paths[key]}"
+            )
+    frozen = json.loads(paths["frozen"].read_text(encoding="utf-8"))
+    if frozen["prediction_table_sha256"] != sha256(paths["prediction"]):
+        raise RuntimeError("the frozen candidate table changed after selection")
+    if bool(frozen["prediction_reference_force_accessed"]):
+        raise RuntimeError("the frozen prediction accessed reference forces")
+    if bool(frozen["prediction_holdout_coordinates_accessed"]):
+        raise RuntimeError("the frozen prediction accessed holdout coordinates")
+    selected = frozen["selected"]
+    matches = [
+        row
+        for row in read_csv(paths["prediction"])
+        if row["candidate_id"] == selected["candidate_id"]
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("frozen selection is not a unique candidate-table row")
+    return frozen, paths
 
 
 def validate_joint(target: float, *, rerun_lammps: bool) -> None:
-    """Run/read Ewald validation only after reading the frozen selection."""
-
-    paths = joint_paths(target)
-    if not paths["frozen"].is_file() or not paths["manifest"].is_file():
-        raise FileNotFoundError("freeze a joint coordinate selection before validation")
-    frozen = json.loads(paths["frozen"].read_text(encoding="utf-8"))
-    if bool(frozen["prediction_reference_force_accessed"]):
-        raise RuntimeError("joint selection is contaminated by a reference-force prediction")
+    frozen, paths = verify_frozen(target)
     selected = frozen["selected"]
     case_target = baseline.Target(
         value=target,
@@ -750,53 +902,66 @@ def validate_joint(target: float, *, rerun_lammps: bool) -> None:
         cspread=float(selected["cspread"]),
         meshes=(int(selected["actual_nx"]),),
     )
-    case = baseline.case_for(case_target, int(selected["order"]), int(selected["actual_nx"]))
+    case = baseline.case_for(
+        case_target, int(selected["order"]), int(selected["actual_nx"])
+    )
+
+    # Importing the production validation module is intentionally delayed
+    # until the frozen artifact and candidate-table hash have been verified.
     from run_water_ad_validation import (  # noqa: E402
         PILOT_COUNT,
         TOTAL_COUNT,
-        TRAJECTORY as VALIDATION_TRAJECTORY,
         refresh_ewald_reference,
         run_water_case,
     )
 
     observed, run_paths = run_water_case(case, rerun=rerun_lammps)
-    reference, _, reference_paths = refresh_ewald_reference(rerun=False)
-    frames = ikref.parse_charge_trajectory(VALIDATION_TRAJECTORY)
-    if len(observed) != TOTAL_COUNT or len(reference) != TOTAL_COUNT or len(frames) != TOTAL_COUNT:
-        raise RuntimeError("joint pilot-corrected AD validation has incomplete force records")
+    reference, _, reference_paths = refresh_ewald_reference(rerun=rerun_lammps)
+    if len(observed) != TOTAL_COUNT or len(reference) != TOTAL_COUNT:
+        raise RuntimeError("production AD/Ewald validation has incomplete force records")
     details: list[dict[str, object]] = []
     for frame_index in range(PILOT_COUNT, TOTAL_COUNT):
-        timestep, _, _, _ = frames[frame_index]
         observed_time, full, _, _ = observed[frame_index]
         reference_time, reference_force = reference[frame_index]
-        if timestep != observed_time or timestep != reference_time:
-            raise RuntimeError("joint pilot-corrected AD validation timestep mismatch")
+        if observed_time != reference_time:
+            raise RuntimeError("production AD/Ewald validation timestep mismatch")
         difference = full - reference_force
         details.append(
             {
                 "candidate_id": case.case_id,
-                "target_relative_rms": target,
+                "target": target,
+                "frame": frame_index + 1,
                 "frame_zero_based": frame_index,
-                "timestep": timestep,
-                "sum_total_difference_squared": float(np.sum(difference * difference)),
-                "sum_reference_squared": float(np.sum(reference_force * reference_force)),
-                "total_relative_error": math.sqrt(
-                    float(np.sum(difference * difference) / np.sum(reference_force * reference_force))
+                "timestep": observed_time,
+                "sum_total_difference_squared": float(np.sum(difference**2)),
+                "sum_reference_squared": float(np.sum(reference_force**2)),
+                "frame_relative_rms": math.sqrt(
+                    float(np.sum(difference**2) / np.sum(reference_force**2))
                 ),
             }
         )
-    diff2 = float(sum(float(row["sum_total_difference_squared"]) for row in details))
-    ref2 = float(sum(float(row["sum_reference_squared"]) for row in details))
-    block_values: list[float] = []
-    for start in range(0, len(details), 5):
-        block = details[start : start + 5]
+    if len(details) != 26:
+        raise RuntimeError("holdout must contain frames 26--51")
+    diff2 = math.fsum(float(row["sum_total_difference_squared"]) for row in details)
+    ref2 = math.fsum(float(row["sum_reference_squared"]) for row in details)
+    block_values = []
+    block_sizes = []
+    for start, stop in HOLDOUT_BLOCKS:
+        block = details[start:stop]
+        block_sizes.append(len(block))
         block_values.append(
             math.sqrt(
-                sum(float(row["sum_total_difference_squared"]) for row in block)
-                / sum(float(row["sum_reference_squared"]) for row in block)
+                math.fsum(
+                    float(row["sum_total_difference_squared"]) for row in block
+                )
+                / math.fsum(float(row["sum_reference_squared"]) for row in block)
             )
         )
+    if block_sizes != [5, 5, 5, 5, 6]:
+        raise AssertionError(f"unexpected holdout blocks: {block_sizes}")
     holdout = math.sqrt(diff2 / ref2)
+    validation_sem = statistics.stdev(block_values) / math.sqrt(len(block_values))
+    prediction = float(selected["predicted_total_relative_rms"])
     summary = {
         "candidate_id": case.case_id,
         "target_relative_rms": target,
@@ -805,75 +970,440 @@ def validate_joint(target: float, *, rerun_lammps: bool) -> None:
         "order": case.order,
         "csplit": case.csplit,
         "cspread": case.cspread,
-        "validation_frames": "26--50",
+        "validation_frames": "26--51",
         "validation_frame_count": len(details),
+        "validation_block_sizes": "5+5+5+5+6",
         "validation_relative_rms": holdout,
-        "validation_relative_rms_block5_sem": float(np.std(block_values, ddof=1) / math.sqrt(len(block_values))),
-        "prediction_relative_rms": float(selected["predicted_total_relative_rms"]),
-        "prediction_upper95_relative": float(selected["predicted_total_relative_one_sided_95_upper"]),
-        "prediction_to_validation_ratio": float(selected["predicted_total_relative_rms"]) / holdout,
+        "validation_relative_rms_block5_sem": validation_sem,
+        "prediction_relative_rms": prediction,
+        "prediction_upper95_relative": float(
+            selected["predicted_total_relative_one_sided_95_upper"]
+        ),
+        "prediction_to_validation_ratio": prediction / holdout,
         "validation_passes_target": holdout <= target,
         "selection_used_holdout": False,
-        "validation_operator": "production LAMMPS ESP AD with residual-self correction",
-        "validation_reference": "tight Ewald total force",
+        "validation_operator": (
+            "production LAMMPS ESP AD with unit-charge residual-self correction"
+        ),
+        "validation_reference": "tight Ewald total force, input tolerance 1e-12",
     }
     write_csv(paths["detail"], details)
     write_csv(paths["summary"], [summary])
     manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
     manifest["validation"] = {
         "performed": True,
+        "performed_after_frozen_sha256_verification": True,
+        "used_for_prediction": False,
         "used_for_selection": False,
-        "frames": "26--50",
+        "frames": "26--51",
+        "block_sizes": [5, 5, 5, 5, 6],
         "detail": file_record(paths["detail"]),
         "summary": file_record(paths["summary"]),
-        "raw_paths": json_safe_paths(
-            {"selected_ad": run_paths, "ewald_reference": reference_paths}
+        "production_ad_artifacts": {
+            key: {
+                label: relative_path(path)
+                for label, path in records.items()
+            }
+            for key, records in run_paths.items()
+        },
+        "ewald_artifacts": {
+            key: relative_path(path) for key, path in reference_paths.items()
+        },
+        "lammps_executable": lammps_record(),
+    }
+    paths["manifest"].write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(summary, indent=2))
+
+
+def join_baseline_validation() -> None:
+    if not BASELINE_PREDICTION.is_file() or not BASELINE_MANIFEST.is_file():
+        raise FileNotFoundError("write the baseline prediction before validation")
+    manifest = json.loads(BASELINE_MANIFEST.read_text(encoding="utf-8"))
+    if sha256(BASELINE_PREDICTION) != manifest["prediction_table_sha256"]:
+        raise RuntimeError("baseline prediction changed before validation")
+    if not SCAN_SUMMARY.is_file():
+        raise FileNotFoundError(
+            "run fig5_ik_ad_order_scan/run_fig5_ik_ad_order_scan.py first"
+        )
+    validation = {
+        (float(row["target_relative_rms"]), int(row["order"]), int(row["actual_nx"])): row
+        for row in read_csv(SCAN_SUMMARY)
+        if row["method"] == "ad"
+    }
+    joined = []
+    for row in read_csv(BASELINE_PREDICTION):
+        key = (
+            float(row["target_relative_rms"]),
+            int(row["order"]),
+            int(row["actual_nx"]),
+        )
+        held = validation.get(key)
+        if held is None:
+            raise KeyError(f"missing independent AD holdout result for {key}")
+        predicted = float(row["predicted_total_relative_rms"])
+        measured = float(held["holdout_relative_rms"])
+        joined.append(
+            {
+                **row,
+                "validation_relative_rms": measured,
+                "validation_relative_rms_balanced_block5_sem": float(
+                    held["holdout_balanced_block5_sem"]
+                ),
+                "validation_passes_target": measured
+                <= float(row["target_relative_rms"]),
+                "prediction_to_validation_ratio": predicted / measured,
+                "validation_frame_first": 26,
+                "validation_frame_last": 51,
+                "validation_frame_count": 26,
+                "validation_block_sizes": "5+5+5+5+6",
+                "validation_operator": held["operator"],
+                "validation_reference": "tight Ewald total force",
+                "validation_used_for_prediction": False,
+                "validation_used_for_selection": False,
+            }
+        )
+    write_csv(BASELINE_SOURCE, joined)
+    manifest["validation"] = {
+        "performed": True,
+        "joined_after_prediction_table_sha256_verification": True,
+        "used_for_prediction_or_selection": False,
+        "frames": "26--51",
+        "block_sizes": [5, 5, 5, 5, 6],
+        "source": file_record(SCAN_SUMMARY),
+        "output": file_record(BASELINE_SOURCE),
+    }
+    BASELINE_MANIFEST.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(BASELINE_SOURCE)
+
+
+def canonical_modes(kernel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    mesh = kernel.shape[0]
+    indices = np.nonzero(kernel)
+    axis = np.rint(np.fft.fftfreq(mesh) * mesh).astype(np.int64)
+    modes = np.column_stack(
+        (axis[indices[0]], axis[indices[1]], axis[indices[2]])
+    ).astype(np.int64)
+    values = kernel[indices].astype(np.float64, copy=False)
+    ordering = np.lexsort((modes[:, 2], modes[:, 1], modes[:, 0]))
+    return modes[ordering], values[ordering]
+
+
+def active_mode_force(
+    q: np.ndarray,
+    xyz: np.ndarray,
+    box: float,
+    modes: np.ndarray,
+    kernel: np.ndarray,
+    *,
+    block_size: int = 96,
+) -> np.ndarray:
+    wavevectors = (2.0 * math.pi / box) * modes
+    force = np.zeros((len(q), 3), dtype=np.float64)
+    prefactor = ikref.COULOMB_REAL / box**3
+    for start in range(0, len(kernel), block_size):
+        stop = min(start + block_size, len(kernel))
+        kblock = wavevectors[start:stop]
+        phase_minus = np.exp(-1j * xyz @ kblock.T)
+        rho = q @ phase_minus
+        mode_force = (-1j * kernel[start:stop] * rho)[:, None] * kblock
+        force += q[:, None] * (phase_minus.conj() @ mode_force).real
+    return prefactor * force
+
+
+def diagnostic_direct_check(target: float) -> None:
+    frozen, paths = verify_frozen(target)
+    selected = frozen["selected"]
+    frames, prefix_digest = load_pilot_frames()
+    target_spec = baseline.Target(
+        value=target,
+        epsilon_split=float(selected["epsilon_split"]),
+        epsilon_spread=float(selected["epsilon_spread"]),
+        csplit=float(selected["csplit"]),
+        cspread=float(selected["cspread"]),
+        meshes=(int(selected["actual_nx"]),),
+    )
+    candidate = Candidate(
+        target_spec,
+        int(selected["order"]),
+        int(selected["actual_nx"]),
+        "diagnostic_only",
+    )
+    case = candidate.case
+    coeff = coefficients(case)
+    op = operator(case, frames[0][3])
+    modes, kernel = canonical_modes(op.kernel)
+    correction = np.asarray(
+        [
+            float(selected["self_correction_sin1"]),
+            float(selected["self_correction_sin2"]),
+        ]
+    )
+    rows = []
+    for frame_index, (timestep, q, xyz, box) in enumerate(frames):
+        mesh_force = adref.fixed_ad_mesh_force(q, xyz, op, coeff.real)
+        mesh_force -= correction_force(
+            q, xyz, box, candidate.mesh, correction
+        )
+        direct = active_mode_force(q, xyz, box, modes, kernel)
+        difference = mesh_force - direct
+        rows.append(
+            {
+                "candidate_id": case.case_id,
+                "pilot_frame": frame_index + 1,
+                "timestep": timestep,
+                "mesh_minus_direct_mean_square": float(
+                    np.mean(np.sum(difference**2, axis=1))
+                ),
+                "pilot_coordinate_prefix_sha256": prefix_digest,
+                "used_for_selection": False,
+            }
+        )
+    direct_rms = math.sqrt(
+        float(np.mean([row["mesh_minus_direct_mean_square"] for row in rows]))
+    )
+    theory_mesh = math.hypot(
+        float(selected["measured_stag_corrected_pair_rms"]),
+        float(selected["residual_self_rms"]),
+    )
+    summary = {
+        "candidate_id": case.case_id,
+        "target": target,
+        "pilot_frames": "1--25",
+        "theory_pair_plus_self_rms_covariance_omitted": theory_mesh,
+        "direct_finite_band_mesh_rms": direct_rms,
+        "theory_to_direct_ratio": theory_mesh / direct_rms,
+        "used_for_prediction": False,
+        "used_for_selection": False,
+        "diagnostic_definition": (
+            "production-matched corrected AD mesh force minus direct finite-band force"
         ),
     }
-    paths["manifest"].write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"stage": "joint_coordinate_validation_complete", "target": target, "summary": summary}))
+    write_csv(paths["diagnostic_frames"], rows)
+    write_csv(paths["diagnostic"], [summary])
+    manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+    manifest["direct_finite_band_diagnostic"] = {
+        "performed_after_selection_freeze": True,
+        "used_for_prediction_or_selection": False,
+        "summary": file_record(paths["diagnostic"]),
+        "by_frame": file_record(paths["diagnostic_frames"]),
+    }
+    paths["manifest"].write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(summary, indent=2))
+
+
+def theory_audit(target: float, args: argparse.Namespace) -> None:
+    frozen, paths = verify_frozen(target)
+    selected = frozen["selected"]
+    frames, _ = load_pilot_frames()
+    charges = frames[0][1]
+    box = frames[0][3]
+    target_spec = baseline.Target(
+        value=target,
+        epsilon_split=float(selected["epsilon_split"]),
+        epsilon_spread=float(selected["epsilon_spread"]),
+        csplit=float(selected["csplit"]),
+        cspread=float(selected["cspread"]),
+        meshes=(int(selected["actual_nx"]),),
+    )
+    candidate = Candidate(
+        target_spec,
+        int(selected["order"]),
+        int(selected["actual_nx"]),
+        "alias_convergence",
+    )
+    populations = []
+    for shell in range(1, 6):
+        populations.append(
+            adsq.prepare_ad_source_spectrum_population(
+                q=charges,
+                mesh=candidate.mesh,
+                order=candidate.order,
+                box_length=box,
+                rcut=baseline.RCUT,
+                csplit=target_spec.csplit,
+                cspread=target_spec.cspread,
+                coeff=coefficients(candidate.case),
+                max_shell=shell,
+                samples_per_shell=args.samples_per_shell,
+                # Common random numbers isolate alias-shell truncation from
+                # importance-sampling noise in the shell 1--5 comparison.
+                seed=candidate_seed(candidate, 5),
+            )
+        )
+    modes, mappings = adsq.population_mode_union(populations)
+    tagged, _, _, _ = evaluate_pilot_spectra(
+        frames, modes, chunk_size=args.chunk_size
+    )
+    force_scale = float(selected["screening_force_scale"])
+    rows = []
+    for shell, population, mapping in zip(range(1, 6), populations, mappings):
+        homogeneous, corrections, homogeneous_variance = (
+            adsq.corrected_chi2_with_sampling(
+                population, mapping, np.ones(len(modes))
+            )
+        )
+        if homogeneous != population.homogeneous_chi2:
+            raise AssertionError("S_tag=1 did not exactly recover homogeneous chi2")
+        if any(value != 0.0 for value in corrections.values()):
+            raise AssertionError("S_tag=1 has a nonzero structure correction")
+        if any(value != 0.0 for value in homogeneous_variance.values()):
+            raise AssertionError("S_tag=1 has nonzero alias sampling variance")
+        chi2, _, variances = adsq.corrected_chi2_with_sampling(
+            population, mapping, tagged
+        )
+        pair = pair_rms(charges, chi2)
+        total = math.sqrt(
+            pair**2
+            + float(selected["residual_self_rms"]) ** 2
+            + float(selected["fourier_rms"]) ** 2
+        )
+        rows.append(
+            {
+                "candidate_id": candidate.case.case_id,
+                "target": target,
+                "alias_shell": shell,
+                "captured_homogeneous_alias_fraction": (
+                    population.captured_homogeneous_chi2
+                    / population.homogeneous_chi2
+                ),
+                "predicted_relative_rms": total / force_scale,
+                "alias_sampling_chi2_sem": math.sqrt(
+                    math.fsum(variances.values())
+                ),
+                "homogeneous_recovery_exact": True,
+            }
+        )
+    shell5 = float(rows[-1]["predicted_relative_rms"])
+    for row in rows:
+        row["relative_difference_from_shell5"] = (
+            float(row["predicted_relative_rms"]) / shell5 - 1.0
+        )
+    write_csv(paths["convergence"], rows)
+    manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+    manifest["alias_shell_convergence"] = {
+        "performed_after_selection_freeze": True,
+        "used_for_prediction_or_selection": False,
+        "shells": [1, 2, 3, 4, 5],
+        "homogeneous_recovery_exact_for_every_shell": True,
+        "output": file_record(paths["convergence"]),
+    }
+    paths["manifest"].write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(rows, indent=2))
+
+
+def direct_tagged_definition(
+    q: np.ndarray, xyz: np.ndarray, box: float, modes: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    wave = 2.0 * math.pi * np.asarray(modes, dtype=np.float64) / box
+    phase_minus = np.exp(-1j * xyz @ wave.T)
+    rho = q @ phase_minus
+    denominator = float(np.sum(q * q) ** 2 - np.sum(q**4))
+    tagged = np.empty(len(modes))
+    for mode_index in range(len(modes)):
+        removed = phase_minus[:, mode_index].conj() * rho[mode_index] - q
+        tagged[mode_index] = (
+            float(np.sum(q * q * np.abs(removed) ** 2)) / denominator
+        )
+    ordinary = np.abs(rho) ** 2 / np.sum(q * q)
+    return tagged, ordinary
+
+
+def run_unit_tests() -> None:
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    q = np.asarray((1.0, -0.7, 0.2, -0.5))
+    xyz = np.asarray(
+        (
+            (0.3, 1.7, 2.1),
+            (1.1, 2.6, 3.2),
+            (2.8, 0.4, 1.9),
+            (3.4, 3.1, 0.7),
+        )
+    )
+    modes = np.asarray(((1, 0, 0), (0, 1, -1), (2, -1, 1), (-2, 1, 0)))
+    fast = adsq.evaluate_tagged_pair_spectrum(
+        q, xyz, 4.0, modes, return_charge_spectrum=True
+    )
+    expected_tagged, expected_ordinary = direct_tagged_definition(
+        q, xyz, 4.0, modes
+    )
+    tagged_error = float(np.max(np.abs(fast[0] - expected_tagged)))
+    ordinary_error = float(np.max(np.abs(fast[1] - expected_ordinary)))
+    if tagged_error > 2.0e-14 or ordinary_error > 2.0e-14:
+        raise AssertionError("target-conditioned spectrum direct-sum test failed")
+
+    target = baseline.TARGETS[0]
+    case = baseline.case_for(target, 5, 12)
+    population = adsq.prepare_ad_source_spectrum_population(
+        q=q,
+        mesh=12,
+        order=5,
+        box_length=4.0,
+        rcut=1.0,
+        csplit=target.csplit,
+        cspread=target.cspread,
+        coeff=coefficients(case),
+        max_shell=1,
+        samples_per_shell=64,
+        seed=7,
+    )
+    union, mappings = adsq.population_mode_union([population])
+    recovered, corrections, variances = adsq.corrected_chi2_with_sampling(
+        population, mappings[0], np.ones(len(union))
+    )
+    exact_homogeneous = recovered == population.homogeneous_chi2
+    if (
+        not exact_homogeneous
+        or any(value != 0.0 for value in corrections.values())
+        or any(value != 0.0 for value in variances.values())
+    ):
+        raise AssertionError("S_tag=1 homogeneous recovery test failed")
+    pilot, prefix_digest = load_pilot_frames()
+    payload = {
+        "schema_version": 1,
+        "evaluate_tagged_pair_spectrum_direct_sum_max_abs": tagged_error,
+        "ordinary_sq_direct_sum_max_abs": ordinary_error,
+        "homogeneous_recovery_bitwise_exact": exact_homogeneous,
+        "homogeneous_chi2": population.homogeneous_chi2,
+        "prefix_reader_frame_count": len(pilot),
+        "prefix_reader_first_timestep": pilot[0][0],
+        "prefix_reader_last_timestep": pilot[-1][0],
+        "prefix_reader_sha256": prefix_digest,
+        "passed": True,
+    }
+    UNIT_TESTS.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(payload, indent=2))
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument(
-        "--baseline",
-        action="store_true",
-        help="write the fixed-band AD theoretical-analysis and pilot-correction table",
-    )
-    action.add_argument(
-        "--join-baseline-validation",
-        action="store_true",
-        help="append frames-26--50 Ewald values after the baseline prediction is frozen",
-    )
-    action.add_argument(
-        "--joint-target",
-        type=float,
-        metavar="TARGET",
-        help="write and freeze one declared joint (M,P,c_spread) pilot-corrected AD screen",
-    )
-    action.add_argument(
-        "--validate-joint",
-        type=float,
-        metavar="TARGET",
-        help="validate an already frozen joint pilot-corrected AD screen against Ewald",
-    )
-    parser.add_argument(
-        "--rebuild-direct-cache",
-        action="store_true",
-        help="recompute cached finite-band direct forces from frames 1--25",
-    )
-    parser.add_argument(
-        "--rerun-lammps",
-        action="store_true",
-        help="rerun selected-candidate LAMMPS validation rather than reuse a matching archive",
-    )
+    action.add_argument("--baseline", action="store_true")
+    action.add_argument("--join-baseline-validation", action="store_true")
+    action.add_argument("--joint-target", type=float, metavar="TARGET")
+    action.add_argument("--validate-joint", type=float, metavar="TARGET")
+    action.add_argument("--diagnostic-direct-check", type=float, metavar="TARGET")
+    action.add_argument("--theory-audit", type=float, metavar="TARGET")
+    action.add_argument("--self-test", action="store_true")
+    parser.add_argument("--alias-shell", type=int, default=5)
+    parser.add_argument("--samples-per-shell", type=int, default=2048)
+    parser.add_argument("--chunk-size", type=int, default=512)
+    parser.add_argument("--rerun-self-probes", action="store_true")
+    parser.add_argument("--rerun-lammps", action="store_true")
     parser.add_argument(
         "--lmp",
         type=Path,
         default=None,
-        help="ESP-LAMMPS executable (defaults to ESP_LAMMPS_BIN or the in-tree build)",
+        help="ESP-LAMMPS executable; defaults to ESP_LAMMPS_BIN or the local build",
     )
     return parser.parse_args()
 
@@ -881,16 +1411,28 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     adcommon.configure_lmp(args.lmp)
+    if args.alias_shell < 1:
+        raise ValueError("--alias-shell must be positive")
+    if args.samples_per_shell < 64:
+        raise ValueError("--samples-per-shell must be at least 64")
+    if args.chunk_size < 1:
+        raise ValueError("--chunk-size must be positive")
     if args.baseline:
-        write_baseline(args.rebuild_direct_cache)
+        write_baseline(args)
     elif args.join_baseline_validation:
         join_baseline_validation()
     elif args.joint_target is not None:
-        write_joint(args.joint_target, args.rebuild_direct_cache)
+        write_joint(args.joint_target, args)
     elif args.validate_joint is not None:
         validate_joint(args.validate_joint, rerun_lammps=args.rerun_lammps)
+    elif args.diagnostic_direct_check is not None:
+        diagnostic_direct_check(args.diagnostic_direct_check)
+    elif args.theory_audit is not None:
+        theory_audit(args.theory_audit, args)
+    elif args.self_test:
+        run_unit_tests()
     else:
-        raise AssertionError("one action must be selected")
+        raise AssertionError("one action is required")
 
 
 if __name__ == "__main__":

@@ -14,7 +14,21 @@ working directory. LAMMPS input paths are relative to this directory.
 `.DS_Store` metadata:
 
 ```bash
-shasum -a 256 -c SHA256SUMS
+python3 - <<'PY'
+import hashlib
+from pathlib import Path
+
+failed = []
+for entry in Path("SHA256SUMS").read_text(encoding="utf-8").splitlines():
+    expected, relative_path = entry.split("  ", 1)
+    actual = hashlib.sha256(Path(relative_path).read_bytes()).hexdigest()
+    status = "OK" if actual == expected else "FAILED"
+    print(f"{relative_path}: {status}")
+    if actual != expected:
+        failed.append(relative_path)
+if failed:
+    raise SystemExit(f"checksum mismatch: {', '.join(failed)}")
+PY
 ```
 
 ## Directory layout
@@ -45,7 +59,7 @@ error_bench/
 - `numerical_examples/random_charges/` and
   `numerical_examples/inhomogeneous_charges/` contain ten fixed 512-charge
   configurations used by Figures 2-4.
-- `numerical_examples/water_trajectory_benchmark/` contains the 50-frame
+- `numerical_examples/water_trajectory_benchmark/` contains the 51-frame
   SPC/E trajectory, topology, converged Ewald force reference, and a coarse
   PPPM mesh-20 force evaluation used only to normalize the Figure 5 relative
   theoretical screen.  The latter is not an Ewald reference.
@@ -150,29 +164,48 @@ python3 "$FIGDIR/run_fig4_k_resolved_contribution.py"
 python3 "$FIGDIR/run_fig4_sq_correction.py"
 ```
 
-The AD operator audit and the direct Figure 3 LAMMPS validation expect a
-LAMMPS executable at the historical runner location. A locally built binary
-can be placed there for a fresh calculation:
+Pass the patched executable explicitly to the AD operator audit and direct
+Figure 3 LAMMPS validation:
 
 ```bash
-mkdir -p "$FIGDIR/pppm_symmetric_scan"
-cp "$LMP" "$FIGDIR/pppm_symmetric_scan/lmp.pppm_symmetric_scan"
-python3 "$FIGDIR/ad_operator_audit/run_ad_operator_audit.py"
-python3 "$FIGDIR/lammps_ad_total_validation/run_operator_fig3_validation.py"
+python3 "$FIGDIR/ad_operator_audit/run_ad_operator_audit.py" --lmp "$LMP"
+python3 "$FIGDIR/lammps_ad_total_validation/run_operator_fig3_validation.py" \
+  --lmp "$LMP"
 ```
 
 ### Figure 5
 
 Figure 5 separates prediction from validation. The upper fixed-influence
 \(i\mathbf{k}\) row uses frozen theoretical analysis from frames 1--25,
-followed by independent Ewald validation on frames 26--50:
+followed by independent Ewald validation on frames 26--51:
 
 ```bash
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage prediction
 ```
 
-Next generate the nonoverlapping ESP and PPPM validation data, then attach
-those measurements to the already frozen theoretical record:
+The lower AD row uses target-conditioned structure factors measured from
+coordinate frames 1--25. These are inserted into the exact cell-moment source
+weights of the production AD operator. Residual-self and closed Fourier terms
+are then added in quadrature. The prediction process reads neither holdout
+coordinates nor Ewald forces.
+
+Run the estimator checks, generate the full fixed-band curves, and freeze both
+joint candidate selections:
+
+```bash
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --self-test
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --baseline --lmp "$LMP"
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
+  --joint-target 1e-4 --lmp "$LMP"
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
+  --joint-target 1e-5 --lmp "$LMP"
+```
+
+The candidate CSV and its SHA-256 are written before each
+`frozen_selection.json`. Only after those files exist, run the independent
+frames-26--51 validation. The order-scan runner automatically regenerates a
+case under its current `raw/` directory if a historical reused record is
+absent or incomplete.
 
 ```bash
 python3 "$FIGDIR/fig5_ik_ad_order_scan/run_fig5_ik_ad_order_scan.py" \
@@ -180,38 +213,49 @@ python3 "$FIGDIR/fig5_ik_ad_order_scan/run_fig5_ik_ad_order_scan.py" \
 python3 "$FIGDIR/fig5_pppm_ik_ad_fixed_g_scan/run_fig5_pppm_ik_ad_fixed_g_scan.py" \
   --lmp "$LMP"
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage validation
-```
-
-The lower AD row combines finite-band theoretical analysis with a 25-frame
-pilot correction. Dashed curves use frames 1--25, and filled markers report
-independent validation on frames 26--50.
-
-First generate the supporting finite-band components and AD prediction tables:
-
-```bash
-python3 "$FIGDIR/build_fig5_ad_rigid_sq_theory.py" --prediction-only
-python3 "$FIGDIR/run_ad_rigid_theory_selection.py" --target 1e-4 --prediction-only
-python3 "$FIGDIR/run_ad_rigid_theory_selection.py" --target 1e-5 --prediction-only
-
-python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --baseline
-python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --joint-target 1e-4
-python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --joint-target 1e-5
-```
-
-Then attach the nonoverlapping frames-26--50 validation results:
-
-```bash
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --join-baseline-validation
-python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --validate-joint 1e-4
-python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --validate-joint 1e-5
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
+  --validate-joint 1e-4 --lmp "$LMP"
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
+  --validate-joint 1e-5 --lmp "$LMP"
 ```
 
-The black stars mark the selected AD candidates and their validation.
+Run the shell-convergence audit and the optional direct finite-band diagnostic
+after freezing. Neither output is read by the selector:
+
+```bash
+for TARGET in 1e-4 1e-5; do
+  python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
+    --theory-audit "$TARGET"
+  python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
+    --diagnostic-direct-check "$TARGET"
+done
+```
+
+The AD candidate tables report the five-block frame SEM, alias importance-
+sampling SEM, their quadrature combination, and the one-sided 95% upper value
+using Student t with four degrees of freedom. The theoretical total currently
+neglects covariance among pair, residual-self, and Fourier contributions; this
+assumption is repeated in every prediction manifest. Open black stars mark the
+frozen AD selections; their later validation remains in the retained source
+tables and manifests but is not plotted.
+
+The retained Figure 5 result artifacts are under
+`src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/`.
+Each joint-target directory contains the pre-validation candidate CSV, its
+frozen-selection JSON, pilot-block and alias audits, independent holdout
+tables, and a manifest linking every retained artifact by SHA-256.
+
+A candidate is eligible only when `sigma_up >= 1` and its one-sided upper
+value is no larger than the target. The deterministic tie-break minimizes
+`M^3`, then `P`, then `c_spread`.
 
 Each runner records the actual executable SHA-256 in its manifest. To require
 a specific archived build, add `--require-lmp-sha256 SHA256`; the manuscript
 validation executable used SHA-256
 `34332fa52c4e2ba72b9561cffbc841c9b4fdbf5809eb745b1c1656e4ac960d6a`.
+Portable manifests label a configured external executable as `$LMP`; the
+recorded SHA-256 identifies the binary actually used.
 
 ### Figure 6
 
@@ -263,11 +307,26 @@ After an intentional source or input change, regenerate the index from the
 bundle root:
 
 ```bash
-find . -type f ! -name SHA256SUMS ! -name .DS_Store ! -path '*/__pycache__/*' -print0 \
-  | LC_ALL=C sort -z \
-  | xargs -0 shasum -a 256 > SHA256SUMS
+python3 - <<'PY'
+import hashlib
+import os
+import subprocess
+from pathlib import Path
+
+listed = subprocess.check_output(
+    ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "."]
+)
+paths = sorted(
+    Path(os.fsdecode(item)) for item in listed.split(b"\0") if item
+)
+lines = []
+for path in paths:
+    if path != Path("SHA256SUMS"):
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        lines.append(f"{digest}  {path.as_posix()}\n")
+Path("SHA256SUMS").write_text("".join(lines), encoding="utf-8")
+PY
 ```
 
-Do not add generated scan directories, compiled executables, cache files, or
-rendered figures to the checksum index unless the distribution policy is
-changed deliberately.
+Do not add generated `raw/` or `runtime/` directories, compiled executables,
+cache files, transient checkpoints, or rendered figures to the checksum index.

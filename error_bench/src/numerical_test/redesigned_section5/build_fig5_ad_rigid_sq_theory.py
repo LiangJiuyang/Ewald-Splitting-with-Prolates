@@ -55,7 +55,7 @@ from ad_validation_common import (  # noqa: E402
 
 
 PILOT_N = 25
-TOTAL_N = 50
+TOTAL_N = 51
 ORDERS = tuple(range(5, 10))
 SELF_AUDIT_MAX = 5.0e-10
 SELF_QUADRATURE_RELATIVE_MAX = 1.0e-7
@@ -501,8 +501,8 @@ def validate_after_prediction(predictions: list[dict[str, object]]) -> list[dict
                 "validation_passes_target": held_out <= float(prediction["target_relative_rms"]),
                 "prediction_to_validation_ratio": predicted / held_out,
                 "validation_frame_first": 26,
-                "validation_frame_last": 50,
-                "validation_frame_count": 25,
+                "validation_frame_last": 51,
+                "validation_frame_count": 26,
                 "validation_operator": validation["operator"],
                 "validation_reference": "pre-existing tight-Ewald total-force error",
                 "validation_used_for_prediction": False,
@@ -609,7 +609,7 @@ def main() -> None:
             "rigid SPC/E topology/charges plus coarse PPPM normalization",
             "unit-charge AD self probes and a-priori rigid S_tag pair predictions",
             "write frozen prediction table",
-            "optionally join independent frames-26--50 AD/Ewald validation",
+            "optionally join independent frames-26--51 AD/Ewald validation",
         ],
         "prediction": {
             "reference_force_accessed": False,
@@ -627,7 +627,7 @@ def main() -> None:
         },
         "validation": {
             "performed": bool(validation_rows),
-            "source": "pre-existing frames-26--50 AD/Ewald total-force archive" if validation_rows else "not opened",
+            "source": "pre-existing frames-26--51 AD/Ewald total-force archive" if validation_rows else "not opened",
             "used_for_prediction_or_selection": False,
         },
         "candidate_count": len(predictions),

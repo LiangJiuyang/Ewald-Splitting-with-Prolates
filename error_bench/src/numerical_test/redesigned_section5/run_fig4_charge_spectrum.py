@@ -305,8 +305,8 @@ def main() -> None:
     started = time.perf_counter()
     environment = finufft_environment()
     frames = ref.parse_charge_trajectory(TRAJECTORY)
-    if len(frames) != 50:
-        raise RuntimeError(f"expected 50 water frames, found {len(frames)}")
+    if len(frames) != 51:
+        raise RuntimeError(f"expected 51 water frames, found {len(frames)}")
     pilot = frames[:PILOT_N]
     water_box = pilot[0][3]
     water_systems = [(q, xyz) for _, q, xyz, box in pilot if box == water_box]

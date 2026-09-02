@@ -1,0 +1,168 @@
+{
+  "alias_shell_convergence": {
+    "homogeneous_recovery_exact_for_every_shell": true,
+    "output": {
+      "bytes": 873,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/alias_shell_convergence.csv",
+      "sha256": "0225ea6608f908b3808a31a4389105a9724fabe84b0410cace71ecb85bfa7d36"
+    },
+    "performed_after_selection_freeze": true,
+    "shells": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "used_for_prediction_or_selection": false
+  },
+  "candidate_count": 40,
+  "direct_finite_band_diagnostic": {
+    "by_frame": {
+      "bytes": 3722,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/diagnostic_direct_check_by_frame.csv",
+      "sha256": "99d1d101ef1e87c99c6a49f2a714c6b881551447f75557fb2228e6f33cd1f345"
+    },
+    "performed_after_selection_freeze": true,
+    "summary": {
+      "bytes": 397,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/diagnostic_direct_check_summary.csv",
+      "sha256": "2d403ced85f4f8c11e4a687c0d3bce6a150727de23fb602cbffea44bad814951"
+    },
+    "used_for_prediction_or_selection": false
+  },
+  "frozen_selection": {
+    "bytes": 5004,
+    "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/frozen_selection.json",
+    "sha256": "93b29064796df08f1cd23aef91efaf502e9b05485653a18137802c36102be317"
+  },
+  "inputs": {
+    "descriptor": {
+      "bytes": 26513,
+      "path": "src/numerical_test/redesigned_section5/ad_sq_descriptor.py",
+      "sha256": "7aeb4234530422ba1379bd426074a81b538e107d1d8fa077fe52b9db5dae496e"
+    },
+    "lammps_executable": {
+      "bytes": 8902528,
+      "path": "$LMP",
+      "sha256": "e66053502b39406b3818e1ae9300025a03232b98a0491464983e84e44e936c24"
+    },
+    "runner": {
+      "bytes": 53373,
+      "path": "src/numerical_test/redesigned_section5/build_fig5_ad_coordinate_screen.py",
+      "sha256": "9b309c1e2f7d67337151102319948d0ef6995a2eb0053a65c8f5dc9d3aaf3024"
+    },
+    "trajectory_path": "numerical_examples/water_trajectory_benchmark/water_short_traj.lammpstrj",
+    "trajectory_prefix_frames": "1--25",
+    "trajectory_prefix_sha256": "fd3b17d10220c14ce39a9304c5842b34238be0e70a3b58af3af806b2598dde88"
+  },
+  "logical_order": [
+    "read only coordinate frames 1--25 with the prefix reader",
+    "average measured target-conditioned S_tag over five 5-frame blocks",
+    "insert S_tag into exact production-AD cell-moment source weights",
+    "add unweighted residual-self and closed Fourier RMS in quadrature",
+    "freeze the complete candidate table and its SHA-256",
+    "permit holdout coordinate/reference access only in a later validation action"
+  ],
+  "numpy": "2.3.5",
+  "outputs": {
+    "pilot_structure_spectra.npz": {
+      "bytes": 1292193,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/pilot_structure_spectra.npz",
+      "sha256": "430362d928f08e67227fcbb8ba0823241df7721d27977893306547bc317980c3"
+    },
+    "prediction_alias_shell.csv": {
+      "bytes": 27485,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/prediction_alias_shell.csv",
+      "sha256": "6ae87677b77601defeca204e45f012150675e2d486e68ec6eb9a4c459a7cd51a"
+    },
+    "prediction_before_validation.csv": {
+      "bytes": 61417,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/prediction_before_validation.csv",
+      "sha256": "a9ebf4e5cb69f11cf31d67a3edb3069d381dcc5ccceca8f922886843f2bf0fae"
+    },
+    "prediction_blocks.csv": {
+      "bytes": 20442,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/prediction_blocks.csv",
+      "sha256": "9b3ed0c7ad08b269fb7726040ae2cfcae3fec267ccd83b9c081401ee790800f3"
+    }
+  },
+  "prediction": {
+    "alias_uncertainty": "importance-sampling SEM over alias modes",
+    "combined_uncertainty": "sqrt(frame_block_SEM^2+alias_sampling_SEM^2)",
+    "coordinate_frames": "1--25",
+    "coordinate_prefix_sha256": "fd3b17d10220c14ce39a9304c5842b34238be0e70a3b58af3af806b2598dde88",
+    "covariance_approximation": "pair/self/Fourier covariances are neglected",
+    "frame_uncertainty": "SEM over five contiguous blocks of five pilot frames",
+    "holdout_coordinates_accessed": false,
+    "ordinary_sq_output": "mean_charge_s_q in the compressed structure-spectrum artifact",
+    "pair_formula": "Coulomb*sqrt((Q2^2-Q4)/N * chi_AD,S^2)",
+    "reference_force_accessed": false,
+    "structure_input": "measured target-conditioned S_tag from frames 1--25",
+    "total_formula": "sqrt(pair^2+self^2+Fourier^2)",
+    "upper_rule": "prediction + t_0.95,4 * combined_SEM; t_0.95,4=2.1318467863266"
+  },
+  "purpose": "joint AD structure-factor screen with deferred holdout validation",
+  "python": "3.13.7",
+  "runtime": {
+    "alias_shell": 5,
+    "covariance_policy": "pair/self/Fourier terms are combined in quadrature; covariance is ignored",
+    "elapsed_seconds": 40.048234701156616,
+    "holdout_coordinate_frames_read": 0,
+    "pilot_coordinate_frames_read": 25,
+    "pilot_coordinate_prefix_sha256": "fd3b17d10220c14ce39a9304c5842b34238be0e70a3b58af3af806b2598dde88",
+    "samples_per_shell": 2048,
+    "structure_mode_count": 13815,
+    "uncertainty_policy": "frame-block and alias-sampling SEMs are combined in quadrature"
+  },
+  "schema_version": 2,
+  "validation": {
+    "block_sizes": [
+      5,
+      5,
+      5,
+      5,
+      6
+    ],
+    "detail": {
+      "bytes": 3352,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/holdout_validation_by_frame.csv",
+      "sha256": "d03dc2d9411a886b7e1ad5217df794eaa6e13c334c6296eb2fc4dd265353587d"
+    },
+    "ewald_artifacts": {
+      "dump": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/ewald_reference/forces.ewald_current.dump",
+      "input": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/ewald_reference/in.ewald_current",
+      "log": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/ewald_reference/log.ewald_current.lammps",
+      "screen": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/ewald_reference/screen.ewald_current.txt"
+    },
+    "frames": "26--51",
+    "lammps_executable": {
+      "bytes": 8902528,
+      "path": "$LMP",
+      "sha256": "e66053502b39406b3818e1ae9300025a03232b98a0491464983e84e44e936c24"
+    },
+    "performed": true,
+    "performed_after_frozen_sha256_verification": true,
+    "production_ad_artifacts": {
+      "full": {
+        "dump": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/fig5_ad_rigid_1e-5_p8_m16_cs14p471_cw14p471/water/forces.full.dump",
+        "input": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/fig5_ad_rigid_1e-5_p8_m16_cs14p471_cw14p471/water/in.full",
+        "log": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/fig5_ad_rigid_1e-5_p8_m16_cs14p471_cw14p471/water/log.full.lammps",
+        "screen": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/fig5_ad_rigid_1e-5_p8_m16_cs14p471_cw14p471/water/screen.full.txt"
+      },
+      "scale0": {
+        "dump": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/fig5_ad_rigid_1e-5_p8_m16_cs14p471_cw14p471/water/forces.scale0.dump",
+        "input": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/fig5_ad_rigid_1e-5_p8_m16_cs14p471_cw14p471/water/in.scale0",
+        "log": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/fig5_ad_rigid_1e-5_p8_m16_cs14p471_cw14p471/water/log.scale0.lammps",
+        "screen": "src/numerical_test/redesigned_section5/lammps_ad_total_validation/runs_water/fig5_ad_rigid_1e-5_p8_m16_cs14p471_cw14p471/water/screen.scale0.txt"
+      }
+    },
+    "summary": {
+      "bytes": 705,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/joint_1e-5/holdout_validation_summary.csv",
+      "sha256": "36afab2be9887a2a1ac482e1fe4170bf93670b89ece7fb93234cc60b98e093a8"
+    },
+    "used_for_prediction": false,
+    "used_for_selection": false
+  }
+}

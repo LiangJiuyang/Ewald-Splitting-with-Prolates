@@ -230,8 +230,8 @@ def main() -> None:
         raise FileNotFoundError("missing inputs: " + ", ".join(missing))
 
     reference = parse_force_dump(REFERENCE)
-    if len(reference) != 50:
-        raise RuntimeError(f"expected 50 Ewald frames, found {len(reference)}")
+    if len(reference) != 51:
+        raise RuntimeError(f"expected 51 Ewald frames, found {len(reference)}")
 
     per_frame_rows: list[dict[str, object]] = []
     summary_rows: list[dict[str, object]] = []
@@ -316,7 +316,7 @@ def main() -> None:
     write_csv(HERE / "water_fixed_ik_holdout_summary.csv", holdout)
 
     manifest = {
-        "purpose": "50-frame total-force reevaluation of three frozen water candidates",
+        "purpose": "51-frame total-force reevaluation of three frozen water candidates",
         "selection_rule": (
             "Candidates were frozen from the pilot-only screen before this calculation. "
             "Frames 25--50 are validation-only and never alter M, P, csplit, or cspread."

@@ -1,0 +1,107 @@
+{
+  "candidate_count": 120,
+  "inputs": {
+    "descriptor": {
+      "bytes": 26513,
+      "path": "src/numerical_test/redesigned_section5/ad_sq_descriptor.py",
+      "sha256": "7aeb4234530422ba1379bd426074a81b538e107d1d8fa077fe52b9db5dae496e"
+    },
+    "lammps_executable": {
+      "bytes": 8902528,
+      "path": "$LMP",
+      "sha256": "e66053502b39406b3818e1ae9300025a03232b98a0491464983e84e44e936c24"
+    },
+    "runner": {
+      "bytes": 53373,
+      "path": "src/numerical_test/redesigned_section5/build_fig5_ad_coordinate_screen.py",
+      "sha256": "9b309c1e2f7d67337151102319948d0ef6995a2eb0053a65c8f5dc9d3aaf3024"
+    },
+    "trajectory_path": "numerical_examples/water_trajectory_benchmark/water_short_traj.lammpstrj",
+    "trajectory_prefix_frames": "1--25",
+    "trajectory_prefix_sha256": "fd3b17d10220c14ce39a9304c5842b34238be0e70a3b58af3af806b2598dde88"
+  },
+  "logical_order": [
+    "read only coordinate frames 1--25 with the prefix reader",
+    "average measured target-conditioned S_tag over five 5-frame blocks",
+    "insert S_tag into exact production-AD cell-moment source weights",
+    "add unweighted residual-self and closed Fourier RMS in quadrature",
+    "freeze the complete candidate table and its SHA-256",
+    "permit holdout coordinate/reference access only in a later validation action"
+  ],
+  "numpy": "2.3.5",
+  "outputs": {
+    "baseline_alias_shell.csv": {
+      "bytes": 82482,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/baseline_alias_shell.csv",
+      "sha256": "99e3370e304baf7a8d181efc8383fef44653d6df5362e1a0bd0fcc2f97d13e2a"
+    },
+    "baseline_prediction.csv": {
+      "bytes": 179873,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/baseline_prediction.csv",
+      "sha256": "128bc1875b0c46b04012a4c1e9a04e3372092115183c3b6f1bba8483176bd1d4"
+    },
+    "baseline_prediction_by_frame.csv": {
+      "bytes": 61360,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/baseline_prediction_by_frame.csv",
+      "sha256": "25ce41e9dcee03027f98771efe3d7375ea0febf34989e4c51af5f9bbf5074f1c"
+    },
+    "baseline_structure_spectra.npz": {
+      "bytes": 2252260,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/baseline_structure_spectra.npz",
+      "sha256": "bd73cc5da2b5a786e25fef5c4044d4b10248a7d2251b81bf06061c283114a354"
+    }
+  },
+  "prediction": {
+    "alias_uncertainty": "importance-sampling SEM over alias modes",
+    "combined_uncertainty": "sqrt(frame_block_SEM^2+alias_sampling_SEM^2)",
+    "coordinate_frames": "1--25",
+    "coordinate_prefix_sha256": "fd3b17d10220c14ce39a9304c5842b34238be0e70a3b58af3af806b2598dde88",
+    "covariance_approximation": "pair/self/Fourier covariances are neglected",
+    "frame_uncertainty": "SEM over five contiguous blocks of five pilot frames",
+    "holdout_coordinates_accessed": false,
+    "ordinary_sq_output": "mean_charge_s_q in the compressed structure-spectrum artifact",
+    "pair_formula": "Coulomb*sqrt((Q2^2-Q4)/N * chi_AD,S^2)",
+    "reference_force_accessed": false,
+    "structure_input": "measured target-conditioned S_tag from frames 1--25",
+    "total_formula": "sqrt(pair^2+self^2+Fourier^2)",
+    "upper_rule": "prediction + t_0.95,4 * combined_SEM; t_0.95,4=2.1318467863266"
+  },
+  "prediction_table_sha256": "128bc1875b0c46b04012a4c1e9a04e3372092115183c3b6f1bba8483176bd1d4",
+  "purpose": "Figure 5 AD curves from measured pilot S_tag",
+  "python": "3.13.7",
+  "runtime": {
+    "alias_shell": 5,
+    "covariance_policy": "pair/self/Fourier terms are combined in quadrature; covariance is ignored",
+    "elapsed_seconds": 184.089506149292,
+    "holdout_coordinate_frames_read": 0,
+    "pilot_coordinate_frames_read": 25,
+    "pilot_coordinate_prefix_sha256": "fd3b17d10220c14ce39a9304c5842b34238be0e70a3b58af3af806b2598dde88",
+    "samples_per_shell": 2048,
+    "structure_mode_count": 24116,
+    "uncertainty_policy": "frame-block and alias-sampling SEMs are combined in quadrature"
+  },
+  "schema_version": 2,
+  "validation": {
+    "block_sizes": [
+      5,
+      5,
+      5,
+      5,
+      6
+    ],
+    "frames": "26--51",
+    "joined_after_prediction_table_sha256_verification": true,
+    "output": {
+      "bytes": 201551,
+      "path": "src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/baseline_source.csv",
+      "sha256": "f074ac730e93591196e5bcb639549c1a039efaa81649f2b3d99168c024ff9a24"
+    },
+    "performed": true,
+    "source": {
+      "bytes": 114714,
+      "path": "src/numerical_test/redesigned_section5/fig5_ik_ad_order_scan/fig5_ik_ad_order_scan_summary.csv",
+      "sha256": "e0236b61c1028f777f41cf0151cf19b8e26cfa993b78933eba3f0ccfa0dc5e8f"
+    },
+    "used_for_prediction_or_selection": false
+  }
+}

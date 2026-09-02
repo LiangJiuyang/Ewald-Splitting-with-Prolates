@@ -110,8 +110,8 @@ def file_record(path: Path) -> dict[str, object]:
 def main():
     started = time.time()
     frames = ref.parse_charge_trajectory(TRAJECTORY)
-    if len(frames) != 50:
-        raise RuntimeError(f"expected 50 water frames, found {len(frames)}")
+    if len(frames) != 51:
+        raise RuntimeError(f"expected 51 water frames, found {len(frames)}")
     pilot = frames[:PILOT_N]
     holdout = frames[PILOT_N:]
     q_water = frames[0][1]

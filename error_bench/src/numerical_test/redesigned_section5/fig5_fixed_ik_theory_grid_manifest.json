@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "purpose": "Revised Figure 5 theory/validation source",
+  "frozen_theory_prediction": {
+    "path": "src/numerical_test/redesigned_section5/fig5_fixed_ik_theory_grid_frozen.json",
+    "sha256": "c686314f1a79b23917f2f15677e7b6222695f6ea0f08f9475ea1d989f61f3c08",
+    "bytes": 4579
+  },
+  "theory_prediction_csv": {
+    "path": "src/numerical_test/redesigned_section5/fig5_fixed_ik_theory_grid_prediction.csv",
+    "sha256": "957c4a5847450e6c57a454dd19bae3dfb464092bf2c1043ac41d86423d246738",
+    "bytes": 63615
+  },
+  "validation_measurements": {
+    "path": "src/numerical_test/redesigned_section5/fig5_ik_ad_order_scan/fig5_ik_ad_order_scan_summary.csv",
+    "sha256": "e0236b61c1028f777f41cf0151cf19b8e26cfa993b78933eba3f0ccfa0dc5e8f",
+    "bytes": 114714
+  },
+  "plot_source": {
+    "path": "src/numerical_test/redesigned_section5/fig5_fixed_ik_theory_grid_source.csv",
+    "sha256": "30d109338c11371f9b0f7b55122a01101541a8e41c5270550d2f7c34a8da07fe",
+    "bytes": 81642
+  },
+  "prediction_selection_uses_ewald": false,
+  "validation_is_nonoverlapping": true,
+  "ad_panels_included": false
+}

@@ -365,6 +365,65 @@ def parse_charge_trajectory(path: Path):
     return frames
 
 
+def parse_charge_trajectory_prefix(
+    path: Path, count: int, *, return_sha256: bool = False
+):
+    """Read exactly the first ``count`` trajectory frames and then stop.
+
+    The file is opened without userspace buffering so the prediction stage
+    does not read ahead into a holdout frame.  When requested, the digest is
+    over the exact byte prefix ending at the final atom record of frame
+    ``count``.
+    """
+
+    if count < 1:
+        raise ValueError("count must be positive")
+    import hashlib
+
+    digest = hashlib.sha256()
+    frames = []
+    with path.open("rb", buffering=0) as handle:
+        def line() -> bytes:
+            raw = handle.readline()
+            digest.update(raw)
+            return raw
+
+        while len(frames) < count:
+            header = line()
+            if not header:
+                raise RuntimeError(
+                    f"trajectory {path} contains fewer than {count} frames"
+                )
+            if not header.startswith(b"ITEM: TIMESTEP"):
+                raise RuntimeError(f"malformed trajectory header in {path}")
+            timestep = int(line())
+            if not line().startswith(b"ITEM: NUMBER OF ATOMS"):
+                raise RuntimeError("missing atom count")
+            natoms = int(line())
+            if not line().startswith(b"ITEM: BOX BOUNDS"):
+                raise RuntimeError("missing bounds")
+            bounds = [tuple(map(float, line().split()[:2])) for _ in range(3)]
+            columns = line().split()[2:]
+            col = {name.decode("ascii"): i for i, name in enumerate(columns)}
+            q = np.empty(natoms, dtype=np.float64)
+            xyz = np.empty((natoms, 3), dtype=np.float64)
+            ids = np.empty(natoms, dtype=np.int64)
+            for index in range(natoms):
+                fields = line().split()
+                ids[index] = int(fields[col["id"]])
+                q[index] = float(fields[col["q"]])
+                xyz[index] = [float(fields[col[name]]) for name in ("x", "y", "z")]
+            order = np.argsort(ids)
+            lo = np.asarray([item[0] for item in bounds])
+            lengths = np.asarray([item[1] - item[0] for item in bounds])
+            if not np.allclose(lengths, lengths[0]):
+                raise ValueError("reference implementation currently requires a cubic cell")
+            frames.append((timestep, q[order], xyz[order] - lo, float(lengths[0])))
+    if return_sha256:
+        return frames, digest.hexdigest()
+    return frames
+
+
 def parse_force_dump(path: Path):
     frames = []
     with path.open() as handle:

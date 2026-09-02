@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pilot-freeze and 50-frame production-LAMMPS AD validation for SPC/E water.
+"""Pilot-freeze and 51-frame production-LAMMPS AD validation for SPC/E water.
 
 The script enforces the following order:
 
@@ -26,9 +26,10 @@ from pathlib import Path
 
 import numpy as np
 
+import ad_validation_common as adcommon
+
 from ad_validation_common import (
     HERE,
-    LMP,
     PROJECT,
     RCUT,
     ADCase,
@@ -62,7 +63,7 @@ OLD_EWALD = WATER_ROOT / "forces.ref_ewald.dump"
 PILOT_INPUTS = HERE / "water_ad_pilot_inputs.json"
 
 PILOT_COUNT = 25
-TOTAL_COUNT = 50
+TOTAL_COUNT = 51
 
 SELF_CSV = HERE / "water_ad_self_probe.csv"
 PILOT_CSV = HERE / "water_ad_pilot_prediction_by_frame.csv"
@@ -405,8 +406,9 @@ def partition_summary(case: ADCase, rows: list[dict], partition: str) -> dict:
     self2 = np.asarray([float(row["residual_self_rms_absolute"]) ** 2 for row in selected])
     cross = np.asarray([float(row["pair_self_dot_mean"]) for row in selected])
     relative_frames = np.asarray([float(row["total_relative_error"]) for row in selected])
-    # Use contiguous five-frame blocks.  Each 25-frame pilot or holdout
-    # partition has five blocks, and the complete 50-frame record has ten.
+    # Use contiguous, near-five-frame blocks without creating a singleton
+    # remainder. Thus 25, 26, and 51 frames are partitioned as
+    # 5+5+5+5+5, 5+5+5+5+6, and 5+...+5+6, respectively.
     n_blocks = max(1, len(selected) // 5)
     block_relative = []
     start = 0
@@ -446,11 +448,18 @@ def partition_summary(case: ADCase, rows: list[dict], partition: str) -> dict:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reuse-lammps", action="store_true")
+    parser.add_argument(
+        "--lmp",
+        type=Path,
+        default=None,
+        help="ESP-LAMMPS executable; defaults to ESP_LAMMPS_BIN",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    adcommon.configure_lmp(args.lmp)
     rerun = not args.reuse_lammps
     started = time.time()
     WORK.mkdir(parents=True, exist_ok=True)
@@ -531,7 +540,7 @@ def main() -> None:
     # Only after the frozen artifact exists may the holdout/reference be read.
     full_frames = ikref.parse_charge_trajectory(TRAJECTORY)
     if len(full_frames) != TOTAL_COUNT:
-        raise RuntimeError("water trajectory no longer has 50 frames")
+        raise RuntimeError("water trajectory no longer has 51 frames")
     reference, reference_rows, reference_paths = refresh_ewald_reference(rerun)
     write_csv(REFERENCE_CSV, reference_rows)
 
@@ -649,7 +658,7 @@ def main() -> None:
     write_json(
         MANIFEST,
         {
-            "purpose": "pilot-frozen evaluation of three prespecified cases on a 50-frame production-LAMMPS ESP AD total-force validation",
+            "purpose": "pilot-frozen evaluation of three prespecified cases on a 51-frame production-LAMMPS ESP AD total-force validation",
             "logical_order": [
                 "single-charge correction audit",
                 "pilot-only operator prediction",
@@ -658,8 +667,8 @@ def main() -> None:
             ],
             "pilot_conditioned_scope": "prespecified-case, implementation-specific matched-operator calibration; not a molecular closed-form AD estimator or an AD candidate search",
             "force_units": "kcal mol^-1 A^-1 (LAMMPS units real)",
-            "lammps_executable": str(LMP.relative_to(PROJECT)),
-            "lammps_executable_sha256": sha256(LMP),
+            "lammps_executable": "$LMP",
+            "lammps_executable_sha256": sha256(adcommon.LMP),
             "lammps_version": lammps_version(),
             "lammps_source_provenance": {
                 "path": str(SOURCE_SNAPSHOT_MANIFEST.relative_to(PROJECT)),

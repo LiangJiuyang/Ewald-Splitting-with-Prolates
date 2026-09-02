@@ -10,10 +10,12 @@ identification.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import hashlib
 import json
 import math
+import os
 import platform
 import subprocess
 import tempfile
@@ -31,7 +33,8 @@ HERE = Path(__file__).resolve().parent
 REDESIGNED_ROOT = HERE.parent
 PROJECT = HERE.parents[3]
 RANDOM_ROOT = PROJECT / "numerical_examples" / "random_charges"
-LMP = REDESIGNED_ROOT / "pppm_symmetric_scan" / "lmp.pppm_symmetric_scan"
+DEFAULT_LMP = REDESIGNED_ROOT / "pppm_symmetric_scan" / "lmp.pppm_symmetric_scan"
+LMP = Path(os.environ.get("ESP_LAMMPS_BIN", DEFAULT_LMP)).expanduser().resolve()
 
 RCUT = 9.0
 CSPLIT = 12.024
@@ -311,6 +314,16 @@ def measure_one(order: int, config_index: int, path_string: str, ab_values: tupl
 
 
 def main() -> None:
+    global LMP
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--lmp",
+        type=Path,
+        default=Path(os.environ.get("ESP_LAMMPS_BIN", DEFAULT_LMP)),
+        help="ESP-LAMMPS executable; defaults to ESP_LAMMPS_BIN",
+    )
+    args = parser.parse_args()
+    LMP = args.lmp.expanduser().resolve()
     started = time.time()
     if not LMP.is_file():
         raise FileNotFoundError(f"archived validation executable is missing: {LMP}")
@@ -544,7 +557,7 @@ def main() -> None:
                     "two Fourier harmonics identified from four independent one-charge cell points "
                     "and verified on three held-out positions; residual floor from tensor Gauss cell quadrature"
                 ),
-                executable=str(LMP.relative_to(PROJECT)),
+                executable="$LMP",
                 executable_sha256=sha256(LMP),
                 lammps_version=lammps_version,
                 inputs=[

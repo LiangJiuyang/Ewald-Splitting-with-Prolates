@@ -5,6 +5,8 @@ __pycache__/
 # Runtime output from reproducibility scans.
 error_bench/**/runs*/
 error_bench/**/raw/
+error_bench/**/runtime/
+error_bench/**/*.partial.csv
 error_bench/**/*.log
 error_bench/**/*.screen
 error_bench/**/log.*.lammps

@@ -10,7 +10,7 @@ respectively.  The ESP side applies the target-specific split/spread tuples
 and explicitly measures every smaller declared grid needed to establish its
 first qualifying grid.  The PPPM source scan is maintained separately.
 
-All errors are measured on the same 51 SPC/E configurations against the same
+All errors are measured on the same 50 SPC/E configurations against the same
 tight Ewald reference.  This is a retrospective matched-accuracy benchmark,
 not an automatic parameter-selection or held-out validation calculation.
 """
@@ -44,7 +44,7 @@ DEFAULT_LMP = PARENT / "pppm_symmetric_scan" / "lmp.pppm_symmetric_scan"
 EXPECTED_LMP_SHA256 = (
     "34332fa52c4e2ba72b9561cffbc841c9b4fdbf5809eb745b1c1656e4ac960d6a"
 )
-EXPECTED_FRAMES = 51
+EXPECTED_FRAMES = 50
 RCUT = 9.0
 BOX_LENGTH = 30.0
 
@@ -609,7 +609,7 @@ def analyze(lmp: Path) -> None:
         "n_cases": len(CASES),
         "cases": manifest_cases,
         "error_definition": (
-            "51-frame pooled relative RMS against one common Ewald reference; "
+            "50-frame pooled relative RMS against one common Ewald reference; "
             "uncertainty is the SEM of ten nonoverlapping five-frame RMS blocks."
         ),
         "selection_boundary": (

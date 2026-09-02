@@ -3,7 +3,7 @@ r"""Generate the AD data used in Figure 5.
 
 The lower AD row combines finite-band theoretical analysis with a 25-frame
 pilot correction. Dashed curves use SPC/E configurations from frames 1--25;
-filled markers report independent validation on frames 26--51. The calculation
+filled markers report independent validation on frames 26--50. The calculation
 uses the production AD operator, a finite PSWF Fourier reference, and the
 closed Fourier term. No Ewald-force difference is used to form a prediction.
 
@@ -635,8 +635,8 @@ def join_baseline_validation() -> None:
                 "prediction_to_validation_ratio": value(row, "predicted_total_relative_rms")
                 / value(held, "holdout_relative_rms"),
                 "validation_frame_first": 26,
-                "validation_frame_last": 51,
-                "validation_frame_count": 26,
+                "validation_frame_last": 50,
+                "validation_frame_count": 25,
                 "validation_operator": held["operator"],
                 "validation_reference": "pre-existing tight-Ewald total-force error",
                 "validation_used_for_prediction": False,
@@ -646,7 +646,7 @@ def join_baseline_validation() -> None:
     write_csv(BASELINE_SOURCE, joined)
     manifest["validation"] = {
         "joined_after_prediction_freeze": True,
-        "source": "archived frames-26--51 production-AD/Ewald total-force errors",
+        "source": "archived frames-26--50 production-AD/Ewald total-force errors",
         "used_for_prediction_or_selection": False,
         "output": file_record(BASELINE_SOURCE),
     }
@@ -805,7 +805,7 @@ def validate_joint(target: float, *, rerun_lammps: bool) -> None:
         "order": case.order,
         "csplit": case.csplit,
         "cspread": case.cspread,
-        "validation_frames": "26--51",
+        "validation_frames": "26--50",
         "validation_frame_count": len(details),
         "validation_relative_rms": holdout,
         "validation_relative_rms_block5_sem": float(np.std(block_values, ddof=1) / math.sqrt(len(block_values))),
@@ -823,7 +823,7 @@ def validate_joint(target: float, *, rerun_lammps: bool) -> None:
     manifest["validation"] = {
         "performed": True,
         "used_for_selection": False,
-        "frames": "26--51",
+        "frames": "26--50",
         "detail": file_record(paths["detail"]),
         "summary": file_record(paths["summary"]),
         "raw_paths": json_safe_paths(
@@ -845,7 +845,7 @@ def parse_args() -> argparse.Namespace:
     action.add_argument(
         "--join-baseline-validation",
         action="store_true",
-        help="append frames-26--51 Ewald values after the baseline prediction is frozen",
+        help="append frames-26--50 Ewald values after the baseline prediction is frozen",
     )
     action.add_argument(
         "--joint-target",

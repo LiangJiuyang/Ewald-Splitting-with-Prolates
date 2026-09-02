@@ -3,7 +3,7 @@
 
 The scan brackets each of the three manuscript targets for every native LAMMPS
 PPPM order P=4--7.  All candidates use one hash-pinned executable, the same
-51-frame SPC/E trajectory, and the same tight Ewald reference.  This script
+50-frame SPC/E trajectory, and the same tight Ewald reference.  This script
 only generates and audits raw runs; the Figure-6 builder independently
 recomputes every force error from the raw dumps.
 """
@@ -28,7 +28,7 @@ TRAJECTORY = SOURCE_DIR / "water_short_traj.lammpstrj"
 REFERENCE = SOURCE_DIR / "forces.ref_ewald.dump"
 DEFAULT_LMP = HERE / "lmp.pppm_symmetric_scan"
 EXPECTED_LMP_SHA256 = "34332fa52c4e2ba72b9561cffbc841c9b4fdbf5809eb745b1c1656e4ac960d6a"
-EXPECTED_FRAMES = 51
+EXPECTED_FRAMES = 50
 
 # Predeclared Cartesian design.  The common requested-grid set covers the
 # low-grid P=7 regime and brackets all three targets even for P=4.  The actual
@@ -65,7 +65,7 @@ def paths_for(order: int, mesh: int) -> dict[str, Path]:
 
 def input_text(order: int, mesh: int, dump_path: Path) -> str:
     return f"""# Same-binary SPC/E-water PPPM scan: P={order}, requested M={mesh}.
-# Predeclared target-bracketing Figure-6 design; 51 shared trajectory frames.
+# Predeclared target-bracketing Figure-6 design; 50 shared trajectory frames.
 newton on
 units real
 atom_style full

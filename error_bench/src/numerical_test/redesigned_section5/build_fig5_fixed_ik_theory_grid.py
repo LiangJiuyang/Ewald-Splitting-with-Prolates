@@ -4,14 +4,14 @@
 The prediction stage deliberately reads only (i) the first 25 SPC/E coordinate
 frames and (ii) a coarse PPPM force evaluation used solely to normalize a
 relative tolerance.  It does *not* read Ewald reference forces, LAMMPS ESP
-force differences, or frames 26--51.  For each fixed-influence ``i k`` ESP
+force differences, or frames 26--50.  For each fixed-influence ``i k`` ESP
 candidate it evaluates the quadrature of the closed Fourier estimate (Eq. 55)
 and the measured-``S_q`` all-alias mesh estimate (Eq. 90), using the LAMMPS
 Fourier-polynomial deconvolution convention.
 
 After the prediction table and its frozen selection record have been written,
 the optional validation stage joins the already archived nonoverlapping
-frames-26--51 Ewald-force measurements.  The joined table is for plotting
+frames-26--50 Ewald-force measurements.  The joined table is for plotting
 only; its measured values never enter the frozen theoretical selections.
 
 This file intentionally covers only fixed-influence ``i k``.  The present
@@ -60,7 +60,7 @@ import sq_alias_tools as sqtools  # noqa: E402
 
 RCUT = 9.0
 PILOT_N = 25
-TOTAL_N = 51
+TOTAL_N = 50
 ORDERS = tuple(range(5, 10))
 MAX_ALIAS_SHELL = 12
 OUTER_SAMPLES = 4096
@@ -468,7 +468,7 @@ def attach_validation() -> None:
                     measured["holdout_balanced_block5_sem"]
                 ),
                 "validation_frame_first": 26,
-                "validation_frame_last": 51,
+                "validation_frame_last": 50,
                 "validation_frame_count": int(measured["holdout_frames"]),
                 "validation_operator": measured["operator"],
                 "validation_reference": "Ewald forces; excluded from theory prediction and selection",

@@ -6,7 +6,7 @@ uses the production ``special_bonds`` convention, whereas the exact splitting
 identity required here is an *all-charge* identity.  It also avoids the
 polynomial erfc approximation in ``pair_style coul/long``.
 
-For every one of the 51 archived water frames, the script evaluates
+For every one of the 50 archived water frames, the script evaluates
 
     F_smooth,infinity = F_Coulomb,all-charge^direct-Ewald
                         - F_near,PSWF^all-charge,
@@ -81,8 +81,8 @@ SPLIT_CASES = (
 )
 
 PILOT_INDICES = tuple(range(25))
-HOLDOUT_INDICES = tuple(range(25, 51))
-CROSSCHECK_INDICES = (0, 25, 50)
+HOLDOUT_INDICES = tuple(range(25, 50))
+CROSSCHECK_INDICES = (0, 25, 49)
 
 EWALD_PRODUCTION = {
     "alpha_inverse_A": 0.6,
@@ -442,8 +442,8 @@ def block_statistics(
 def main() -> None:
     started = time.perf_counter()
     frames = parse_charge_trajectory(TRAJECTORY)
-    if len(frames) != 51:
-        raise RuntimeError(f"expected 51 water frames, found {len(frames)}")
+    if len(frames) != 50:
+        raise RuntimeError(f"expected 50 water frames, found {len(frames)}")
     first_q = frames[0][1]
     box_length = frames[0][3]
     qsum = float(np.sum(first_q * first_q))
@@ -658,7 +658,7 @@ def main() -> None:
         )
 
     partitions = {
-        "all": np.arange(51, dtype=np.int64),
+        "all": np.arange(50, dtype=np.int64),
         "pilot": np.asarray(PILOT_INDICES, dtype=np.int64),
         "holdout": np.asarray(HOLDOUT_INDICES, dtype=np.int64),
     }
@@ -735,7 +735,7 @@ def main() -> None:
                 }
             )
 
-    if len(frame_rows) != 51 * len(SPLIT_CASES):
+    if len(frame_rows) != 50 * len(SPLIT_CASES):
         raise RuntimeError("wrong number of per-frame rows")
     if len(summary_rows) != 3 * len(SPLIT_CASES):
         raise RuntimeError("wrong number of summary rows")
@@ -750,7 +750,7 @@ def main() -> None:
     ewald_array = np.stack(ewald_force_frames)
     np.savez_compressed(
         EWALD_NPZ,
-        frame_indices=np.arange(51, dtype=np.int64),
+        frame_indices=np.arange(50, dtype=np.int64),
         timesteps=timesteps,
         charges=first_q,
         all_charge_coulomb_forces=ewald_array,
@@ -783,7 +783,7 @@ def main() -> None:
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "scientific_question": (
             "What is the isolated exact-PSWF Fourier cube-truncation error "
-            "for all 51 archived SPC/E water frames?"
+            "for all 50 archived SPC/E water frames?"
         ),
         "operator_chain": {
             "infinite_smooth_force": (

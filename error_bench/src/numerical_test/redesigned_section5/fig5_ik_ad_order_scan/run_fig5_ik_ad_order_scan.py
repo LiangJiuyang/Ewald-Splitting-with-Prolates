@@ -4,7 +4,7 @@
 The two columns hold the ESP split and spreading bandlimits fixed at either
 12.024 (1e-4) or 14.471 (1e-5).  The two rows use fixed-influence IK and
 production AD differentiation, respectively.  Only the stencil order and FFT
-grid vary within a panel.  All reported errors use frames 26--51 so the scan
+grid vary within a panel.  All reported errors use frames 26--50 so the scan
 can share the existing fixed-G PPPM holdout baseline without data leakage.
 """
 
@@ -41,7 +41,7 @@ EXPECTED_LMP_SHA256 = (
 
 RCUT = 9.0
 BOX_LENGTH = 30.0
-TOTAL_FRAMES = 51
+TOTAL_FRAMES = 50
 PILOT_FRAMES = 25
 ORDERS = tuple(range(5, 10))
 TARGET_SETTINGS = {
@@ -353,8 +353,8 @@ def pooled(diff2: list[float], ref2: list[float]) -> float:
 
 def balanced_holdout_sem(diff2: list[float], ref2: list[float]) -> float:
     if len(diff2) != TOTAL_FRAMES - PILOT_FRAMES or len(ref2) != len(diff2):
-        raise ValueError("holdout must contain frames 26--51")
-    bounds = ((0, 5), (5, 10), (10, 15), (15, 20), (20, 26))
+        raise ValueError("holdout must contain frames 26--50")
+    bounds = ((0, 5), (5, 10), (10, 15), (15, 20), (20, 25))
     values = [pooled(diff2[start:stop], ref2[start:stop]) for start, stop in bounds]
     return statistics.stdev(values) / math.sqrt(len(values))
 
@@ -371,7 +371,7 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
 def analyze(*, rerun_missing: bool = False) -> None:
     reference = ikscan.core.parse_force_dump(REFERENCE)
     if len(reference) != TOTAL_FRAMES:
-        raise RuntimeError("tight Ewald reference does not contain 51 frames")
+        raise RuntimeError("tight Ewald reference does not contain 50 frames")
 
     summaries: list[dict[str, object]] = []
     by_frame: list[dict[str, object]] = []
@@ -499,7 +499,7 @@ def analyze(*, rerun_missing: bool = False) -> None:
             "Panels a/c use csplit=cspread=12.024 at target 1e-4; panels b/d "
             "use csplit=cspread=14.471 at target 1e-5. All panels scan P=5--9, "
             "vary only M along a curve, include the common under-resolved "
-            "M=12 diagnostic, and report frames 26--51."
+            "M=12 diagnostic, and report frames 26--50."
         ),
         "orders": list(ORDERS),
         "target_settings": {
@@ -519,9 +519,9 @@ def analyze(*, rerun_missing: bool = False) -> None:
         "water_data": {"path": relpath(DATA), "sha256": sha256(DATA)},
         "reference": {"path": relpath(REFERENCE), "sha256": sha256(REFERENCE)},
         "error_definition": (
-            "Pooled relative RMS on frames 26--51 against the common tight "
+            "Pooled relative RMS on frames 26--50 against the common tight "
             "Ewald force dump; uncertainty is the SEM over balanced holdout "
-            "blocks of sizes 5,5,5,5,6."
+            "blocks of sizes 5,5,5,5,5."
         ),
         "runner": {"path": relpath(Path(__file__)), "sha256": sha256(Path(__file__))},
         "raw_artifacts": raw_artifacts,

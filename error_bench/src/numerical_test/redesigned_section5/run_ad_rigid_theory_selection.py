@@ -334,7 +334,7 @@ def validate_selected(selected: dict[str, object], *, rerun_lammps: bool) -> tup
         prediction_to_measurement_ratio=float(selected["predicted_total_relative_rms"])
         / float(summary["pooled_total_relative_error"]),
         selection_used_holdout=False,
-        validation_frames="26--51",
+        validation_frames="26--50",
     )
     paths = {
         "selected_ad_runs": run_paths,
@@ -437,7 +437,7 @@ def main() -> None:
             "detail": file_record(DETAIL_CSV),
             "summary": file_record(SUMMARY_CSV),
             "used_for_selection": False,
-            "frames": "26--51",
+            "frames": "26--50",
             "operator": "production LAMMPS ESP analytical differentiation with matching unit-charge residual-self correction",
             "reference": "tight Ewald total force",
         },

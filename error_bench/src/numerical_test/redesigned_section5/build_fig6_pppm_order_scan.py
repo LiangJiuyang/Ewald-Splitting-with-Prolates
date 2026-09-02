@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the Figure-6 PPPM order-scan source tables from raw force dumps.
 
-Only complete 51-frame water force scans with a parseable LAMMPS version,
+Only complete 50-frame water force scans with a parseable LAMMPS version,
 actual FFT grid, and actual stencil order are accepted.  All accepted dumps
 are re-evaluated against one common Ewald force dump by this script.  The
 matched-target derivative table jointly selects the measured PPPM order and
@@ -33,7 +33,7 @@ REFERENCE_INPUT = WATER_DIR / "in.force_ref_ewald"
 REFERENCE_LOG = WATER_DIR / "log.force_ref_ewald.lammps"
 TRAJECTORY = WATER_DIR / "water_short_traj.lammpstrj"
 WATER_DATA = WATER_DIR / "water.data"
-EXPECTED_FRAMES = 51
+EXPECTED_FRAMES = 50
 TARGETS = (1.0e-3, 1.0e-4, 1.0e-5)
 
 SOURCE_CSV = HERE / "fig6_pppm_order_scan_source.csv"
@@ -483,7 +483,7 @@ def deduplicate_summaries(
 
     The identity key is the interpolation order together with the SHA-256 of
     the raw force dump.  Repeated requested meshes are accepted as duplicates
-    only if their actual grid and every recorded 51-frame error statistic are
+    only if their actual grid and every recorded 50-frame error statistic are
     exactly identical.  Any disagreement is treated as a provenance failure,
     rather than silently choosing one row.
     """
@@ -516,7 +516,7 @@ def deduplicate_summaries(
             if disagreements:
                 raise ValueError(
                     "force-hash duplicate group has inconsistent actual-grid or "
-                    "51-frame statistics: "
+                    "50-frame statistics: "
                     f"{representative['candidate_id']} vs {member['candidate_id']}; "
                     f"fields={','.join(disagreements)}"
                 )
@@ -544,7 +544,7 @@ def deduplicate_summaries(
                     "force_dump_sha256": digest,
                     "dedup_group_size": len(members),
                     "is_representative": member is representative,
-                    "validation_status": "actual grid and all recorded 51-frame statistics agree",
+                    "validation_status": "actual grid and all recorded 50-frame statistics agree",
                 }
             )
 
@@ -769,7 +769,7 @@ def main() -> None:
             best_rows.append(
                 {
                     "target_relative_rms": target,
-                    "selection_metric": "51-frame pooled relative RMS",
+                    "selection_metric": "50-frame pooled relative RMS",
                     "status": "no_feasible_candidate",
                     "n_unique_feasible_candidates": 0,
                     "candidate_id": "",
@@ -799,7 +799,7 @@ def main() -> None:
         best_rows.append(
             {
                 "target_relative_rms": target,
-                "selection_metric": "51-frame pooled relative RMS",
+                "selection_metric": "50-frame pooled relative RMS",
                 "status": "selected",
                 "n_unique_feasible_candidates": len(feasible),
                 "candidate_id": selected["candidate_id"],
@@ -844,14 +844,14 @@ def main() -> None:
             "input and echoed log command agree on requested order and requested grid",
             "LAMMPS version, actual FFT grid, and actual stencil order parse from the log",
             "actual stencil order agrees with the P=4, P=5, P=6, or P=7 filename family",
-            "LAMMPS log has no ERROR and reports 51 rerun steps",
-            "raw force dump parses completely into 51 frames",
+            "LAMMPS log has no ERROR and reports 50 rerun steps",
+            "raw force dump parses completely into 50 frames",
             "each timestep and atom-id set matches the common Ewald reference",
         ],
-        "error_definition": "For each frame, sqrt(sum_i |F_PPPM-F_Ewald|^2 / sum_i |F_Ewald|^2); source summary records both the arithmetic mean and pooled RMS over 51 frames.",
-        "uncertainty_definition": "Sample SEM across 51 per-frame relative RMS values and SEM across 10 non-overlapping five-frame block RMS values, where each block value is sqrt(mean(e_f^2)); the last frame is omitted only from the block estimate.",
-        "deduplication_rule": "Before target selection, group by (interpolation order, raw force-dump SHA-256), require exact agreement of actual grid and every recorded 51-frame statistic, and retain the lowest-requested-mesh row as the representative.",
-        "target_selection_rule": "Among deduplicated measured PPPM P=4--7 candidates whose 51-frame pooled relative RMS is <= target, minimize actual nx*ny*nz and break ties by lower interpolation order and lower requested mesh.",
+        "error_definition": "For each frame, sqrt(sum_i |F_PPPM-F_Ewald|^2 / sum_i |F_Ewald|^2); source summary records both the arithmetic mean and pooled RMS over 50 frames.",
+        "uncertainty_definition": "Sample SEM across 50 per-frame relative RMS values and SEM across 10 non-overlapping five-frame block RMS values, where each block value is sqrt(mean(e_f^2)); all 50 frames enter the ten non-overlapping five-frame blocks.",
+        "deduplication_rule": "Before target selection, group by (interpolation order, raw force-dump SHA-256), require exact agreement of actual grid and every recorded 50-frame statistic, and retain the lowest-requested-mesh row as the representative.",
+        "target_selection_rule": "Among deduplicated measured PPPM P=4--7 candidates whose 50-frame pooled relative RMS is <= target, minimize actual nx*ny*nz and break ties by lower interpolation order and lower requested mesh.",
         "candidate_discovery_scope": {
             "P4_to_P7": "only redesigned_section5/pppm_symmetric_scan files named *pppm_pP_meshN* and listed in that directory's hash-pinned manifest",
             "excluded_by_design": "all historical asymmetric P=4--6 force scans and timing-only PPPM runs",

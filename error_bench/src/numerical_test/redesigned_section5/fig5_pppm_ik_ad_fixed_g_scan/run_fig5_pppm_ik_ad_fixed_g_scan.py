@@ -39,7 +39,7 @@ EXPECTED_LMP_SHA256 = (
 
 ORDER = 5
 RCUT = 9.0
-TOTAL_FRAMES = 51
+TOTAL_FRAMES = 50
 HOLDOUT_START = 25
 MESHES = (12, 15, 18, 20, 24, 32, 36, 40, 48, 64, 80)
 PANEL_MESHES = {
@@ -307,7 +307,7 @@ def pooled_error(rows: list[dict[str, object]]) -> float:
 
 
 def balanced_block_sem(rows: list[dict[str, object]]) -> float:
-    blocks = (rows[0:5], rows[5:10], rows[10:15], rows[15:20], rows[20:26])
+    blocks = (rows[0:5], rows[5:10], rows[10:15], rows[15:20], rows[20:25])
     values = [pooled_error(block) for block in blocks]
     return statistics.stdev(values) / math.sqrt(len(values))
 
@@ -351,8 +351,8 @@ def measure_case(
                     "sum_reference_squared": ref2,
                 }
             )
-    if len(frame_rows) != 26:
-        raise RuntimeError(f"{case_id(branch, mesh)}: expected 26 holdout frames")
+    if len(frame_rows) != 25:
+        raise RuntimeError(f"{case_id(branch, mesh)}: expected 25 holdout frames")
     holdout_error = pooled_error(frame_rows)
     summary = {
         "case_id": case_id(branch, mesh),
@@ -408,7 +408,7 @@ def write_csv(path: Path, records: list[dict[str, object]]) -> None:
 def analyze(calibrations: dict[str, dict[str, object]]) -> None:
     reference = core.read_force_dump(REFERENCE)
     if len(reference) != TOTAL_FRAMES:
-        raise RuntimeError("Ewald reference does not contain 51 frames")
+        raise RuntimeError("Ewald reference does not contain 50 frames")
     summaries: list[dict[str, object]] = []
     by_frame: list[dict[str, object]] = []
     audits: list[dict[str, object]] = []

@@ -45,7 +45,7 @@ error_bench/
 - `numerical_examples/random_charges/` and
   `numerical_examples/inhomogeneous_charges/` contain ten fixed 512-charge
   configurations used by Figures 2-4.
-- `numerical_examples/water_trajectory_benchmark/` contains the 51-frame
+- `numerical_examples/water_trajectory_benchmark/` contains the 50-frame
   SPC/E trajectory, topology, converged Ewald force reference, and a coarse
   PPPM mesh-20 force evaluation used only to normalize the Figure 5 relative
   theoretical screen.  The latter is not an Ewald reference.
@@ -165,7 +165,7 @@ python3 "$FIGDIR/lammps_ad_total_validation/run_operator_fig3_validation.py"
 
 Figure 5 separates prediction from validation. The upper fixed-influence
 \(i\mathbf{k}\) row uses frozen theoretical analysis from frames 1--25,
-followed by independent Ewald validation on frames 26--51:
+followed by independent Ewald validation on frames 26--50:
 
 ```bash
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage prediction
@@ -184,7 +184,7 @@ python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage validation
 
 The lower AD row combines finite-band theoretical analysis with a 25-frame
 pilot correction. Dashed curves use frames 1--25, and filled markers report
-independent validation on frames 26--51.
+independent validation on frames 26--50.
 
 First generate the supporting finite-band components and AD prediction tables:
 
@@ -198,7 +198,7 @@ python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --joint-target 1e-4
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --joint-target 1e-5
 ```
 
-Then attach the nonoverlapping frames-26--51 validation results:
+Then attach the nonoverlapping frames-26--50 validation results:
 
 ```bash
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --join-baseline-validation

@@ -107,7 +107,7 @@ FIGURE6_ESP_PANEL_B_MESHES = {
 }
 FIGURE6_FIXED_BAND_TARGET = 1.0e-5
 # Direct, mesh-free PSWF Fourier truncation at c_split=14.471 on the same
-# 51 SPC/E frames, normalized by the common Ewald-reference force norm.
+# 50 SPC/E frames, normalized by the common Ewald-reference force norm.
 FIGURE6_FOURIER_TAIL_REFERENCE_RELATIVE = 4.211764706776317e-6
 FIGURE7_TARGET = 1.0e-4
 FIGURE7_TIGHT_TARGET = 1.0e-5
@@ -1869,11 +1869,11 @@ def load_figure5_validation(
                 by_target[value(selected, "target")],
                 key=lambda item: int(round(value(item, "frame_zero_based"))),
             )
-            if len(members) != 26:
-                raise ValueError("Figure 5 fixed-ik holdout must contain 26 frames")
+            if len(members) != 25:
+                raise ValueError("Figure 5 fixed-ik holdout must contain 25 frames")
             blocks = (
                 members[0:5], members[5:10], members[10:15],
-                members[15:20], members[20:26],
+                members[15:20], members[20:25],
             )
             block_pooled = [
                 math.sqrt(
@@ -1945,8 +1945,8 @@ def load_figure5_fixed_ik_extension() -> tuple[dict[str, str], dict[str, str]]:
     if len(summary) != 1 or summary[0].get("partition") != "holdout":
         raise ValueError("fixed-ik 1e-6 extension must have one holdout summary")
     holdout = summary[0]
-    if int(round(value(holdout, "n_frames"))) != 26:
-        raise ValueError("fixed-ik 1e-6 holdout must contain 26 frames")
+    if int(round(value(holdout, "n_frames"))) != 25:
+        raise ValueError("fixed-ik 1e-6 holdout must contain 25 frames")
     if holdout.get("pooled_target_satisfied", "").lower() != "true":
         raise ValueError("fixed-ik 1e-6 holdout does not satisfy its target")
     if holdout.get("frozen_selection_sha256") != actual:
@@ -2166,7 +2166,7 @@ def figure5() -> str:
         markeredgewidth=0.9,
         elinewidth=0.75,
         capsize=2.1,
-        label="Direct calculation (frames 26–51)",
+        label="Direct calculation (frames 26–50)",
         zorder=5,
     )
 
@@ -2379,7 +2379,7 @@ def load_esp_all_frames() -> tuple[list[dict[str, str]], str]:
                 (
                     frame
                     for frame in by_case.get(row["case_id"], [])
-                    if expected_frames == 51 or frame.get("partition") == "holdout"
+                    if expected_frames == 50 or frame.get("partition") == "holdout"
                 ),
                 key=lambda frame: int(frame["frame_zero_based"]),
             )
@@ -2410,12 +2410,12 @@ def load_esp_all_frames() -> tuple[list[dict[str, str]], str]:
         with partition_file.open(newline="", encoding="utf-8") as handle:
             rows = [row for row in csv.DictReader(handle) if row.get("partition") == "all"]
         if rows:
-            return attach_common_block_sem(attach_force_hashes(rows)), "51 frames"
+            return attach_common_block_sem(attach_force_hashes(rows)), "50 frames"
     holdout_file = HERE / "water_fixed_ik_targets" / "water_fixed_ik_holdout_summary.csv"
     with holdout_file.open(newline="", encoding="utf-8") as handle:
         return attach_common_block_sem(
             attach_force_hashes(list(csv.DictReader(handle)))
-        ), "26-frame holdout"
+        ), "25-frame holdout"
 
 
 def parse_grid(text: str) -> tuple[int, int, int]:
@@ -2586,7 +2586,7 @@ def write_figure6_plot_source(
                 "esp_actual_grid_points": "",
                 "data_scope": (
                     "prediction: frames 1-25; validation: nonoverlapping "
-                    "frames 26-51"
+                    "frames 26-50"
                 ),
                 "selection_rule": (
                     "P=5--8: smallest scanned actual grid whose pilot-only "
@@ -2672,7 +2672,7 @@ def write_figure6_plot_source(
                 "esp_actual_ny": "",
                 "esp_actual_nz": "",
                 "esp_actual_grid_points": "",
-                "data_scope": "nonoverlapping validation frames 26-51",
+                "data_scope": "nonoverlapping validation frames 26-50",
                 "selection_rule": (
                     "smallest measured holdout actual grid volume meeting 1e-5 "
                     "at fixed G_ewald"
@@ -2744,7 +2744,7 @@ def write_figure6_plot_source(
                     "esp_actual_ny": int(round(value(esp_row, "actual_ny"))),
                     "esp_actual_nz": int(round(value(esp_row, "actual_nz"))),
                     "esp_actual_grid_points": int(round(value(esp_row, "actual_grid_points"))),
-                    "data_scope": "same 51 frames and tight Ewald reference for both methods",
+                    "data_scope": "same 50 frames and tight Ewald reference for both methods",
                     "selection_rule": "PPPM fixed P=5 with G_ewald auto-balanced separately for each mesh; ESP fixed target-specific P; smallest declared measured actual grid volume meeting target",
                 }
             )
@@ -2812,7 +2812,7 @@ def figure6_archived_two_panel() -> tuple[int, int, list[float], list[float], in
         raise ValueError("fixed-band ESP panel-a scan is incomplete")
     if any(
         int(row["pilot_frames"]) != 25
-        or int(row["holdout_frames"]) != 26
+        or int(row["holdout_frames"]) != 25
         or not math.isclose(value(row, "csplit"), 14.471, abs_tol=1.0e-12)
         or not math.isclose(value(row, "cspread"), 14.471, abs_tol=1.0e-12)
         or not math.isclose(
@@ -2873,7 +2873,7 @@ def figure6_archived_two_panel() -> tuple[int, int, list[float], list[float], in
     } != {
         order: row["case_id"] for order, row in legacy_panel_a_selections.items()
     }:
-        raise ValueError("pilot-predicted and archived 51-frame panel-a selections differ")
+        raise ValueError("pilot-predicted and archived 50-frame panel-a selections differ")
 
     pppm_panel_a = sorted(
         (
@@ -2884,8 +2884,8 @@ def figure6_archived_two_panel() -> tuple[int, int, list[float], list[float], in
     )
     if tuple(int(row["actual_nx"]) for row in pppm_panel_a) != FIGURE6_PPPM_MESHES:
         raise ValueError("holdout PPPM P=5 scan does not cover the declared grid set")
-    if any(int(row["holdout_frames"]) != 26 for row in pppm_panel_a):
-        raise ValueError("holdout PPPM P=5 scan must use frames 26-51")
+    if any(int(row["holdout_frames"]) != 25 for row in pppm_panel_a):
+        raise ValueError("holdout PPPM P=5 scan must use the 25-frame 26-50 holdout")
     if any(
         not math.isclose(
             value(row, "pppm_input_tolerance"),
@@ -3317,9 +3317,9 @@ def figure5_pilot_force_calibrations(
     for key, members in groups.items():
         ordered = sorted(members, key=lambda row: int(row["frame_zero_based"]))
         frame_indices = [int(row["frame_zero_based"]) for row in ordered]
-        if len(ordered) != 51 or frame_indices != list(range(51)):
+        if len(ordered) != 50 or frame_indices != list(range(50)):
             raise ValueError(
-                "Figure 5 calibration requires one complete 51-frame record "
+                "Figure 5 calibration requires one complete 50-frame record "
                 f"per case; invalid case {key}"
             )
         pilot = ordered[:FIGURE5_PILOT_FRAMES]
@@ -3327,7 +3327,7 @@ def figure5_pilot_force_calibrations(
         if (
             any(row["partition"] != "pilot" for row in pilot)
             or any(row["partition"] != "holdout" for row in holdout)
-            or len(holdout) != 26
+            or len(holdout) != 25
         ):
             raise ValueError(
                 "Figure 5 calibration/holdout frame partitions are invalid "
@@ -3544,8 +3544,8 @@ def archived_figure5_pilot_force_calibration_figure() -> dict[str, object]:
     if actual_keys != expected_keys or len(scan_rows) != len(expected_keys):
         raise ValueError("Figure 5 IK/AD order scan is incomplete or duplicated")
     if any(
-        int(row["total_frames"]) != 51
-        or int(row["holdout_frames"]) != 26
+        int(row["total_frames"]) != 50
+        or int(row["holdout_frames"]) != 25
         or not math.isclose(
             value(row, "csplit"),
             expected_band[value(row, "target_relative_rms")],
@@ -3568,7 +3568,7 @@ def archived_figure5_pilot_force_calibration_figure() -> dict[str, object]:
     )
     calibrations = figure5_pilot_force_calibrations(scan_frame_rows)
     if (
-        len(scan_frame_rows) != len(expected_keys) * 51
+        len(scan_frame_rows) != len(expected_keys) * 50
         or set(calibrations) != actual_keys
     ):
         raise ValueError("Figure 5 water calibration records are incomplete")
@@ -3605,7 +3605,7 @@ def archived_figure5_pilot_force_calibration_figure() -> dict[str, object]:
         raise ValueError("Figure 5 fixed-G PPPM display scan is incomplete")
     if any(
         int(row["order"]) != 5
-        or int(row["holdout_frames"]) != 26
+        or int(row["holdout_frames"]) != 25
         or not math.isclose(
             value(row, "target_relative_rms"),
             expected_pppm[row["panel"]][1],
@@ -3987,7 +3987,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
     The data source is generated in two stages.  The prediction table contains
     Eq. (55)+Eq. (90) values based only on frames 1--25 and a coarse PPPM force
     scale; it is hash-frozen before the source table is joined to Ewald-force
-    measurements on frames 26--51.  This deliberately replaces the former
+    measurements on frames 26--50.  This deliberately replaces the former
     Figure-5 pilot-force-calibration curves.
     """
 
@@ -4021,8 +4021,8 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
         str(row.get("ewald_reference_force_accessed", "")).lower() == "true"
         or str(row.get("holdout_coordinates_accessed", "")).lower() == "true"
         or int(row["validation_frame_first"]) != 26
-        or int(row["validation_frame_last"]) != 51
-        or int(row["validation_frame_count"]) != 26
+        or int(row["validation_frame_last"]) != 50
+        or int(row["validation_frame_count"]) != 25
         for row in theory_rows
     ):
         raise ValueError("Figure 5 theory/holdout partition is invalid")
@@ -4048,7 +4048,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
             row["differentiation"] != "ik"
             or int(row["order"]) != 5
             or not math.isclose(value(row, "target_relative_rms"), target, abs_tol=1.0e-15)
-            or int(row["holdout_frames"]) != 26
+            or int(row["holdout_frames"]) != 25
             for row in rows
         ):
             raise ValueError(f"Figure 5 PPPM fixed-IK baseline is invalid for {target:.0e}")
@@ -4159,7 +4159,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
                         "resolved_band": row["resolved_band"],
                         "relative_rms": row["validation_relative_rms"],
                         "relative_rms_sem": row["validation_relative_rms_balanced_block5_sem"],
-                        "source_partition": "frames 26-51; Ewald validation only",
+                        "source_partition": "frames 26-50; Ewald validation only",
                         "estimator": row["validation_operator"],
                         "used_for_selection": False,
                     }
@@ -4192,7 +4192,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
                     "resolved_band": "",
                     "relative_rms": row["holdout_relative_rms"],
                     "relative_rms_sem": row["holdout_balanced_block5_sem"],
-                    "source_partition": "frames 26-51; Ewald validation",
+                    "source_partition": "frames 26-50; Ewald validation",
                     "estimator": "not plotted as an ESP theoretical estimate",
                     "used_for_selection": False,
                 }
@@ -4229,7 +4229,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
     fig.text(
         0.50,
         0.975,
-        r"ESP: dashed lines, Eq. (55)+Eq. (90) theory; filled symbols, Ewald validation (frames 26--51)",
+        r"ESP: dashed lines, Eq. (55)+Eq. (90) theory; filled symbols, Ewald validation (frames 26--50)",
         ha="center",
         va="top",
         fontsize=8.0,
@@ -4297,7 +4297,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
     Panels (a,b) use the frozen fixed-influence IK theoretical analysis.
     Panels (c,d) combine finite-band AD theoretical analysis with a 25-frame
     pilot correction. Dashed curves use frames 1--25, and filled markers
-    report independent Ewald validation on frames 26--51. The black stars
+    report independent Ewald validation on frames 26--50. The black stars
     identify the selected AD candidates and their subsequent validation.
     """
 
@@ -4335,8 +4335,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         str(row.get("ewald_reference_force_accessed", "")).lower() == "true"
         or str(row.get("holdout_coordinates_accessed", "")).lower() == "true"
         or int(row["validation_frame_first"]) != 26
-        or int(row["validation_frame_last"]) != 51
-        or int(row["validation_frame_count"]) != 26
+        or int(row["validation_frame_last"]) != 50
+        or int(row["validation_frame_count"]) != 25
         for row in theory_rows
     ):
         raise ValueError("Figure 5 theory/holdout partition is invalid")
@@ -4357,8 +4357,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         str(row["prediction_reference_force_accessed"]).lower() == "true"
         or str(row["prediction_molecular_coordinates_accessed"]).lower() != "true"
         or int(row["validation_frame_first"]) != 26
-        or int(row["validation_frame_last"]) != 51
-        or int(row["validation_frame_count"]) != 26
+        or int(row["validation_frame_last"]) != 50
+        or int(row["validation_frame_count"]) != 25
         or not math.isclose(
             value(row, "csplit"),
             12.024 if math.isclose(value(row, "target_relative_rms"), 1.0e-4) else 14.471,
@@ -4390,8 +4390,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             or not bool(selected["selection_passes_target"])
             or bool(selected["prediction_reference_force_accessed"])
             or not bool(selected["prediction_molecular_coordinates_accessed"])
-            or int(summary["validation_frame_count"]) != 26
-            or summary["validation_frames"] != "26--51"
+            or int(summary["validation_frame_count"]) != 25
+            or summary["validation_frames"] != "26--50"
             or summary["selection_used_holdout"].strip().lower() != "false"
             or summary["validation_passes_target"].strip().lower() != "true"
             or int(summary["actual_nx"]) != int(selected["actual_nx"])
@@ -4423,7 +4423,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             row["differentiation"] != method
             or int(row["order"]) != 5
             or not math.isclose(value(row, "target_relative_rms"), target, abs_tol=1.0e-15)
-            or int(row["holdout_frames"]) != 26
+            or int(row["holdout_frames"]) != 25
             for row in rows
         ):
             raise ValueError(
@@ -4584,7 +4584,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                         relative_rms_sem=value(
                             row, "validation_relative_rms_balanced_block5_sem"
                         ),
-                        source_partition="frames 26-51; Ewald validation only",
+                        source_partition="frames 26-50; Ewald validation only",
                         estimator=row["validation_operator"],
                         used_for_selection=False,
                         plotted=value(row, "sigma_up") >= 1.0,
@@ -4645,7 +4645,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                         relative_rms_sem=value(
                             row, "validation_relative_rms_balanced_block5_sem"
                         ),
-                        source_partition="frames 26-51; Ewald validation only",
+                        source_partition="frames 26-50; Ewald validation only",
                         estimator=row["validation_operator"],
                         used_for_selection=False,
                         plotted=value(row, "sigma_up") >= 1.0,
@@ -4699,7 +4699,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 row=row,
                 relative_rms=value(row, "holdout_relative_rms"),
                 relative_rms_sem=value(row, "holdout_balanced_block5_sem"),
-                source_partition="frames 26-51; Ewald validation",
+                source_partition="frames 26-50; Ewald validation",
                 estimator="not plotted as an ESP theoretical estimate",
                 used_for_selection=False,
                 plotted=True,
@@ -4773,7 +4773,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 row=selected,
                 relative_rms=measured,
                 relative_rms_sem=measured_sem,
-                source_partition="frames 26-51; Ewald validation only",
+                source_partition="frames 26-50; Ewald validation only",
                 estimator="matched production AD mesh force minus Ewald reference",
                 used_for_selection=False,
                 plotted=True,
@@ -4911,7 +4911,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             for target, screen in coordinate_screens.items()
         },
         "ad_coordinate_joint_screen_uses_reference_force_differences": False,
-        "ad_coordinate_joint_screen_holdout_frames": [26, 51],
+        "ad_coordinate_joint_screen_holdout_frames": [26, 50],
         "ad_coordinate_joint_screen_curve_style": "open star: pilot-corrected estimate; filled star: independent validation",
         "validation_curve_style": "filled markers with balanced-block SEM; no connecting line",
         "pppm_curve_style": "open X markers with balanced-block SEM; no connecting line",
@@ -6371,7 +6371,7 @@ def write_source_inventory() -> None:
             "source_csv": "fig4_sq_correction_source.csv",
             "role": "absolute and prediction/actual views of S_q=Q/V, rigid-SPC/E, and measured-S_q estimates versus validation errors",
             "uncertainty": "panel a renders only the validation block-RMS SEM around the actual-error curve; estimator sampling SEMs remain in the source data but are not displayed there; panel b uses shaded descriptive quadrature propagation because cross-block covariance is unavailable and includes alias-MC SEM",
-            "operator_or_grid_convention": "fixed-influence ik; dimensionless S_q=<|rho|^2>/Q from frames 1--25 and nonoverlapping validation measurement on frames 26--51",
+            "operator_or_grid_convention": "fixed-influence ik; dimensionless S_q=<|rho|^2>/Q from frames 1--25 and nonoverlapping validation measurement on frames 26--50",
         },
         {
             "figure": "SI charge-correlation diagnostics",
@@ -6422,7 +6422,7 @@ def write_source_inventory() -> None:
                 "top-row dashed curves are theoretical predictions from frames 1--25. "
                 "Bottom-row dashed curves use finite-band AD theory with a 25-frame "
                 "pilot correction. Filled ESP and AD markers, black validation stars, "
-                "and open PPPM symbols use frames 26--51. All validation symbols have "
+                "and open PPPM symbols use frames 26--50. All validation symbols have "
                 "five-block pooled-RMS SEMs and no connecting lines"
             ),
             "operator_or_grid_convention": (
@@ -6566,7 +6566,7 @@ def write_plot_manifest(
             "series": ["actual error", "S_q=Q/V", "rigid SPC/E model", "measured S_q"],
             "estimator_weight": "S_q=<|rho|^2>/Q",
             "panel_b_y_limits": [0.8, 2.0],
-            "operator": "fixed-influence ik with nonoverlapping force validation on frames 26--51",
+            "operator": "fixed-influence ik with nonoverlapping force validation on frames 26--50",
             "panel_b_uncertainty": "descriptive prediction/actual quadrature propagation includes the appropriate numerator and validation-denominator SEMs plus alias-MC uncertainty; contiguous-block covariance is unavailable",
             "uncertainty_rendering": "panel a shows a shaded validation SEM region only for actual error; panel b shows shaded propagated uncertainty regions for all ratios",
             "supporting_information_diagnostics": {
@@ -6628,7 +6628,7 @@ def write_plot_manifest(
                 "c": [15, 16, 18, 20, 24, 27, 32, 36, 40, 48, 64, 80],
                 "d": [16, 18, 20, 24, 32, 36, 40, 48, 64, 80],
             },
-            "holdout_frames": [26, 51],
+            "holdout_frames": [26, 50],
             "theory_frames": figure5_summary["theory_frames"],
             "theory_uses_reference_force_differences": figure5_summary[
                 "theory_uses_reference_force_differences"
@@ -6687,7 +6687,7 @@ def write_plot_manifest(
                 "top-row predictions use frames 1--25. Colored bottom-row AD curves "
                 "use five-block SEMs for the 25-frame pilot-corrected estimate. The "
                 "filled Ewald-validation stars and all other holdout bars use five "
-                "balanced pooled-RMS blocks from frames 26--51"
+                "balanced pooled-RMS blocks from frames 26--50"
             ),
             "operator_scope": (
                 "panels a/b use fixed-influence ik and Eqs. (55) and (90). Panels c/d "

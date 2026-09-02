@@ -163,11 +163,9 @@ python3 "$FIGDIR/lammps_ad_total_validation/run_operator_fig3_validation.py"
 
 ### Figure 5
 
-The current main-text Figure 5 is a fixed-influence \(i\mathbf{k}\)
-theory/validation comparison.  First freeze the theoretical screen, which
-uses only frames 1--25, the coarse PPPM force scale, the closed Fourier
-estimate (Eq. 55), and the measured-\(S_q\) all-alias mesh estimate (Eq. 90).
-It does not access Ewald force differences or frames 26--51:
+Figure 5 separates prediction from validation. The upper fixed-influence
+\(i\mathbf{k}\) row uses frozen theoretical analysis from frames 1--25,
+followed by independent Ewald validation on frames 26--51:
 
 ```bash
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage prediction
@@ -184,10 +182,31 @@ python3 "$FIGDIR/fig5_pppm_ik_ad_fixed_g_scan/run_fig5_pppm_ik_ad_fixed_g_scan.p
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage validation
 ```
 
-The main plot contains no AD theoretical curve, because the present workflow
-does not establish a matched molecular AD acceptance estimator.  The former
-25-frame Ewald-force pilot calibration remains available only as an archival
-diagnostic; it is not invoked by the main plotting workflow.
+The lower AD row combines finite-band theoretical analysis with a 25-frame
+pilot correction. Dashed curves use frames 1--25, and filled markers report
+independent validation on frames 26--51.
+
+First generate the supporting finite-band components and AD prediction tables:
+
+```bash
+python3 "$FIGDIR/build_fig5_ad_rigid_sq_theory.py" --prediction-only
+python3 "$FIGDIR/run_ad_rigid_theory_selection.py" --target 1e-4 --prediction-only
+python3 "$FIGDIR/run_ad_rigid_theory_selection.py" --target 1e-5 --prediction-only
+
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --baseline
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --joint-target 1e-4
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --joint-target 1e-5
+```
+
+Then attach the nonoverlapping frames-26--51 validation results:
+
+```bash
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --join-baseline-validation
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --validate-joint 1e-4
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --validate-joint 1e-5
+```
+
+The black stars mark the selected AD candidates and their validation.
 
 Each runner records the actual executable SHA-256 in its manifest. To require
 a specific archived build, add `--require-lmp-sha256 SHA256`; the manuscript
@@ -244,7 +263,7 @@ After an intentional source or input change, regenerate the index from the
 bundle root:
 
 ```bash
-find . -type f ! -name SHA256SUMS ! -name .DS_Store -print0 \
+find . -type f ! -name SHA256SUMS ! -name .DS_Store ! -path '*/__pycache__/*' -print0 \
   | LC_ALL=C sort -z \
   | xargs -0 shasum -a 256 > SHA256SUMS
 ```

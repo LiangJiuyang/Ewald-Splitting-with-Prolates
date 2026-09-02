@@ -10,9 +10,11 @@ Archetype
 Core evidence chain
     Fig. 2 validates Fourier truncation; Fig. 3 validates matched fixed-
     influence ik and analytical-differentiation mesh estimators; Fig. 4 tests
-    the molecular structure-factor correction; Fig. 5 tests frozen, theory-
-    only fixed-influence ik ESP screening against a nonoverlapping Ewald
-    holdout and shows a fixed-G, fixed-P=5 PPPM measurement baseline; Fig. 6
+    the molecular structure-factor correction; Fig. 5 compares fixed-influence
+    ik theoretical analysis and AD theoretical analysis with a 25-frame pilot
+    correction, each with independent validation, and shows a fixed-G,
+    fixed-P=5 PPPM measurement baseline;
+    Fig. 6
     tests the grid--window trade-off under a common PSWF split.
 Export contract
     7.1-inch double-column figures; editable PDF/SVG text; 300 dpi PNG
@@ -3279,14 +3281,14 @@ FIGURE5_PILOT_FRAMES = 25
 FIGURE5_PILOT_BLOCK_SIZE = 5
 
 
-def archived_figure5_pilot_force_calibrations(
+def figure5_pilot_force_calibrations(
     frame_rows: list[dict[str, str]],
 ) -> dict[tuple[str, float, int, int], dict[str, float | int]]:
-    """Pool frames 1--25 into an archival pilot-force diagnostic.
+    """Pool frames 1--25 into an implementation-specific force calibration.
 
-    This routine is intentionally not a theoretical error estimator and is
-    not called by the current main-text Figure 5.  It is retained only so the
-    historical calibration record can remain reproducible in the SI archive.
+    This is deliberately not a theoretical error estimator.  It is retained
+    solely for the historical archival diagnostic; the current main-text
+    Figure 5 does not call it.
     """
     groups: dict[tuple[str, float, int, int], list[dict[str, str]]] = {}
     for row in frame_rows:
@@ -3564,7 +3566,7 @@ def archived_figure5_pilot_force_calibration_figure() -> dict[str, object]:
         / "fig5_ik_ad_order_scan"
         / "fig5_ik_ad_order_scan_by_frame.csv"
     )
-    calibrations = archived_figure5_pilot_force_calibrations(scan_frame_rows)
+    calibrations = figure5_pilot_force_calibrations(scan_frame_rows)
     if (
         len(scan_frame_rows) != len(expected_keys) * 51
         or set(calibrations) != actual_keys
@@ -4198,7 +4200,9 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
         ax.axhline(target, color=COLORS["gray"], linestyle=":", linewidth=0.9, zorder=1)
         ax.set_xlim(min(ticks) - 1.2, max(ticks) + 2.4)
         ax.set_xticks(ticks)
-        ax.set_xticklabels([rf"${tick}^3$" for tick in ticks])
+        # The axis title carries the cubic-grid convention; plain M labels
+        # keep the dense near-band ticks readable at final double-column size.
+        ax.set_xticklabels([str(tick) for tick in ticks])
         ax.set_ylim(*ylim)
         ax.tick_params(axis="x", labelsize=7.1)
         ax.text(
@@ -4283,6 +4287,635 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
         "validation_curve_style": "filled markers with balanced-block SEM; no connecting line",
         "pppm_curve_style": "open X markers with balanced-block SEM; no connecting line",
         "ad_panels_included": False,
+        "below_band_points_omitted_from_main_plot": True,
+    }
+
+
+def figure5_theory_and_coordinate_ad() -> dict[str, object]:
+    """Draw Figure 5 with fixed-IK theory and pilot-corrected AD rows.
+
+    Panels (a,b) use the frozen fixed-influence IK theoretical analysis.
+    Panels (c,d) combine finite-band AD theoretical analysis with a 25-frame
+    pilot correction. Dashed curves use frames 1--25, and filled markers
+    report independent Ewald validation on frames 26--51. The black stars
+    identify the selected AD candidates and their subsequent validation.
+    """
+
+    theory_rows = read_rows("fig5_fixed_ik_theory_grid_source.csv")
+    coordinate_ad_rows = read_path_rows(
+        HERE / "fig5_ad_coordinate_screen" / "baseline_source.csv"
+    )
+    pppm_rows = read_path_rows(
+        HERE
+        / "fig5_pppm_ik_ad_fixed_g_scan"
+        / "fig5_pppm_ik_ad_fixed_g_summary.csv"
+    )
+    expected_meshes = {
+        1.0e-4: (12, 15, 16, 18, 20, 24, 27, 32, 36, 40, 48, 64, 80),
+        1.0e-5: (12, 16, 18, 20, 24, 32, 36, 40, 48, 64, 80),
+    }
+    expected_orders = tuple(range(5, 10))
+    expected_count = sum(len(meshes) for meshes in expected_meshes.values()) * len(
+        expected_orders
+    )
+    expected_keys = {
+        (target, order, mesh)
+        for target, meshes in expected_meshes.items()
+        for order in expected_orders
+        for mesh in meshes
+    }
+
+    theory_keys = {
+        (value(row, "target_relative_rms"), int(row["order"]), int(row["actual_nx"]))
+        for row in theory_rows
+    }
+    if len(theory_rows) != expected_count or theory_keys != expected_keys:
+        raise ValueError("Figure 5 fixed-IK theory matrix is incomplete")
+    if any(
+        str(row.get("ewald_reference_force_accessed", "")).lower() == "true"
+        or str(row.get("holdout_coordinates_accessed", "")).lower() == "true"
+        or int(row["validation_frame_first"]) != 26
+        or int(row["validation_frame_last"]) != 51
+        or int(row["validation_frame_count"]) != 26
+        for row in theory_rows
+    ):
+        raise ValueError("Figure 5 theory/holdout partition is invalid")
+    if any(
+        "Eq. (55)" not in row["prediction_operator"]
+        or "Eq. (90)" not in row["prediction_operator"]
+        for row in theory_rows
+    ):
+        raise ValueError("Figure 5 theory source does not state the required estimators")
+
+    coordinate_ad_keys = {
+        (value(row, "target_relative_rms"), int(row["order"]), int(row["actual_nx"]))
+        for row in coordinate_ad_rows
+    }
+    if len(coordinate_ad_rows) != expected_count or coordinate_ad_keys != expected_keys:
+        raise ValueError("Figure 5 pilot-corrected AD matrix is incomplete")
+    if any(
+        str(row["prediction_reference_force_accessed"]).lower() == "true"
+        or str(row["prediction_molecular_coordinates_accessed"]).lower() != "true"
+        or int(row["validation_frame_first"]) != 26
+        or int(row["validation_frame_last"]) != 51
+        or int(row["validation_frame_count"]) != 26
+        or not math.isclose(
+            value(row, "csplit"),
+            12.024 if math.isclose(value(row, "target_relative_rms"), 1.0e-4) else 14.471,
+            abs_tol=5.0e-4,
+        )
+        or not math.isclose(value(row, "csplit"), value(row, "cspread"), abs_tol=5.0e-4)
+        for row in coordinate_ad_rows
+    ):
+        raise ValueError("Figure 5 pilot-corrected AD source violates the fixed-band contract")
+
+    # The two strict-window selections are made and frozen from the same
+    # pilot-corrected estimator before their Ewald holdout checks are opened.
+    coordinate_screen_dirs = {
+        1.0e-4: HERE / "fig5_ad_coordinate_screen" / "joint_1e-4",
+        1.0e-5: HERE / "fig5_ad_coordinate_screen" / "joint_1e-5",
+    }
+    coordinate_screens: dict[float, dict[str, object]] = {}
+    for target, directory in coordinate_screen_dirs.items():
+        frozen = json.loads((directory / "frozen_selection.json").read_text())
+        summary_rows = read_path_rows(directory / "holdout_validation_summary.csv")
+        manifest = json.loads((directory / "manifest.json").read_text())
+        if len(summary_rows) != 1:
+            raise ValueError(f"Figure 5 pilot-corrected AD has invalid summary: {directory}")
+        selected = dict(frozen["selected"])
+        summary = summary_rows[0]
+        validation = manifest.get("validation", {})
+        if (
+            not math.isclose(float(selected["target_relative_rms"]), target, abs_tol=1.0e-15)
+            or not bool(selected["selection_passes_target"])
+            or bool(selected["prediction_reference_force_accessed"])
+            or not bool(selected["prediction_molecular_coordinates_accessed"])
+            or int(summary["validation_frame_count"]) != 26
+            or summary["validation_frames"] != "26--51"
+            or summary["selection_used_holdout"].strip().lower() != "false"
+            or summary["validation_passes_target"].strip().lower() != "true"
+            or int(summary["actual_nx"]) != int(selected["actual_nx"])
+            or int(summary["order"]) != int(selected["order"])
+            or not math.isclose(float(summary["csplit"]), float(selected["csplit"]), abs_tol=5.0e-12)
+            or not math.isclose(float(summary["cspread"]), float(selected["cspread"]), abs_tol=5.0e-12)
+            or not bool(validation.get("performed"))
+            or bool(validation.get("used_for_selection"))
+        ):
+            raise ValueError(
+                f"Figure 5 pilot-corrected AD violates the frozen-selection contract: {directory}"
+            )
+        coordinate_screens[target] = {"selected": selected, "summary": summary}
+
+    panel_by_operator_target = {
+        ("ik", 1.0e-4): "a",
+        ("ik", 1.0e-5): "b",
+        ("ad", 1.0e-4): "c",
+        ("ad", 1.0e-5): "d",
+    }
+    pppm_by_operator_target: dict[tuple[str, float], list[dict[str, str]]] = {}
+    for key, panel in panel_by_operator_target.items():
+        method, target = key
+        rows = sorted(
+            [row for row in pppm_rows if row["panel"] == panel],
+            key=lambda row: int(row["actual_nx"]),
+        )
+        if not rows or any(
+            row["differentiation"] != method
+            or int(row["order"]) != 5
+            or not math.isclose(value(row, "target_relative_rms"), target, abs_tol=1.0e-15)
+            or int(row["holdout_frames"]) != 26
+            for row in rows
+        ):
+            raise ValueError(
+                f"Figure 5 PPPM {method} baseline is invalid for {target:.0e}"
+            )
+        pppm_by_operator_target[key] = rows
+
+    order_style = {
+        5: (COLORS["blue"], "o"),
+        6: (COLORS["orange"], "s"),
+        7: (COLORS["green"], "^"),
+        8: (COLORS["vermillion"], "D"),
+        9: (COLORS["purple"], "v"),
+    }
+    fig, axes = plt.subplots(2, 2, figsize=(7.1, 5.0), sharex="col")
+    panel_specs = (
+        (axes[0, 0], "ik", 1.0e-4, "a"),
+        (axes[0, 1], "ik", 1.0e-5, "b"),
+        (axes[1, 0], "ad", 1.0e-4, "c"),
+        (axes[1, 1], "ad", 1.0e-5, "d"),
+    )
+    fig.subplots_adjust(left=0.095, right=0.99, bottom=0.105, top=0.83, hspace=0.41, wspace=0.22)
+
+    ticks_by_target = {
+        1.0e-4: [15, 20, 24, 32, 40, 64, 80],
+        1.0e-5: [16, 20, 24, 32, 40, 64, 80],
+    }
+    ylims_by_target = {1.0e-4: (1.0e-5, 3.0e-2), 1.0e-5: (1.0e-6, 3.0e-2)}
+    first_theory: dict[str, dict[str, int | None]] = {}
+    first_ik_validation: dict[str, dict[str, int | None]] = {}
+    first_ad_screen: dict[str, dict[str, int | None]] = {}
+    first_ad_validation: dict[str, dict[str, int | None]] = {}
+    plot_source: list[dict[str, object]] = []
+
+    def append_source(
+        *,
+        panel: str,
+        record_type: str,
+        series: str,
+        differentiation: str,
+        target: float,
+        order: int,
+        row: dict[str, str],
+        relative_rms: float,
+        relative_rms_sem: float,
+        source_partition: str,
+        estimator: str,
+        used_for_selection: bool,
+        plotted: bool,
+    ) -> None:
+        if row.get("resolved_band", "") != "":
+            resolved_band: str | bool = row["resolved_band"]
+        elif row.get("sigma_up", "") != "":
+            resolved_band = value(row, "sigma_up") >= 1.0
+        else:
+            resolved_band = ""
+        plot_source.append(
+            {
+                "panel": panel,
+                "record_type": record_type,
+                "series": series,
+                "differentiation": differentiation,
+                "target_relative_rms": target,
+                "order": order,
+                "actual_nx": row["actual_nx"],
+                "actual_grid_points": row["actual_grid_points"],
+                "sigma_up": row.get("sigma_up", ""),
+                "resolved_band": resolved_band,
+                "relative_rms": relative_rms,
+                "relative_rms_sem": relative_rms_sem,
+                "source_partition": source_partition,
+                "estimator": estimator,
+                "used_for_selection": used_for_selection,
+                "plotted": plotted,
+            }
+        )
+
+    for ax, method, target, panel in panel_specs:
+        set_log_y(ax)
+        light_y_grid(ax)
+        ticks = ticks_by_target[target]
+        if method == "ik":
+            per_target = [
+                row
+                for row in theory_rows
+                if math.isclose(value(row, "target_relative_rms"), target, abs_tol=1.0e-15)
+            ]
+            first_theory[f"{target:.0e}"] = {}
+            first_ik_validation[f"{target:.0e}"] = {}
+        else:
+            per_target = [
+                row
+                for row in coordinate_ad_rows
+                if math.isclose(value(row, "target_relative_rms"), target, abs_tol=1.0e-15)
+            ]
+            first_ad_screen[f"{target:.0e}"] = {}
+            first_ad_validation[f"{target:.0e}"] = {}
+
+        for order in expected_orders:
+            color, marker = order_style[order]
+            all_rows = sorted(
+                [row for row in per_target if int(row["order"]) == order],
+                key=lambda row: int(row["actual_nx"]),
+            )
+            resolved = [row for row in all_rows if value(row, "sigma_up") >= 1.0]
+            if not resolved:
+                raise ValueError(f"Figure 5 has no resolved {method} rows for {target:.0e}, P={order}")
+
+            if method == "ik":
+                estimated = [value(row, "predicted_total_relative_rms") for row in resolved]
+                estimated_sem = [
+                    value(row, "predicted_total_relative_block5_sem") for row in resolved
+                ]
+                measured = [value(row, "validation_relative_rms") for row in resolved]
+                measured_sem = [
+                    value(row, "validation_relative_rms_balanced_block5_sem")
+                    for row in resolved
+                ]
+                estimated_crossings = [
+                    row for row in resolved
+                    if str(row["prediction_passes_target"]).lower() == "true"
+                ]
+                measured_crossings = [
+                    row for row in resolved
+                    if str(row["validation_passes_target"]).lower() == "true"
+                ]
+                first_theory[f"{target:.0e}"][str(order)] = (
+                    int(estimated_crossings[0]["actual_nx"]) if estimated_crossings else None
+                )
+                first_ik_validation[f"{target:.0e}"][str(order)] = (
+                    int(measured_crossings[0]["actual_nx"]) if measured_crossings else None
+                )
+                for row in all_rows:
+                    append_source(
+                        panel=panel,
+                        record_type="ESP theoretical prediction",
+                        series=f"ESP P={order}",
+                        differentiation="fixed-influence ik",
+                        target=target,
+                        order=order,
+                        row=row,
+                        relative_rms=value(row, "predicted_total_relative_rms"),
+                        relative_rms_sem=value(row, "predicted_total_relative_block5_sem"),
+                        source_partition="frames 1-25; no Ewald force difference",
+                        estimator=row["prediction_operator"],
+                        used_for_selection=True,
+                        plotted=value(row, "sigma_up") >= 1.0,
+                    )
+                    append_source(
+                        panel=panel,
+                        record_type="ESP Ewald holdout validation",
+                        series=f"ESP P={order}",
+                        differentiation="fixed-influence ik",
+                        target=target,
+                        order=order,
+                        row=row,
+                        relative_rms=value(row, "validation_relative_rms"),
+                        relative_rms_sem=value(
+                            row, "validation_relative_rms_balanced_block5_sem"
+                        ),
+                        source_partition="frames 26-51; Ewald validation only",
+                        estimator=row["validation_operator"],
+                        used_for_selection=False,
+                        plotted=value(row, "sigma_up") >= 1.0,
+                    )
+            else:
+                estimated = [value(row, "predicted_total_relative_rms") for row in resolved]
+                estimated_sem = [
+                    value(row, "predicted_total_relative_block5_sem") for row in resolved
+                ]
+                measured = [value(row, "validation_relative_rms") for row in resolved]
+                measured_sem = [
+                    value(row, "validation_relative_rms_balanced_block5_sem")
+                    for row in resolved
+                ]
+                estimated_crossings = [
+                    row for row in resolved
+                    if str(row["prediction_passes_target"]).lower() == "true"
+                ]
+                measured_crossings = [
+                    row
+                    for row in resolved
+                    if str(row["validation_passes_target"]).lower() == "true"
+                ]
+                first_ad_screen[f"{target:.0e}"][str(order)] = (
+                    int(estimated_crossings[0]["actual_nx"]) if estimated_crossings else None
+                )
+                first_ad_validation[f"{target:.0e}"][str(order)] = (
+                    int(measured_crossings[0]["actual_nx"]) if measured_crossings else None
+                )
+                for row in all_rows:
+                    append_source(
+                        panel=panel,
+                        record_type="AD theoretical analysis + pilot correction",
+                        series=f"ESP P={order}",
+                        differentiation="AD",
+                        target=target,
+                        order=order,
+                        row=row,
+                        relative_rms=value(row, "predicted_total_relative_rms"),
+                        relative_rms_sem=value(row, "predicted_total_relative_block5_sem"),
+                        source_partition=(
+                            "frames 1-25 screening coordinates; finite-band direct mesh "
+                            "difference; no Ewald force difference"
+                        ),
+                        estimator=row["ad_estimator"],
+                        used_for_selection=True,
+                        plotted=value(row, "sigma_up") >= 1.0,
+                    )
+                    append_source(
+                        panel=panel,
+                        record_type="AD Ewald holdout validation",
+                        series=f"ESP P={order}",
+                        differentiation="AD",
+                        target=target,
+                        order=order,
+                        row=row,
+                        relative_rms=value(row, "validation_relative_rms"),
+                        relative_rms_sem=value(
+                            row, "validation_relative_rms_balanced_block5_sem"
+                        ),
+                        source_partition="frames 26-51; Ewald validation only",
+                        estimator=row["validation_operator"],
+                        used_for_selection=False,
+                        plotted=value(row, "sigma_up") >= 1.0,
+                    )
+
+            ax.plot(
+                [value(row, "actual_nx") for row in resolved],
+                estimated,
+                color=color,
+                linewidth=1.25,
+                linestyle="--",
+                zorder=3,
+                label="_nolegend_",
+            )
+            errorbar(
+                ax,
+                [value(row, "actual_nx") for row in resolved],
+                measured,
+                measured_sem,
+                color=color,
+                marker=marker,
+                label="_nolegend_",
+                filled=True,
+                marker_size=4.25,
+                linestyle="none",
+                zorder=5,
+            )
+
+        pppm = pppm_by_operator_target[(method, target)]
+        errorbar(
+            ax,
+            [value(row, "actual_nx") for row in pppm],
+            [value(row, "holdout_relative_rms") for row in pppm],
+            [value(row, "holdout_balanced_block5_sem") for row in pppm],
+            color=COLORS["black"],
+            marker="X",
+            label="_nolegend_",
+            filled=False,
+            marker_size=4.1,
+            linestyle="none",
+            zorder=4,
+        )
+        for row in pppm:
+            append_source(
+                panel=panel,
+                record_type="PPPM Ewald holdout validation",
+                series=f"Gaussian-split PPPM P=5 ({method})",
+                differentiation=method,
+                target=target,
+                order=5,
+                row=row,
+                relative_rms=value(row, "holdout_relative_rms"),
+                relative_rms_sem=value(row, "holdout_balanced_block5_sem"),
+                source_partition="frames 26-51; Ewald validation",
+                estimator="not plotted as an ESP theoretical estimate",
+                used_for_selection=False,
+                plotted=True,
+            )
+
+        if method == "ad":
+            coordinate_screen = coordinate_screens[target]
+            selected = coordinate_screen["selected"]
+            summary = coordinate_screen["summary"]
+            assert isinstance(selected, dict)
+            assert isinstance(summary, dict)
+            predicted = float(selected["predicted_total_relative_rms"])
+            predicted_sem = float(selected["predicted_total_relative_block5_sem"])
+            measured = float(summary["validation_relative_rms"])
+            measured_sem = float(summary["validation_relative_rms_block5_sem"])
+            mesh = int(selected["actual_nx"])
+            order = int(selected["order"])
+            # Open/filled black stars distinguish the frozen joint coordinate
+            # screen from its later Ewald validation and the open PPPM Xs.
+            errorbar(
+                ax,
+                [mesh],
+                [predicted],
+                [predicted_sem],
+                color=COLORS["black"],
+                marker="*",
+                label="_nolegend_",
+                filled=False,
+                marker_size=8.0,
+                linestyle="none",
+                zorder=8,
+            )
+            errorbar(
+                ax,
+                [mesh],
+                [measured],
+                [measured_sem],
+                color=COLORS["black"],
+                marker="*",
+                label="_nolegend_",
+                filled=True,
+                marker_size=6.8,
+                linestyle="none",
+                zorder=9,
+            )
+            append_source(
+                panel=panel,
+                record_type="AD joint-window theoretical analysis + pilot correction",
+                series=f"joint AD candidate P={order}",
+                differentiation="AD",
+                target=target,
+                order=order,
+                row=selected,
+                relative_rms=predicted,
+                relative_rms_sem=predicted_sem,
+                source_partition=(
+                    "frames 1-25 screening coordinates; finite-band direct mesh "
+                    "difference; no Ewald force difference"
+                ),
+                estimator=selected["ad_estimator"],
+                used_for_selection=True,
+                plotted=True,
+            )
+            append_source(
+                panel=panel,
+                record_type="AD joint-window Ewald holdout validation",
+                series=f"joint AD candidate P={order}",
+                differentiation="AD",
+                target=target,
+                order=order,
+                row=selected,
+                relative_rms=measured,
+                relative_rms_sem=measured_sem,
+                source_partition="frames 26-51; Ewald validation only",
+                estimator="matched production AD mesh force minus Ewald reference",
+                used_for_selection=False,
+                plotted=True,
+            )
+
+        csplit = value(per_target[0], "csplit")
+        ax.axhline(target, color=COLORS["gray"], linestyle=":", linewidth=0.9, zorder=1)
+        ax.set_xlim(min(ticks) - 1.2, max(ticks) + 2.4)
+        ax.set_xticks(ticks)
+        # The axis title carries the cubic-grid convention; plain M labels
+        # keep the dense near-band ticks readable at final double-column size.
+        ax.set_xticklabels([str(tick) for tick in ticks])
+        ax.set_ylim(*ylims_by_target[target])
+        ax.tick_params(axis="x", labelsize=7.1)
+        ax.text(
+            0.975,
+            0.955,
+            (r"fixed-influence $\mathrm{i}\mathbf{k}$" if method == "ik" else "AD")
+            + "\n"
+            + rf"$\varepsilon = 10^{{{int(round(math.log10(target)))}}}$"
+            + "\n"
+            + (
+                rf"$c_{{\rm split}}=c_{{\rm spread}}={csplit:.3f}$"
+                if method == "ik"
+                else rf"$c_{{\rm split}}=c_{{\rm spread}}={csplit:.3f}$"
+            ),
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            fontsize=7.15,
+            linespacing=1.35,
+            color=COLORS["black"],
+        )
+        panel_label(ax, panel, x=-0.125, y=1.08, fontsize=10.0)
+
+    axes[0, 0].set_ylabel("Relative RMS force error")
+    axes[1, 0].set_ylabel("Relative RMS force error")
+    axes[0, 0].tick_params(axis="x", labelbottom=False)
+    axes[0, 1].tick_params(axis="x", labelbottom=False)
+    for ax in axes[1, :]:
+        ax.set_xlabel(r"Actual FFT grid size, $M^3$")
+
+    handles = [
+        Line2D(
+            [0], [0], color=color, marker=marker, linestyle="--", linewidth=1.25,
+            markersize=5.2, markerfacecolor=color, markeredgecolor=color,
+            label=rf"ESP $P={order}$",
+        )
+        for order, (color, marker) in order_style.items()
+    ]
+    handles.append(
+        Line2D(
+            [0], [0], color=COLORS["black"], marker="X", linestyle="none",
+            markersize=5.2, markerfacecolor="white", markeredgecolor=COLORS["black"],
+            label=r"Gaussian-split PPPM $P=5$",
+        )
+    )
+    fig.legend(
+        handles,
+        [handle.get_label() for handle in handles],
+        loc="upper center",
+        bbox_to_anchor=(0.50, 0.957),
+        ncol=6,
+        fontsize=7.4,
+        handlelength=1.65,
+        handletextpad=0.55,
+        columnspacing=1.05,
+    )
+    with (HERE / "fig6_pppm_efficiency_plot_source.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(plot_source[0]))
+        writer.writeheader()
+        writer.writerows(plot_source)
+    save_figure(
+        fig,
+        "fig6_pppm_efficiency",
+        "Fixed-influence IK theory and pilot-corrected AD estimates with independent Ewald validation",
+    )
+    return {
+        "layout": "2 x 2",
+        "esp_rows": len(theory_rows),
+        "esp_theory_rows": len(theory_rows),
+        "ad_coordinate_screen_rows": len(coordinate_ad_rows),
+        "pppm_rows": sum(len(rows) for rows in pppm_by_operator_target.values()),
+        "pppm_rows_by_panel": {
+            panel_by_operator_target[key]: len(rows)
+            for key, rows in pppm_by_operator_target.items()
+        },
+        "esp_displayed_rows": sum(
+            value(row, "sigma_up") >= 1.0 for row in theory_rows
+        ),
+        "ad_coordinate_screen_displayed_rows": sum(
+            value(row, "sigma_up") >= 1.0 for row in coordinate_ad_rows
+        ),
+        "pppm_displayed_rows": sum(len(rows) for rows in pppm_by_operator_target.values()),
+        "orders": list(expected_orders),
+        "first_theory_resolved_crossings": first_theory,
+        "first_validation_resolved_crossings": first_ik_validation,
+        "first_ad_coordinate_screen_resolved_crossings": first_ad_screen,
+        "first_ad_validation_resolved_crossings": first_ad_validation,
+        "theory_frames": [1, 25],
+        "theory_uses_reference_force_differences": False,
+        "theory_curve_style": "dashed line without markers",
+        "ad_coordinate_screen_uses_reference_force_differences": False,
+        "ad_coordinate_screen_curve_style": "dashed line without markers",
+        "ad_coordinate_screen_selection_scope": (
+            "finite-band AD theoretical analysis with a 25-frame pilot correction; "
+            "the separate open stars are frozen joint selections"
+        ),
+        "ad_coordinate_joint_screen_rows": 2,
+        "ad_coordinate_joint_screen": {
+            f"{target:.0e}": {
+                "actual_nx": int(screen["selected"]["actual_nx"]),
+                "actual_grid_points": int(screen["selected"]["actual_grid_points"]),
+                "order": int(screen["selected"]["order"]),
+                "csplit": float(screen["selected"]["csplit"]),
+                "cspread": float(screen["selected"]["cspread"]),
+                "prediction_relative_rms": float(
+                    screen["selected"]["predicted_total_relative_rms"]
+                ),
+                "prediction_block5_sem_relative": float(
+                    screen["selected"]["predicted_total_relative_block5_sem"]
+                ),
+                "holdout_relative_rms": float(screen["summary"]["validation_relative_rms"]),
+                "holdout_block5_sem": float(
+                    screen["summary"]["validation_relative_rms_block5_sem"]
+                ),
+                "prediction_to_measurement_ratio": (
+                    float(screen["selected"]["predicted_total_relative_rms"])
+                    / float(screen["summary"]["validation_relative_rms"])
+                ),
+                "selection_used_holdout": False,
+            }
+            for target, screen in coordinate_screens.items()
+        },
+        "ad_coordinate_joint_screen_uses_reference_force_differences": False,
+        "ad_coordinate_joint_screen_holdout_frames": [26, 51],
+        "ad_coordinate_joint_screen_curve_style": "open star: pilot-corrected estimate; filled star: independent validation",
+        "validation_curve_style": "filled markers with balanced-block SEM; no connecting line",
+        "pppm_curve_style": "open X markers with balanced-block SEM; no connecting line",
+        "ad_panels_included": True,
         "below_band_points_omitted_from_main_plot": True,
     }
 
@@ -5750,7 +6383,7 @@ def write_source_inventory() -> None:
         },
         {
             "figure": "5",
-            "panel": "a-b",
+            "panel": "a-d",
             "source_csv": (
                 "fig6_pppm_efficiency_plot_source.csv; "
                 "fig5_fixed_ik_theory_grid_prediction.csv; "
@@ -5758,35 +6391,50 @@ def write_source_inventory() -> None:
                 "fig5_fixed_ik_theory_grid_source.csv; "
                 "fig5_fixed_ik_theory_grid_manifest.json; "
                 "build_fig5_fixed_ik_theory_grid.py; "
-                "fig5_ik_ad_order_scan/fig5_ik_ad_order_scan_summary.csv; "
+                "fig5_ad_coordinate_screen/baseline_prediction.csv; "
+                "fig5_ad_coordinate_screen/baseline_prediction_by_frame.csv; "
+                "fig5_ad_coordinate_screen/baseline_source.csv; "
+                "fig5_ad_coordinate_screen/baseline_manifest.json; "
+                "fig5_ad_coordinate_screen/joint_1e-4/"
+                "prediction_before_validation.csv; "
+                "fig5_ad_coordinate_screen/joint_1e-4/frozen_selection.json; "
+                "fig5_ad_coordinate_screen/joint_1e-4/"
+                "holdout_validation_summary.csv; "
+                "fig5_ad_coordinate_screen/joint_1e-5/"
+                "prediction_before_validation.csv; "
+                "fig5_ad_coordinate_screen/joint_1e-5/frozen_selection.json; "
+                "fig5_ad_coordinate_screen/joint_1e-5/"
+                "holdout_validation_summary.csv; "
+                "build_fig5_ad_coordinate_screen.py; "
                 "fig5_pppm_ik_ad_fixed_g_scan/"
                 "fig5_pppm_ik_ad_fixed_g_summary.csv; "
                 "fig5_pppm_ik_ad_fixed_g_scan/fig5_pppm_ik_ad_fixed_g_manifest.json"
             ),
             "role": (
-                "theory-only Eq. (55)+Eq. (90) fixed-influence ik ESP "
-                "screening curves and nonoverlapping Ewald validation for "
-                "P=5--9; panels a/b use targets 1e-4 and 1e-5, respectively, "
-                "against a marker-only fixed-G, fixed-P=5 PPPM ik baseline"
+                "panels a/b: fixed-influence ik theoretical analysis and independent "
+                "validation for P=5--9; panels c/d: finite-band AD theoretical "
+                "analysis with a 25-frame pilot correction and independent validation. "
+                "Open/filled black stars show the selected AD candidates and their "
+                "validation at targets of 1e-4 and 1e-5. The PPPM baseline uses fixed "
+                "G and P=5 under the corresponding differentiation convention"
             ),
             "uncertainty": (
-                "dashed curves are theoretical predictions from pilot frames "
-                "1--25; their source table records the five-block temporal SEM "
-                "and independent alias-importance-sampling SEM. Filled ESP and "
-                "open PPPM symbols use only frames 26--51, with bars from five "
-                "balanced pooled-RMS blocks of sizes 5,5,5,5,6; validation "
-                "symbols have no connecting lines"
+                "top-row dashed curves are theoretical predictions from frames 1--25. "
+                "Bottom-row dashed curves use finite-band AD theory with a 25-frame "
+                "pilot correction. Filled ESP and AD markers, black validation stars, "
+                "and open PPPM symbols use frames 26--51. All validation symbols have "
+                "five-block pooled-RMS SEMs and no connecting lines"
             ),
             "operator_or_grid_convention": (
-                "both panels fix c_split=c_spread at 12.024 or 14.471 and "
-                "use fixed-influence ik with the LAMMPS Fourier-polynomial "
-                "deconvolution. The theory stage accesses only frames 1--25, "
-                "a coarse PPPM force scale, and no Ewald force difference or "
-                "holdout coordinate. M=12 remains in the source table but is "
+                "all colored curves fix c_split=c_spread at 12.024 or 14.471. Panels "
+                "a/b use fixed-influence ik. Panels c/d use the matched production AD "
+                "operator with finite-band theory and a 25-frame pilot correction. The "
+                "black stars are frozen AD selections at (M,P,c_spread)=(15,6,12.024) "
+                "at 1e-4 and (16,7,14.471) at 1e-5. "
+                "M=12 remains in the source table but is "
                 "below the resolved-band domain and omitted from the main plot. "
-                "PPPM uses P=5, ik differentiation, and its separately fixed "
-                "Gaussian Ewald parameter. Molecular AD is intentionally not "
-                "shown because no molecular-AD acceptance estimator is claimed."
+                "PPPM uses P=5 and its separately fixed Gaussian Ewald parameter "
+                "under the differentiation convention of the row."
             ),
         },
         {
@@ -5930,15 +6578,31 @@ def write_plot_manifest(
         },
         "figure5": {
             "legacy_output_basename": "fig6_pppm_efficiency",
-            "layout": "1 x 2",
+            "layout": figure5_summary["layout"],
             "plot_source": "fig6_pppm_efficiency_plot_source.csv",
             "theory_prediction_source": "fig5_fixed_ik_theory_grid_prediction.csv",
             "theory_freeze": "fig5_fixed_ik_theory_grid_frozen.json",
             "theory_runner": "build_fig5_fixed_ik_theory_grid.py",
             "theory_validation_join": "fig5_fixed_ik_theory_grid_source.csv",
-            "esp_validation_source": (
-                "fig5_ik_ad_order_scan/fig5_ik_ad_order_scan_summary.csv"
-            ),
+            "ad_coordinate_screen_source": "fig5_ad_coordinate_screen/baseline_source.csv",
+            "ad_coordinate_screen_manifest": "fig5_ad_coordinate_screen/baseline_manifest.json",
+            "ad_coordinate_screen_runner": "build_fig5_ad_coordinate_screen.py",
+            "ad_coordinate_screen_sources": {
+                "1e-04": (
+                    "fig5_ad_coordinate_screen/joint_1e-4/"
+                    "prediction_before_validation.csv; "
+                    "fig5_ad_coordinate_screen/joint_1e-4/frozen_selection.json; "
+                    "fig5_ad_coordinate_screen/joint_1e-4/"
+                    "holdout_validation_summary.csv"
+                ),
+                "1e-05": (
+                    "fig5_ad_coordinate_screen/joint_1e-5/"
+                    "prediction_before_validation.csv; "
+                    "fig5_ad_coordinate_screen/joint_1e-5/frozen_selection.json; "
+                    "fig5_ad_coordinate_screen/joint_1e-5/"
+                    "holdout_validation_summary.csv"
+                ),
+            },
             "pppm_summary_source": (
                 "fig5_pppm_ik_ad_fixed_g_scan/"
                 "fig5_pppm_ik_ad_fixed_g_summary.csv"
@@ -5946,6 +6610,8 @@ def write_plot_manifest(
             "panels": {
                 "a": "fixed-influence ik, epsilon=1e-4, c_split=c_spread=12.024",
                 "b": "fixed-influence ik, epsilon=1e-5, c_split=c_spread=14.471",
+                "c": "AD theoretical analysis + 25-frame pilot correction at c_split=c_spread=12.024, plus frozen selection/validation stars at (M,P,c_spread)=(15,6,12.024)",
+                "d": "AD theoretical analysis + 25-frame pilot correction at c_split=c_spread=14.471, plus frozen selection/validation stars at (M,P,c_spread)=(16,7,14.471)",
             },
             "orders": figure5_summary["orders"],
             "fixed_bandlimits_by_target": {
@@ -5959,6 +6625,8 @@ def write_plot_manifest(
             "displayed_resolved_meshes_by_panel": {
                 "a": [15, 16, 18, 20, 24, 27, 32, 36, 40, 48, 64, 80],
                 "b": [16, 18, 20, 24, 32, 36, 40, 48, 64, 80],
+                "c": [15, 16, 18, 20, 24, 27, 32, 36, 40, 48, 64, 80],
+                "d": [16, 18, 20, 24, 32, 36, 40, 48, 64, 80],
             },
             "holdout_frames": [26, 51],
             "theory_frames": figure5_summary["theory_frames"],
@@ -5966,13 +6634,39 @@ def write_plot_manifest(
                 "theory_uses_reference_force_differences"
             ],
             "theory_curve_style": figure5_summary["theory_curve_style"],
+            "ad_coordinate_screen_uses_reference_force_differences": figure5_summary[
+                "ad_coordinate_screen_uses_reference_force_differences"
+            ],
+            "ad_coordinate_screen_curve_style": figure5_summary[
+                "ad_coordinate_screen_curve_style"
+            ],
+            "ad_coordinate_screen_selection_scope": figure5_summary[
+                "ad_coordinate_screen_selection_scope"
+            ],
+            "ad_coordinate_joint_screen": figure5_summary["ad_coordinate_joint_screen"],
+            "ad_coordinate_joint_screen_rows": figure5_summary[
+                "ad_coordinate_joint_screen_rows"
+            ],
+            "ad_coordinate_joint_screen_uses_reference_force_differences": figure5_summary[
+                "ad_coordinate_joint_screen_uses_reference_force_differences"
+            ],
+            "ad_coordinate_joint_screen_holdout_frames": figure5_summary[
+                "ad_coordinate_joint_screen_holdout_frames"
+            ],
+            "ad_coordinate_joint_screen_curve_style": figure5_summary[
+                "ad_coordinate_joint_screen_curve_style"
+            ],
             "validation_curve_style": figure5_summary["validation_curve_style"],
             "pppm_curve_style": figure5_summary["pppm_curve_style"],
             "esp_rows": figure5_summary["esp_rows"],
             "esp_theory_rows": figure5_summary["esp_theory_rows"],
+            "ad_coordinate_screen_rows": figure5_summary["ad_coordinate_screen_rows"],
             "pppm_rows": figure5_summary["pppm_rows"],
             "pppm_rows_by_panel": figure5_summary["pppm_rows_by_panel"],
             "esp_displayed_rows": figure5_summary["esp_displayed_rows"],
+            "ad_coordinate_screen_displayed_rows": figure5_summary[
+                "ad_coordinate_screen_displayed_rows"
+            ],
             "pppm_displayed_rows": figure5_summary["pppm_displayed_rows"],
             "first_theory_resolved_crossings": figure5_summary[
                 "first_theory_resolved_crossings"
@@ -5980,26 +6674,36 @@ def write_plot_manifest(
             "first_validation_resolved_crossings": figure5_summary[
                 "first_validation_resolved_crossings"
             ],
+            "first_ad_coordinate_screen_resolved_crossings": figure5_summary[
+                "first_ad_coordinate_screen_resolved_crossings"
+            ],
+            "first_ad_validation_resolved_crossings": figure5_summary[
+                "first_ad_validation_resolved_crossings"
+            ],
             "below_band_points_omitted_from_main_plot": figure5_summary[
                 "below_band_points_omitted_from_main_plot"
             ],
             "uncertainty": (
-                "prediction values use pilot frames 1--25 with a five-block "
-                "temporal SEM and separately archived alias-sampling SEM; "
-                "holdout bars use five balanced pooled-RMS blocks from frames "
-                "26--51, with sizes 5,5,5,5,6"
+                "top-row predictions use frames 1--25. Colored bottom-row AD curves "
+                "use five-block SEMs for the 25-frame pilot-corrected estimate. The "
+                "filled Ewald-validation stars and all other holdout bars use five "
+                "balanced pooled-RMS blocks from frames 26--51"
             ),
             "operator_scope": (
-                "ESP uses fixed-influence ik and the exact theoretical "
-                "convention in Eqs. (55) and (90); PPPM uses ik with P=5 and "
-                "a separately frozen Gaussian Ewald parameter. No molecular-AD "
-                "theory curve or molecular-AD automatic acceptance claim is made."
+                "panels a/b use fixed-influence ik and Eqs. (55) and (90). Panels c/d "
+                "use the matched production AD operator and finite-band theoretical "
+                "analysis with a 25-frame pilot correction. The star pairs are frozen "
+                "joint-window candidates. PPPM "
+                "uses P=5 and a separately frozen Gaussian Ewald parameter under "
+                "the differentiation convention of the row."
             ),
             "selection_scope": (
-                "The frozen candidate screen accepts only resolved-band values "
-                "with the theoretical prediction at or below the target. The "
-                "M=12 diagnostics are source-only. First crossings are neither "
-                "timing optima nor global order selections."
+                "The frozen top-row theoretical screen accepts resolved-band candidates "
+                "whose prediction is at or below the target. The lower AD rows and black "
+                "stars use a short SPC/E-water pilot correction, not a universal molecular "
+                "acceptance theorem. The M=12 diagnostics are source-only. "
+                "First crossings are neither timing optima nor global order "
+                "selections."
             ),
             "m12_upsampling_ratio": {
                 "1e-04": 0.9405966028711956,
@@ -6294,7 +6998,7 @@ def verify_outputs() -> None:
         "fig3_mesh_validation": (7.1, 5.0),
         "fig4_sq_correction": FIGURE4_SIZE,
         "figS_charge_spectrum": FIGURE_SI_SPECTRUM_SIZE,
-        "fig6_pppm_efficiency": (7.1, 3.28),
+        "fig6_pppm_efficiency": (7.1, 5.0),
         "fig7_window_upsampling": LARGE_WATER_WINDOW_FIGURE_SIZE,
         "figS_window_upsampling_diagnostics": FIGURE_SI_WINDOW_SIZE,
     }
@@ -6322,15 +7026,18 @@ def main() -> None:
     figure3()
     figure_si_charge_spectrum()
     figure4()
-    figure5_summary = figure5_theoretical_fixed_ik()
+    figure5_summary = figure5_theory_and_coordinate_ad()
     window_cost_crossover = figure7()
     write_source_inventory()
     write_plot_manifest(figure5_summary, window_cost_crossover)
     verify_outputs()
     print("Created Figures 2--6 as PDF/SVG, 300 dpi PNG, and 600 dpi TIFF.")
     print(
-        "Figure 5 fixed-influence IK theory/holdout scan: "
+        "Figure 5 fixed-influence IK theory/validation and AD theoretical-analysis "
+        "plus pilot-correction results, with frozen joint AD checks: "
         f"{figure5_summary['esp_theory_rows']} ESP theory rows and "
+        f"{figure5_summary['ad_coordinate_screen_rows']} pilot-corrected AD rows and "
+        f"{figure5_summary['ad_coordinate_joint_screen_rows']} frozen joint AD checks and "
         f"{figure5_summary['pppm_rows']} fixed-G PPPM validation rows."
     )
     print(

@@ -27,6 +27,9 @@ import sys
 HERE = Path(__file__).resolve().parent
 REDESIGNED = HERE.parent
 PROJECT = HERE.parents[3]
+sys.path.insert(0, str(REDESIGNED))
+from generated_output import section_output_root  # noqa: E402
+
 SOURCE = PROJECT / "numerical_examples" / "water_trajectory_benchmark"
 DATA = SOURCE / "water.data"
 TRAJECTORY = SOURCE / "water_short_traj.lammpstrj"
@@ -48,12 +51,12 @@ PANEL_MESHES = {
     "c": (12, 15, 18, 20, 24, 27, 32, 36, 40, 48, 64, 80),
     "d": MESHES,
 }
-RAW = HERE / "raw"
-SUMMARY = HERE / "fig5_pppm_ik_ad_fixed_g_summary.csv"
-BY_FRAME = HERE / "fig5_pppm_ik_ad_fixed_g_by_frame.csv"
-MANIFEST = HERE / "fig5_pppm_ik_ad_fixed_g_manifest.json"
+OUTDIR = section_output_root() / "fig5_pppm_ik_ad_fixed_g_scan"
+RAW = OUTDIR / "raw"
+SUMMARY = OUTDIR / "fig5_pppm_ik_ad_fixed_g_summary.csv"
+BY_FRAME = OUTDIR / "fig5_pppm_ik_ad_fixed_g_by_frame.csv"
+MANIFEST = OUTDIR / "fig5_pppm_ik_ad_fixed_g_manifest.json"
 
-sys.path.insert(0, str(REDESIGNED))
 import build_fig6_pppm_order_scan as core  # noqa: E402
 
 

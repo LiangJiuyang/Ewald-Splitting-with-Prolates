@@ -454,6 +454,58 @@ def parse_force_dump(path: Path):
     return frames
 
 
+def parse_force_dump_prefix(
+    path: Path, count: int, *, return_sha256: bool = False
+):
+    """Read exactly the first ``count`` force-dump frames and then stop.
+
+    The optional digest covers the precise byte prefix ending at the final
+    atom record of frame ``count``.  As for the coordinate prefix reader,
+    unbuffered binary input prevents a prediction-stage read-ahead into the
+    holdout records.
+    """
+
+    if count < 1:
+        raise ValueError("count must be positive")
+    import hashlib
+
+    digest = hashlib.sha256()
+    frames = []
+    with path.open("rb", buffering=0) as handle:
+        def line() -> bytes:
+            raw = handle.readline()
+            digest.update(raw)
+            return raw
+
+        while len(frames) < count:
+            header = line()
+            if not header:
+                raise RuntimeError(f"force dump {path} contains fewer than {count} frames")
+            if not header.startswith(b"ITEM: TIMESTEP"):
+                raise RuntimeError(f"malformed force dump: {path}")
+            timestep = int(line())
+            if not line().startswith(b"ITEM: NUMBER OF ATOMS"):
+                raise RuntimeError("missing force-dump atom count")
+            natoms = int(line())
+            if not line().startswith(b"ITEM: BOX BOUNDS"):
+                raise RuntimeError("missing force-dump bounds")
+            for _ in range(3):
+                line()
+            columns = line().split()[2:]
+            col = {name.decode("ascii"): index for index, name in enumerate(columns)}
+            ids = np.empty(natoms, dtype=np.int64)
+            force = np.empty((natoms, 3), dtype=np.float64)
+            for index in range(natoms):
+                fields = line().split()
+                ids[index] = int(fields[col["id"]])
+                force[index] = [float(fields[col[name]]) for name in ("fx", "fy", "fz")]
+            order = np.argsort(ids)
+            frames.append((timestep, force[order]))
+    if return_sha256:
+        return frames, digest.hexdigest()
+    return frames
+
+
 def stencil_1d(
     coordinate: np.ndarray,
     mesh: int,

@@ -64,9 +64,19 @@ def configure_lmp(value: str | Path | None = None) -> Path:
 
 
 def project_relative(path: Path) -> str:
-    """Return a LAMMPS path relative to the bundle working directory."""
+    """Return a portable LAMMPS path for in-tree inputs and external outputs.
 
-    return path.resolve().relative_to(PROJECT).as_posix()
+    Reproducibility inputs live below ``PROJECT`` and remain relative to the
+    bundle working directory.  Generated probes and force dumps are directed
+    outside the Git worktree, so they cannot be relativized to that directory;
+    in that case LAMMPS receives their absolute path.
+    """
+
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(PROJECT).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 def reference_operator_dependencies() -> list[Path]:

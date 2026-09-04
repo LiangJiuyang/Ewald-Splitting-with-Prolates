@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-r"""Generate supporting finite-band AD component tables for Figure 5.
+r"""Legacy rigid S_tag candidate-selection diagnostic.
 
-The current lower AD row uses finite-band theoretical analysis with a 25-frame
-pilot correction. This legacy-named script retains the trajectory-free
-rigid-SPC/E calculation as a diagnostic and writes the frozen self/Fourier
-component records required by the current workflow. It does not generate the
-AD curves displayed in Figure 5.
+The current Figure-5 AD workflow is the full-source quadratic form in
+build_fig5_ad_coordinate_screen.py. This script is retained only to compare
+against the older pair-only rigid-SPC/E closure. Its selected candidate is not
+a Figure-5 selection and its output is never plotted.
 """
 
 from __future__ import annotations
@@ -31,6 +30,8 @@ if str(HERE) not in sys.path:
 if str(AD_VALIDATION) not in sys.path:
     sys.path.insert(0, str(AD_VALIDATION))
 
+from generated_output import section_output_root  # noqa: E402
+
 import fixed_ad_reference as adref  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
 import build_fig5_ad_rigid_sq_theory as rigid_theory  # noqa: E402
@@ -41,7 +42,7 @@ from ad_validation_common import (  # noqa: E402
     fit_self_correction,
     operator,
 )
-from run_water_ad_validation import (  # noqa: E402
+from water_ad_production import (  # noqa: E402
     PILOT_COUNT,
     TOTAL_COUNT,
     TRAJECTORY,
@@ -61,7 +62,8 @@ ORDERS = tuple(range(5, 10))
 SPREAD_BRANCHES = ((14.471, 1.0e-5), (16.894, 1.0e-6))
 ONE_SIDED_95_Z = 1.6448536269514722
 
-OUTDIR = HERE / "fig5_ad_rigid_theory_selection"
+OUTPUT_ROOT = section_output_root()
+OUTDIR = OUTPUT_ROOT / "legacy_fig5_ad_rigid_theory_selection"
 PREDICTION_CSV = OUTDIR / "prediction_before_validation.csv"
 FROZEN_JSON = OUTDIR / "frozen_selection.json"
 DETAIL_CSV = OUTDIR / "holdout_validation_by_frame.csv"
@@ -81,14 +83,14 @@ def configure_target(target: float) -> None:
         MESHES = (16, 18, 20, 24)
         ORDERS = tuple(range(5, 10))
         SPREAD_BRANCHES = ((14.471, 1.0e-5), (16.894, 1.0e-6))
-        OUTDIR = HERE / "fig5_ad_rigid_theory_selection"
+        OUTDIR = OUTPUT_ROOT / "legacy_fig5_ad_rigid_theory_selection"
     elif math.isclose(target, 1.0e-4, rel_tol=0.0, abs_tol=1.0e-15):
         TARGET = 1.0e-4
         CSPLIT = 12.024
         MESHES = (15, 16, 18, 20)
         ORDERS = tuple(range(5, 10))
         SPREAD_BRANCHES = ((12.024, 1.0e-4), (13.251, 3.0e-5), (14.471, 1.0e-5))
-        OUTDIR = HERE / "fig5_ad_rigid_theory_selection_1e-4"
+        OUTDIR = OUTPUT_ROOT / "legacy_fig5_ad_rigid_theory_selection_1e-4"
     else:
         raise ValueError("only the prespecified 1e-4 and 1e-5 AD screens are available")
     PREDICTION_CSV = OUTDIR / "prediction_before_validation.csv"
@@ -107,8 +109,13 @@ def sha256(path: Path) -> str:
 
 
 def file_record(path: Path) -> dict[str, object]:
+    resolved = path.resolve()
+    try:
+        display_path = str(resolved.relative_to(PROJECT))
+    except ValueError:
+        display_path = str(resolved)
     return {
-        "path": str(path.relative_to(PROJECT)),
+        "path": display_path,
         "bytes": path.stat().st_size,
         "sha256": sha256(path),
     }
@@ -219,7 +226,7 @@ def theory_screen() -> tuple[list[dict[str, object]], dict[str, object], dict[st
         print(
             json.dumps(
                 {
-                    "stage": "a_priori_rigid_AD_screen",
+                    "stage": "legacy_rigid_stag_diagnostic",
                     "M": mesh,
                     "P": order,
                     "csplit": target.csplit,
@@ -347,6 +354,11 @@ def validate_selected(selected: dict[str, object], *, rerun_lammps: bool) -> tup
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--legacy-rigid-diagnostic",
+        action="store_true",
+        help="required acknowledgement that this pair-only closure is not the Figure 5 AD workflow",
+    )
+    parser.add_argument(
         "--target",
         type=float,
         default=1.0e-5,
@@ -376,6 +388,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if not args.legacy_rigid_diagnostic:
+        raise SystemExit(
+            "pass --legacy-rigid-diagnostic to run this retained pair-only closure; "
+            "use build_fig5_ad_coordinate_screen.py for Figure 5"
+        )
     adcommon.configure_lmp(args.lmp)
     configure_target(args.target)
     started = time.time()
@@ -388,11 +405,12 @@ def main() -> None:
     write_csv(PREDICTION_CSV, prediction_rows)
     frozen = {
         "schema_version": 1,
-        "purpose": "supporting finite-band AD component selection and legacy rigid-SPC/E diagnostic",
+        "purpose": "legacy pair-only rigid-SPC/E S_tag diagnostic; not Figure 5 AD selection",
         "logical_order": [
+            "explicit legacy-diagnostic acknowledgement",
             "rigid topology, unit-charge operator probes, and closed Fourier estimate",
-            "write complete theoretical candidate table",
-            "freeze resolution-first selected candidate",
+            "write complete diagnostic candidate table",
+            "freeze diagnostic candidate",
             "only then access molecular trajectory and Ewald holdout",
         ],
         "candidate_set": {
@@ -410,6 +428,7 @@ def main() -> None:
         "selected": selected,
         "prediction_reference_force_accessed": False,
         "prediction_molecular_coordinates_accessed": False,
+        "used_for_figure5_selection_or_plot": False,
         "force_scale": screen_metadata["force_scale"],
         "force_scale_role": "coarse-PPPM relative normalization only; no Ewald reference",
         "prediction_table_sha256": sha256(PREDICTION_CSV),
@@ -430,7 +449,7 @@ def main() -> None:
     write_csv(SUMMARY_CSV, [summary])
     manifest = {
         "schema_version": 1,
-        "purpose": "legacy rigid-SPC/E AD diagnostic with independent validation",
+        "purpose": "legacy pair-only rigid-SPC/E S_tag diagnostic with independent validation",
         "frozen_selection": file_record(FROZEN_JSON),
         "prediction": file_record(PREDICTION_CSV),
         "validation": {
@@ -443,6 +462,7 @@ def main() -> None:
         },
         "selected": selected,
         "validation_summary": summary,
+        "used_for_figure5_selection_or_plot": False,
         "raw_paths": paths,
         "elapsed_seconds": time.time() - started,
         "python": platform.python_version(),

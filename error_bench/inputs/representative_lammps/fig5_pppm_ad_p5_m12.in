@@ -23,6 +23,5 @@ kspace_modify diff ad
 kspace_modify gewald 0.33593464
 pair_coeff * *
 
-dump force all custom 1 inputs/representative_lammps/fig5_pppm_ad_p5_m12.forces.dump id fx fy fz
-dump_modify force sort id format line "%d %.17g %.17g %.17g"
+# The Figure-5 runner writes force dumps only under ESP_ERROR_BENCH_OUTPUT_DIR.
 rerun numerical_examples/water_trajectory_benchmark/water_short_traj.lammpstrj dump x y z ix iy iz box yes format native

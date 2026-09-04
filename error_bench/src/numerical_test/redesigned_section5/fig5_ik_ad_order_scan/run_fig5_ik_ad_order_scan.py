@@ -29,6 +29,9 @@ import sys
 HERE = Path(__file__).resolve().parent
 REDESIGNED = HERE.parent
 PROJECT = HERE.parents[3]
+sys.path.insert(0, str(REDESIGNED))
+from generated_output import section_output_root  # noqa: E402
+
 SOURCE = PROJECT / "numerical_examples" / "water_trajectory_benchmark"
 DATA = SOURCE / "water.data"
 TRAJECTORY = SOURCE / "water_short_traj.lammpstrj"
@@ -61,10 +64,11 @@ TARGET_SETTINGS = {
     },
 }
 
-RAW = HERE / "raw"
-SUMMARY = HERE / "fig5_ik_ad_order_scan_summary.csv"
-BY_FRAME = HERE / "fig5_ik_ad_order_scan_by_frame.csv"
-MANIFEST = HERE / "fig5_ik_ad_order_scan_manifest.json"
+OUTDIR = section_output_root() / "fig5_ik_ad_order_scan"
+RAW = OUTDIR / "raw"
+SUMMARY = OUTDIR / "fig5_ik_ad_order_scan_summary.csv"
+BY_FRAME = OUTDIR / "fig5_ik_ad_order_scan_by_frame.csv"
+MANIFEST = OUTDIR / "fig5_ik_ad_order_scan_manifest.json"
 
 IK_DIR = REDESIGNED / "water_fixed_ik_p_scan"
 AD_DIR = REDESIGNED / "lammps_ad_total_validation"
@@ -72,7 +76,7 @@ sys.path.insert(0, str(IK_DIR))
 sys.path.insert(0, str(AD_DIR))
 import run_water_fixed_ik_p_scan as ikscan  # noqa: E402
 import ad_validation_common as adcommon  # noqa: E402
-import run_water_ad_validation as adproduction  # noqa: E402
+import water_ad_production as adproduction  # noqa: E402
 
 
 @dataclass(frozen=True)

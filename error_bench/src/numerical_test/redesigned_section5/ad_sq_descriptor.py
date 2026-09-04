@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 r"""Structure-aware descriptor for the implemented AD mesh-pair estimator.
 
+This is retained for Figure 4 and for explicit legacy Figure-5 diagnostics.
+It is not the current Figure-5 AD estimator: the latter uses the full-source,
+target-cell-phase-resolved quadratic form in ad_all_source_theory.
+
 The production AD path uses the classical derivative of the tabulated
 piecewise-polynomial spreading stencil.  Its homogeneous pair estimator is
 therefore evaluated with the exact one-cell response moments in

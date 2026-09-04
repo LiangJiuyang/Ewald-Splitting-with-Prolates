@@ -38,22 +38,25 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parents[2]
+sys.path.insert(0, str(HERE))
+from generated_output import section_output_root  # noqa: E402
+
+OUTPUT_ROOT = section_output_root()
 WATER_ROOT = PROJECT / "numerical_examples" / "water_trajectory_benchmark"
 TRAJECTORY = WATER_ROOT / "water_short_traj.lammpstrj"
 # This is a deliberately inexpensive full-force scale, not an Ewald reference.
 PILOT_FORCE_DUMP = WATER_ROOT / "forces.pppm_mesh20.dump"
 ORDER_SCAN_SUMMARY = (
-    HERE / "fig5_ik_ad_order_scan" / "fig5_ik_ad_order_scan_summary.csv"
+    OUTPUT_ROOT / "fig5_ik_ad_order_scan" / "fig5_ik_ad_order_scan_summary.csv"
 )
 
-PREDICTION_CSV = HERE / "fig5_fixed_ik_theory_grid_prediction.csv"
-PARTIAL_PREDICTION_CSV = HERE / "fig5_fixed_ik_theory_grid_prediction.partial.csv"
-FROZEN_JSON = HERE / "fig5_fixed_ik_theory_grid_frozen.json"
-FROZEN_SHA256 = HERE / "fig5_fixed_ik_theory_grid_frozen.json.sha256"
-PLOT_SOURCE_CSV = HERE / "fig5_fixed_ik_theory_grid_source.csv"
-MANIFEST = HERE / "fig5_fixed_ik_theory_grid_manifest.json"
+PREDICTION_CSV = OUTPUT_ROOT / "fig5_fixed_ik_theory_grid_prediction.csv"
+PARTIAL_PREDICTION_CSV = OUTPUT_ROOT / "fig5_fixed_ik_theory_grid_prediction.partial.csv"
+FROZEN_JSON = OUTPUT_ROOT / "fig5_fixed_ik_theory_grid_frozen.json"
+FROZEN_SHA256 = OUTPUT_ROOT / "fig5_fixed_ik_theory_grid_frozen.json.sha256"
+PLOT_SOURCE_CSV = OUTPUT_ROOT / "fig5_fixed_ik_theory_grid_source.csv"
+MANIFEST = OUTPUT_ROOT / "fig5_fixed_ik_theory_grid_manifest.json"
 
-sys.path.insert(0, str(HERE))
 import fixed_ik_reference as ref  # noqa: E402
 import sq_alias_tools as sqtools  # noqa: E402
 
@@ -100,6 +103,8 @@ TARGETS = (
 _PILOT_FRAMES: list[tuple[int, np.ndarray, np.ndarray, float]] | None = None
 _FORCE_SCALE: float | None = None
 _FORCE_SCALE_BY_FRAME: np.ndarray | None = None
+_PILOT_TRAJECTORY_PREFIX_SHA256: str | None = None
+_PILOT_FORCE_PREFIX_SHA256: str | None = None
 
 
 def sha256(path: Path) -> str:
@@ -111,8 +116,13 @@ def sha256(path: Path) -> str:
 
 
 def record(path: Path) -> dict[str, object]:
+    resolved = path.resolve()
+    try:
+        display_path = resolved.relative_to(PROJECT).as_posix()
+    except ValueError:
+        display_path = resolved.as_posix()
     return {
-        "path": path.resolve().relative_to(PROJECT).as_posix(),
+        "path": display_path,
         "sha256": sha256(path),
         "bytes": path.stat().st_size,
     }
@@ -171,27 +181,31 @@ def target_from_value(value: float) -> Target:
     raise KeyError(value)
 
 
-def force_scale() -> tuple[float, np.ndarray]:
-    frames = ref.parse_force_dump(PILOT_FORCE_DUMP)
-    if len(frames) != TOTAL_N:
-        raise RuntimeError(f"expected {TOTAL_N} scale-force frames, found {len(frames)}")
+def force_scale() -> tuple[float, np.ndarray, str]:
+    frames, prefix_digest = ref.parse_force_dump_prefix(
+        PILOT_FORCE_DUMP, PILOT_N, return_sha256=True
+    )
     per_frame = np.asarray(
         [
             math.sqrt(float(np.mean(np.sum(force * force, axis=1))))
-            for _, force in frames[:PILOT_N]
+            for _, force in frames
         ],
         dtype=np.float64,
     )
-    return float(math.sqrt(float(np.mean(per_frame * per_frame)))), per_frame
+    return float(math.sqrt(float(np.mean(per_frame * per_frame)))), per_frame, prefix_digest
 
 
 def initialize_worker() -> None:
     global _PILOT_FRAMES, _FORCE_SCALE, _FORCE_SCALE_BY_FRAME
-    frames = ref.parse_charge_trajectory(TRAJECTORY)
-    if len(frames) != TOTAL_N:
-        raise RuntimeError(f"expected {TOTAL_N} coordinate frames, found {len(frames)}")
-    _PILOT_FRAMES = frames[:PILOT_N]
-    _FORCE_SCALE, _FORCE_SCALE_BY_FRAME = force_scale()
+    global _PILOT_TRAJECTORY_PREFIX_SHA256, _PILOT_FORCE_PREFIX_SHA256
+    _PILOT_FRAMES, _PILOT_TRAJECTORY_PREFIX_SHA256 = ref.parse_charge_trajectory_prefix(
+        TRAJECTORY, PILOT_N, return_sha256=True
+    )
+    (
+        _FORCE_SCALE,
+        _FORCE_SCALE_BY_FRAME,
+        _PILOT_FORCE_PREFIX_SHA256,
+    ) = force_scale()
 
 
 def prediction_specifications() -> list[tuple[float, int, int]]:
@@ -208,6 +222,8 @@ def predict_case(spec: tuple[float, int, int]) -> dict[str, object]:
 
     if _PILOT_FRAMES is None or _FORCE_SCALE is None or _FORCE_SCALE_BY_FRAME is None:
         initialize_worker()
+    if _PILOT_TRAJECTORY_PREFIX_SHA256 is None or _PILOT_FORCE_PREFIX_SHA256 is None:
+        raise RuntimeError("Figure 5 pilot prefix digests were not initialized")
     target_value, order, mesh = spec
     target = target_from_value(target_value)
     pilot = _PILOT_FRAMES
@@ -296,8 +312,14 @@ def predict_case(spec: tuple[float, int, int]) -> dict[str, object]:
         "cspread": target.cspread,
         "pilot_frames": PILOT_N,
         "holdout_frames": TOTAL_N - PILOT_N,
+        "pilot_coordinate_prefix_sha256": _PILOT_TRAJECTORY_PREFIX_SHA256,
+        "pilot_force_prefix_sha256": _PILOT_FORCE_PREFIX_SHA256,
+        "pilot_coordinate_frames_read": PILOT_N,
+        "pilot_force_frames_read": PILOT_N,
         "pilot_force_scale": force_rms,
-        "pilot_force_scale_source": "coarse PPPM force evaluation; no Ewald reference",
+        "pilot_force_scale_source": (
+            "coarse PPPM force evaluation on frames 1--25; no Ewald reference"
+        ),
         "predicted_mesh_absolute_rms": mesh_abs,
         "predicted_fourier_absolute_rms": fourier_abs,
         "predicted_total_absolute_rms": total_abs,
@@ -321,6 +343,8 @@ def predict_case(spec: tuple[float, int, int]) -> dict[str, object]:
 
 
 def freeze_prediction(rows: list[dict[str, object]]) -> None:
+    if _PILOT_TRAJECTORY_PREFIX_SHA256 is None or _PILOT_FORCE_PREFIX_SHA256 is None:
+        raise RuntimeError("Figure 5 pilot prefix digests were not initialized")
     selections: list[dict[str, object]] = []
     for target in TARGETS:
         for order in ORDERS:
@@ -350,8 +374,16 @@ def freeze_prediction(rows: list[dict[str, object]]) -> None:
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "purpose": "Figure 5 fixed-influence ik theory-only prediction and candidate selection",
         "inputs": {
-            "trajectory": record(TRAJECTORY),
-            "pilot_force_scale": record(PILOT_FORCE_DUMP),
+            "trajectory_prefix": {
+                "path": TRAJECTORY.resolve().relative_to(PROJECT).as_posix(),
+                "frames": "1--25",
+                "sha256": _PILOT_TRAJECTORY_PREFIX_SHA256,
+            },
+            "pilot_force_scale_prefix": {
+                "path": PILOT_FORCE_DUMP.resolve().relative_to(PROJECT).as_posix(),
+                "frames": "1--25",
+                "sha256": _PILOT_FORCE_PREFIX_SHA256,
+            },
             "pilot_frame_indices_zero_based": list(range(PILOT_N)),
             "holdout_frame_indices_zero_based": list(range(PILOT_N, TOTAL_N)),
         },
@@ -438,6 +470,13 @@ def load_frozen_prediction() -> list[dict[str, str]]:
         raise RuntimeError("the frozen prediction record accessed reference-force differences")
     if frozen.get("holdout_coordinates_used") is not False:
         raise RuntimeError("the frozen prediction record accessed holdout coordinates")
+    inputs = frozen.get("inputs", {})
+    for key in ("trajectory_prefix", "pilot_force_scale_prefix"):
+        prefix = inputs.get(key)
+        if not isinstance(prefix, dict):
+            raise RuntimeError(f"the frozen prediction record lacks {key}")
+        if prefix.get("frames") != "1--25" or not isinstance(prefix.get("sha256"), str):
+            raise RuntimeError(f"the frozen prediction record has invalid {key}")
     if frozen["prediction_csv"]["sha256"] != sha256(PREDICTION_CSV):
         raise RuntimeError("the theory prediction CSV changed after freezing")
     return read_rows(PREDICTION_CSV)

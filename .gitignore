@@ -19,7 +19,18 @@ error_bench/**/lmp.*
 
 # Generated force dumps and publication renderings.
 error_bench/inputs/representative_lammps/*.forces.dump
-error_bench/src/numerical_test/redesigned_section5/*.pdf
-error_bench/src/numerical_test/redesigned_section5/*.svg
-error_bench/src/numerical_test/redesigned_section5/*.png
-error_bench/src/numerical_test/redesigned_section5/*.tiff
+
+# Regenerable Figure 5 tables, manifests, diagnostics, and renderings belong
+# in ESP_ERROR_BENCH_OUTPUT_DIR, never in the repository work tree.
+error_bench/src/numerical_test/redesigned_section5/**/*.csv
+error_bench/src/numerical_test/redesigned_section5/**/*.json
+error_bench/src/numerical_test/redesigned_section5/**/*.npz
+error_bench/src/numerical_test/redesigned_section5/**/*.npy
+error_bench/src/numerical_test/redesigned_section5/**/*.pdf
+error_bench/src/numerical_test/redesigned_section5/**/*.svg
+error_bench/src/numerical_test/redesigned_section5/**/*.png
+error_bench/src/numerical_test/redesigned_section5/**/*.tif
+error_bench/src/numerical_test/redesigned_section5/**/*.tiff
+
+# The reviewed current Figure 5 preview is intentionally retained in source.
+!error_bench/src/numerical_test/redesigned_section5/fig5_pppm_efficiency.png

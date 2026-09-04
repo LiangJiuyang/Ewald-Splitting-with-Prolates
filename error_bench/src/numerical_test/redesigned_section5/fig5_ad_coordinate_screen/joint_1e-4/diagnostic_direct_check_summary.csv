@@ -1,2 +1,0 @@
-candidate_id,target,pilot_frames,theory_pair_plus_self_rms_covariance_omitted,direct_finite_band_mesh_rms,theory_to_direct_ratio,used_for_prediction,used_for_selection,diagnostic_definition
-fig5_ad_rigid_1e-4_p6_m15_cs12p024_cw13p251,0.0001,1--25,0.0009081228652369572,0.0005433236874338245,1.6714214495710984,False,False,production-matched corrected AD mesh force minus direct finite-band force

@@ -11,7 +11,7 @@ Core evidence chain
     Fig. 2 validates Fourier truncation; Fig. 3 validates matched fixed-
     influence ik and analytical-differentiation mesh estimators; Fig. 4 tests
     the molecular structure-factor correction; Fig. 5 compares fixed-influence
-    ik theoretical analysis and structure-conditioned AD theory from 25 pilot
+    ik theoretical analysis and full-source AD theory from 25 pilot
     frames, each with independent validation, and shows a fixed-G,
     fixed-P=5 PPPM measurement baseline;
     Fig. 6
@@ -19,22 +19,24 @@ Core evidence chain
 Export contract
     7.1-inch double-column figures; editable PDF/SVG text; 300 dpi PNG
     previews and 600 dpi LZW-compressed TIFF files; sans-serif typography;
-    all plotted values come from the source CSV files in this directory.
+    all plotted values and rendered files are read from or written to the
+    external result directory selected by ESP_ERROR_BENCH_OUTPUT_DIR.
 
 The retired ``fig5_target_screening`` calculation remains callable through
 ``figure5()`` for archival/SI use, but it is not generated, inventoried, or
-listed as a current main-text figure.  Legacy output basenames are retained so
-existing LaTeX links continue to resolve: current Figures 5 and 6 are written
-as ``fig6_pppm_efficiency`` and ``fig7_window_upsampling``, respectively.
+listed as a current main-text figure.  The current Figure-5 output uses the
+matching ``fig5_pppm_efficiency`` basename.
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import math
 from pathlib import Path
 import statistics
+import sys
 from typing import Iterable
 
 import matplotlib as mpl
@@ -45,6 +47,10 @@ from matplotlib.ticker import LogLocator, NullFormatter, NullLocator
 
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from generated_output import section_output_root  # noqa: E402
+
+OUTPUT_ROOT = section_output_root()
 REPO = HERE.parents[2]
 WINDOW_BENCHMARK = REPO / "numerical_examples" / "window_upsampling_optimized_benchmark"
 WINDOW_M16 = REPO / "numerical_examples" / "window_upsampling_m16_extension"
@@ -167,7 +173,7 @@ mpl.rcParams.update(
 
 def read_rows(filename: str) -> list[dict[str, str]]:
     """Read a source-data CSV without changing its text fields."""
-    path = HERE / filename
+    path = OUTPUT_ROOT / filename
     if not path.is_file():
         raise FileNotFoundError(path)
     with path.open(newline="", encoding="utf-8") as handle:
@@ -314,12 +320,13 @@ def panel_label(
 
 def save_figure(fig: plt.Figure, stem: str, title: str) -> None:
     """Write vector originals plus journal- and screen-resolution rasters."""
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     metadata = {"Title": title, "Creator": "plot_redesigned_main_figures.py"}
-    fig.savefig(HERE / f"{stem}.pdf", dpi=600, metadata=metadata)
-    fig.savefig(HERE / f"{stem}.svg", metadata={"Title": title})
-    fig.savefig(HERE / f"{stem}.png", dpi=300, metadata={"Title": title})
+    fig.savefig(OUTPUT_ROOT / f"{stem}.pdf", dpi=600, metadata=metadata)
+    fig.savefig(OUTPUT_ROOT / f"{stem}.svg", metadata={"Title": title})
+    fig.savefig(OUTPUT_ROOT / f"{stem}.png", dpi=300, metadata={"Title": title})
     fig.savefig(
-        HERE / f"{stem}.tiff",
+        OUTPUT_ROOT / f"{stem}.tiff",
         dpi=600,
         pil_kwargs={"compression": "tiff_lzw"},
     )
@@ -2748,7 +2755,8 @@ def write_figure6_plot_source(
                     "selection_rule": "PPPM fixed P=5 with G_ewald auto-balanced separately for each mesh; ESP fixed target-specific P; smallest declared measured actual grid volume meeting target",
                 }
             )
-    with (HERE / "fig6_pppm_efficiency_plot_source.csv").open(
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "fig5_pppm_efficiency_plot_source.csv").open(
         "w", newline="", encoding="utf-8"
     ) as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
@@ -3264,7 +3272,7 @@ def figure6_archived_two_panel() -> tuple[int, int, list[float], list[float], in
 
     save_figure(
         fig,
-        "fig6_pppm_efficiency",
+        "fig5_pppm_efficiency",
         "Pilot-predicted fixed-band ESP convergence with fixed-G PPPM holdout validation and a separate auto-G PPPM/ESP grid comparison",
     )
     return (
@@ -3501,7 +3509,8 @@ def write_archived_figure5_pilot_force_source(
                 ),
             }
         )
-    with (HERE / "figS_figure5_pilot_force_calibration_source.csv").open(
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "figS_figure5_pilot_force_calibration_source.csv").open(
         "w", newline="", encoding="utf-8"
     ) as handle:
         writer = csv.DictWriter(
@@ -4262,7 +4271,8 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
         handletextpad=0.55,
         columnspacing=1.05,
     )
-    with (HERE / "fig6_pppm_efficiency_plot_source.csv").open("w", newline="", encoding="utf-8") as handle:
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "fig5_pppm_efficiency_plot_source.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle, fieldnames=list(plot_source[0]), lineterminator="\n"
         )
@@ -4270,7 +4280,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
         writer.writerows(plot_source)
     save_figure(
         fig,
-        "fig6_pppm_efficiency",
+        "fig5_pppm_efficiency",
         "Theory-only fixed-influence ik ESP grid/order predictions and nonoverlapping Ewald validation",
     )
     return {
@@ -4296,22 +4306,22 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
 
 
 def figure5_theory_and_coordinate_ad() -> dict[str, object]:
-    """Draw Figure 5 with fixed-IK and structure-conditioned AD theory.
+    """Draw Figure 5 with fixed-IK and the full-source AD quadratic form.
 
     Panels (a,b) use the frozen fixed-influence IK theoretical analysis.
-    Panels (c,d) use measured target-conditioned structure factors from the
-    25 pilot frames in the production-matched AD theory. Dashed curves use
-    frames 1--25, and filled markers report independent Ewald validation on
-    frames 26--51. Open black stars identify the frozen AD candidates; their
-    subsequent validation is retained in the source data but is not plotted.
+    Panels (c,d) use the full source density and target cell phases from the
+    25 pilot frames in the production-matched AD quadratic form. Dashed curves
+    use frames 1--25, and filled markers report independent Ewald validation on
+    frames 26--51. Frozen AD selections and their subsequent validation are
+    retained in the source data but are not plotted separately.
     """
 
     theory_rows = read_rows("fig5_fixed_ik_theory_grid_source.csv")
     coordinate_ad_rows = read_path_rows(
-        HERE / "fig5_ad_coordinate_screen" / "baseline_source.csv"
+        OUTPUT_ROOT / "fig5_ad_coordinate_screen" / "baseline_source.csv"
     )
     pppm_rows = read_path_rows(
-        HERE
+        OUTPUT_ROOT
         / "fig5_pppm_ik_ad_fixed_g_scan"
         / "fig5_pppm_ik_ad_fixed_g_summary.csv"
     )
@@ -4357,13 +4367,13 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         for row in coordinate_ad_rows
     }
     if len(coordinate_ad_rows) != expected_count or coordinate_ad_keys != expected_keys:
-        raise ValueError("Figure 5 structure-conditioned AD matrix is incomplete")
+        raise ValueError("Figure 5 full-source AD matrix is incomplete")
     if any(
         str(row["prediction_reference_force_accessed"]).lower() == "true"
         or str(row["prediction_holdout_coordinates_accessed"]).lower() == "true"
         or str(row["prediction_molecular_coordinates_accessed"]).lower() != "true"
         or row["prediction_structure_input"]
-        != "measured target-conditioned S_tag from frames 1--25"
+        != "full rho(q) and target cell phases from frames 1--25"
         or int(row["validation_frame_first"]) != 26
         or int(row["validation_frame_last"]) != 51
         or int(row["validation_frame_count"]) != 26
@@ -4376,14 +4386,14 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         for row in coordinate_ad_rows
     ):
         raise ValueError(
-            "Figure 5 structure-conditioned AD source violates the fixed-band contract"
+            "Figure 5 full-source AD source violates the fixed-band contract"
         )
 
-    # The two strict-window selections are frozen from measured-S_tag theory
+    # The two strict-window selections are frozen from full-source AD theory
     # before their Ewald holdout checks are opened.
     coordinate_screen_dirs = {
-        1.0e-4: HERE / "fig5_ad_coordinate_screen" / "joint_1e-4",
-        1.0e-5: HERE / "fig5_ad_coordinate_screen" / "joint_1e-5",
+        1.0e-4: OUTPUT_ROOT / "fig5_ad_coordinate_screen" / "joint_1e-4",
+        1.0e-5: OUTPUT_ROOT / "fig5_ad_coordinate_screen" / "joint_1e-5",
     }
     coordinate_screens: dict[float, dict[str, object]] = {}
     for target, directory in coordinate_screen_dirs.items():
@@ -4392,7 +4402,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         manifest = json.loads((directory / "manifest.json").read_text())
         if len(summary_rows) != 1:
             raise ValueError(
-                f"Figure 5 structure-conditioned AD has invalid summary: {directory}"
+                f"Figure 5 full-source AD has invalid summary: {directory}"
             )
         selected = dict(frozen["selected"])
         summary = summary_rows[0]
@@ -4414,7 +4424,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             or bool(validation.get("used_for_selection"))
         ):
             raise ValueError(
-                "Figure 5 structure-conditioned AD violates the frozen-selection "
+                "Figure 5 full-source AD violates the frozen-selection "
                 f"contract: {directory}"
             )
         coordinate_screens[target] = {"selected": selected, "summary": summary}
@@ -4631,7 +4641,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 for row in all_rows:
                     append_source(
                         panel=panel,
-                        record_type="AD measured-S_tag theoretical prediction",
+                        record_type="AD full-source theoretical prediction",
                         series=f"ESP P={order}",
                         differentiation="AD",
                         target=target,
@@ -4642,8 +4652,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                             row, "predicted_total_relative_combined_sem"
                         ),
                         source_partition=(
-                            "measured target-conditioned S_tag from coordinate frames "
-                            "1-25; no direct-force or Ewald-force difference"
+                            "full rho(q) and target cell phases from coordinate frames "
+                            "1-25; no Ewald-force difference"
                         ),
                         estimator=row["ad_estimator"],
                         used_for_selection=True,
@@ -4731,27 +4741,10 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             predicted_sem = float(selected["predicted_total_relative_combined_sem"])
             measured = float(summary["validation_relative_rms"])
             measured_sem = float(summary["validation_relative_rms_block5_sem"])
-            mesh = int(selected["actual_nx"])
             order = int(selected["order"])
-            # The open black star marks the frozen joint coordinate-screen
-            # selection. Its later Ewald validation remains in the source CSV
-            # and manifest, but is intentionally not drawn.
-            errorbar(
-                ax,
-                [mesh],
-                [predicted],
-                [predicted_sem],
-                color=COLORS["black"],
-                marker="*",
-                label="_nolegend_",
-                filled=False,
-                marker_size=8.0,
-                linestyle="none",
-                zorder=8,
-            )
             append_source(
                 panel=panel,
-                record_type="AD joint-window measured-S_tag theoretical prediction",
+                record_type="AD joint-window full-source theoretical prediction",
                 series=f"joint AD candidate P={order}",
                 differentiation="AD",
                 target=target,
@@ -4760,12 +4753,12 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 relative_rms=predicted,
                 relative_rms_sem=predicted_sem,
                 source_partition=(
-                    "measured target-conditioned S_tag from coordinate frames 1-25; "
-                    "no direct-force or Ewald-force difference"
+                    "full rho(q) and target cell phases from coordinate frames 1-25; "
+                    "no Ewald-force difference"
                 ),
                 estimator=selected["ad_estimator"],
                 used_for_selection=True,
-                plotted=True,
+                plotted=False,
             )
             append_source(
                 panel=panel,
@@ -4846,7 +4839,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         handletextpad=0.55,
         columnspacing=1.05,
     )
-    with (HERE / "fig6_pppm_efficiency_plot_source.csv").open(
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "fig5_pppm_efficiency_plot_source.csv").open(
         "w", newline="", encoding="utf-8"
     ) as handle:
         writer = csv.DictWriter(
@@ -4856,8 +4850,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         writer.writerows(plot_source)
     save_figure(
         fig,
-        "fig6_pppm_efficiency",
-        "Fixed-influence IK and measured-S_tag AD theory with independent Ewald validation",
+        "fig5_pppm_efficiency",
+        "Fixed-influence IK and full-source AD theory with independent Ewald validation",
     )
     return {
         "layout": "2 x 2",
@@ -4887,8 +4881,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         "ad_coordinate_screen_uses_reference_force_differences": False,
         "ad_coordinate_screen_curve_style": "dashed line without markers",
         "ad_coordinate_screen_selection_scope": (
-            "production-matched AD theory conditioned on measured pilot S_tag; "
-            "the separate open stars are frozen joint selections"
+            "production-matched full-source AD theory on the pilot coordinates; "
+            "frozen joint selections are retained in source data only"
         ),
         "ad_coordinate_joint_screen_rows": 2,
         "ad_coordinate_joint_screen": {
@@ -4919,8 +4913,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         "ad_coordinate_joint_screen_uses_reference_force_differences": False,
         "ad_coordinate_joint_screen_holdout_frames": [26, 51],
         "ad_coordinate_joint_screen_curve_style": (
-            "open star: frozen measured-S_tag theory selection; independent "
-            "validation retained in source data but not plotted"
+            "frozen full-source AD theory selection and independent validation "
+            "retained in source data but not plotted separately"
         ),
         "validation_curve_style": "filled markers with balanced-block SEM; no connecting line",
         "pppm_curve_style": "open X markers with balanced-block SEM; no connecting line",
@@ -5290,7 +5284,8 @@ def figure7_archived_random_charge() -> float:
                 "selection": "prespecified accuracy-feasible timing candidate",
             }
         )
-    with (HERE / "fig7_window_upsampling_plot_source.csv").open(
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "fig7_window_upsampling_plot_source.csv").open(
         "w", newline="", encoding="utf-8"
     ) as handle:
         writer = csv.DictWriter(
@@ -5641,7 +5636,8 @@ def figure7_archived_random_charge() -> float:
                     "selection": row["selection"],
                 }
             )
-    with (HERE / "fig7_window_upsampling_plot_source.csv").open(
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "fig7_window_upsampling_plot_source.csv").open(
         "w", newline="", encoding="utf-8"
     ) as handle:
         writer = csv.DictWriter(
@@ -5901,7 +5897,8 @@ def figure7_archived_random_charge() -> float:
                 "scope": "illustrative operation counts only; no processor mapping",
             }
         )
-    with (HERE / "figS_window_upsampling_diagnostics_plot_source.csv").open(
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "figS_window_upsampling_diagnostics_plot_source.csv").open(
         "w", newline="", encoding="utf-8"
     ) as handle:
         writer = csv.DictWriter(handle, fieldnames=si_fields, lineterminator="\n")
@@ -6130,7 +6127,8 @@ def figure7() -> float:
             int(str(row["actual_grid_volume"])),
         )
     )
-    with (HERE / "fig7_window_upsampling_plot_source.csv").open(
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "fig7_window_upsampling_plot_source.csv").open(
         "w", newline="", encoding="utf-8"
     ) as handle:
         writer = csv.DictWriter(
@@ -6400,7 +6398,7 @@ def write_source_inventory() -> None:
             "figure": "5",
             "panel": "a-d",
             "source_csv": (
-                "fig6_pppm_efficiency_plot_source.csv; "
+                "fig5_pppm_efficiency_plot_source.csv; "
                 "fig5_fixed_ik_theory_grid_prediction.csv; "
                 "fig5_fixed_ik_theory_grid_frozen.json; "
                 "fig5_fixed_ik_theory_grid_source.csv; "
@@ -6430,17 +6428,17 @@ def write_source_inventory() -> None:
             "role": (
                 "panels a/b: fixed-influence ik theoretical analysis and independent "
                 "validation for P=5--9; panels c/d: production-matched AD theory "
-                "conditioned on measured S_tag from 25 pilot frames, with independent "
+                "using full rho(q) and target cell phases from 25 pilot frames, with independent "
                 "validation. "
-                "Open black stars show the frozen AD candidates at targets of 1e-4 "
-                "and 1e-5; their holdout values remain in the source data but are not "
-                "plotted. The PPPM baseline uses fixed "
+                "Frozen AD candidates at targets of 1e-4 and 1e-5, with their holdout "
+                "values, remain in the source data but are not plotted separately. The "
+                "PPPM baseline uses fixed "
                 "G and P=5 under the corresponding differentiation convention"
             ),
             "uncertainty": (
                 "top-row dashed curves are theoretical predictions from frames 1--25. "
-                "Bottom-row dashed curves use measured-S_tag AD theory; frame-block and "
-                "alias-sampling SEMs are combined in quadrature. Filled ESP and AD markers "
+                "Bottom-row dashed curves use full-source AD theory; frame-block "
+                "SEMs are shown for validation markers. Filled ESP and AD markers "
                 "and open PPPM symbols use frames 26--51. All plotted validation symbols have "
                 "five-block pooled-RMS SEMs and no connecting lines"
             ),
@@ -6448,8 +6446,7 @@ def write_source_inventory() -> None:
                 "all colored curves fix c_split=c_spread at 12.024 or 14.471. Panels "
                 "a/b use fixed-influence ik. Panels c/d use the matched production AD "
                 "operator with target-conditioned structure factors measured on frames "
-                "1--25. The open black stars are selections frozen before holdout access; "
-                "their validation is source-data only. "
+                "1--25. Frozen selections and their validation are source-data only. "
                 "M=12 remains in the source table but is "
                 "below the resolved-band domain and omitted from the main plot. "
                 "PPPM uses P=5 and its separately fixed Gaussian Ewald parameter "
@@ -6506,7 +6503,8 @@ def write_source_inventory() -> None:
         },
     ]
     fieldnames = list(rows[0])
-    with (HERE / "figure_source_inventory.csv").open("w", newline="", encoding="utf-8") as handle:
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "figure_source_inventory.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
@@ -6596,9 +6594,9 @@ def write_plot_manifest(
             },
         },
         "figure5": {
-            "legacy_output_basename": "fig6_pppm_efficiency",
+            "output_basename": "fig5_pppm_efficiency",
             "layout": figure5_summary["layout"],
-            "plot_source": "fig6_pppm_efficiency_plot_source.csv",
+            "plot_source": "fig5_pppm_efficiency_plot_source.csv",
             "theory_prediction_source": "fig5_fixed_ik_theory_grid_prediction.csv",
             "theory_freeze": "fig5_fixed_ik_theory_grid_frozen.json",
             "theory_runner": "build_fig5_fixed_ik_theory_grid.py",
@@ -6629,8 +6627,8 @@ def write_plot_manifest(
             "panels": {
                 "a": "fixed-influence ik, epsilon=1e-4, c_split=c_spread=12.024",
                 "b": "fixed-influence ik, epsilon=1e-5, c_split=c_spread=14.471",
-                "c": "measured-S_tag AD theory at c_split=c_spread=12.024, plus frozen selection/validation stars",
-                "d": "measured-S_tag AD theory at c_split=c_spread=14.471, plus frozen selection/validation stars",
+                "c": "full-source AD theory at c_split=c_spread=12.024",
+                "d": "full-source AD theory at c_split=c_spread=14.471",
             },
             "orders": figure5_summary["orders"],
             "fixed_bandlimits_by_target": {
@@ -6710,16 +6708,16 @@ def write_plot_manifest(
             ),
             "operator_scope": (
                 "panels a/b use fixed-influence ik and Eqs. (55) and (90). Panels c/d "
-                "use the matched production AD operator with measured target-conditioned "
-                "S_tag, residual-self theory, and the closed Fourier term. The open stars are "
-                "frozen joint-window candidates; associated holdout values are source-data only. PPPM "
+                "use the matched production AD operator with full rho(q), target cell phases, "
+                "the production self correction, and the closed Fourier term. Frozen "
+                "joint-window candidates and associated holdout values are source-data only. PPPM "
                 "uses P=5 and a separately frozen Gaussian Ewald parameter under "
                 "the differentiation convention of the row."
             ),
             "selection_scope": (
                 "The frozen top-row theoretical screen accepts resolved-band candidates "
-                "whose prediction is at or below the target. The lower AD rows and black "
-                "stars use a short SPC/E-water structure-factor estimate, not a universal molecular "
+                "whose prediction is at or below the target. The lower AD rows use a "
+                "short SPC/E-water configuration-conditioned estimate, not a universal molecular "
                 "acceptance theorem. The M=12 diagnostics are source-only. "
                 "First crossings are neither timing optima nor global order "
                 "selections."
@@ -6800,7 +6798,7 @@ def write_plot_manifest(
                 (2, "fig2_fourier_validation"),
                 (3, "fig3_mesh_validation"),
                 (4, "fig4_sq_correction"),
-                (5, "fig6_pppm_efficiency"),
+                (5, "fig5_pppm_efficiency"),
                 (6, "fig7_window_upsampling"),
             ]
         },
@@ -6994,14 +6992,15 @@ def write_plot_manifest(
             "fft_weight_crossover": "SI-only illustrative operation-count quantity; not used for the large-water main-text result",
         },
     }
-    with (HERE / "plot_redesigned_main_figures_manifest.json").open(
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with (OUTPUT_ROOT / "plot_redesigned_main_figures_manifest.json").open(
         "w", encoding="utf-8"
     ) as handle:
         json.dump(manifest, handle, indent=2)
         handle.write("\n")
 
 
-def verify_outputs() -> None:
+def verify_outputs(stems: Iterable[str] | None = None) -> None:
     """Verify vector outputs and the exact raster size and resolution."""
     from PIL import Image
 
@@ -7017,22 +7016,23 @@ def verify_outputs() -> None:
         "fig3_mesh_validation": (7.1, 5.0),
         "fig4_sq_correction": FIGURE4_SIZE,
         "figS_charge_spectrum": FIGURE_SI_SPECTRUM_SIZE,
-        "fig6_pppm_efficiency": (7.1, 5.0),
+        "fig5_pppm_efficiency": (7.1, 5.0),
         "fig7_window_upsampling": LARGE_WATER_WINDOW_FIGURE_SIZE,
         "figS_window_upsampling_diagnostics": FIGURE_SI_WINDOW_SIZE,
     }
-    for stem, (width, height) in sizes.items():
+    selected = sizes if stems is None else {stem: sizes[stem] for stem in stems}
+    for stem, (width, height) in selected.items():
         for suffix in (".pdf", ".svg", ".png", ".tiff"):
-            path = HERE / f"{stem}{suffix}"
+            path = OUTPUT_ROOT / f"{stem}{suffix}"
             if not path.is_file() or path.stat().st_size == 0:
                 raise RuntimeError(f"missing/empty output: {path}")
-        png_path = HERE / f"{stem}.png"
+        png_path = OUTPUT_ROOT / f"{stem}.png"
         with Image.open(png_path) as image:
             expected = (round(width * 300), round(height * 300))
             if any(abs(observed - wanted) > 1 for observed, wanted in zip(image.size, expected)):
                 raise RuntimeError(f"{stem}.png is {image.size}, expected {expected}")
             verify_dpi(image, 300.0, png_path)
-        tiff_path = HERE / f"{stem}.tiff"
+        tiff_path = OUTPUT_ROOT / f"{stem}.tiff"
         with Image.open(tiff_path) as image:
             expected = (round(width * 600), round(height * 600))
             if any(abs(observed - wanted) > 1 for observed, wanted in zip(image.size, expected)):
@@ -7041,6 +7041,24 @@ def verify_outputs() -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--figure",
+        choices=("all", "5"),
+        default="all",
+        help="render all redesigned main-text figures or only the Figure 5 panel",
+    )
+    args = parser.parse_args()
+    if args.figure == "5":
+        figure5_summary = figure5_theory_and_coordinate_ad()
+        verify_outputs(("fig5_pppm_efficiency",))
+        print(
+            "Created Figure 5 as PDF/SVG, 300 dpi PNG, and 600 dpi TIFF: "
+            f"{figure5_summary['esp_theory_rows']} fixed-IK rows, "
+            f"{figure5_summary['ad_coordinate_screen_rows']} full-source AD rows, "
+            f"and {figure5_summary['pppm_rows']} fixed-G PPPM rows."
+        )
+        return
     figure2()
     figure3()
     figure_si_charge_spectrum()
@@ -7052,10 +7070,10 @@ def main() -> None:
     verify_outputs()
     print("Created Figures 2--6 as PDF/SVG, 300 dpi PNG, and 600 dpi TIFF.")
     print(
-        "Figure 5 fixed-influence IK and measured-S_tag AD theory/validation, "
+        "Figure 5 fixed-influence IK and full-source AD theory/validation, "
         "with frozen joint AD checks: "
         f"{figure5_summary['esp_theory_rows']} ESP theory rows and "
-        f"{figure5_summary['ad_coordinate_screen_rows']} structure-conditioned AD rows and "
+        f"{figure5_summary['ad_coordinate_screen_rows']} full-source AD rows and "
         f"{figure5_summary['ad_coordinate_joint_screen_rows']} frozen joint AD checks and "
         f"{figure5_summary['pppm_rows']} fixed-G PPPM validation rows."
     )

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-r"""Build supporting finite-band AD components for Figure 5.
+r"""Legacy rigid S_tag AD diagnostic.
 
-The current lower AD row combines finite-band theoretical analysis with a
-25-frame pilot correction. This legacy-named calculation supplies the
-self/Fourier component records used by that workflow and retains the
-trajectory-free rigid-SPC/E result as a diagnostic. It is not the AD curve
-shown in the current Figure 5.
+The current Figure-5 AD curve is generated exclusively by
+build_fig5_ad_coordinate_screen.py, which evaluates the
+configuration-conditioned full-source quadratic form. This module retains the
+older trajectory-free rigid-SPC/E, pair-only diagonal-spectrum closure for
+diagnostic comparisons. It omits source/target self correlations, target-cell
+phases, physical-mode coherences, and alias/self cross terms, so it cannot be
+used for Figure-5 selection or plotting.
 """
 
 from __future__ import annotations
@@ -26,21 +28,24 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parents[2]
+sys.path.insert(0, str(HERE))
+from generated_output import section_output_root  # noqa: E402
+
+OUTPUT_ROOT = section_output_root()
 WATER_ROOT = PROJECT / "numerical_examples" / "water_trajectory_benchmark"
 WATER_DATA = WATER_ROOT / "water.data"
 # This deliberately inexpensive full-force calculation defines only the
 # relative-error normalization; it is not an Ewald reference force.
 PILOT_FORCE_DUMP = WATER_ROOT / "forces.pppm_mesh20.dump"
-SCAN_SUMMARY = HERE / "fig5_ik_ad_order_scan" / "fig5_ik_ad_order_scan_summary.csv"
+SCAN_SUMMARY = OUTPUT_ROOT / "fig5_ik_ad_order_scan" / "fig5_ik_ad_order_scan_summary.csv"
 
-PREDICTION_CSV = HERE / "fig5_ad_rigid_sq_theory_prediction.csv"
-VALIDATION_CSV = HERE / "fig5_ad_rigid_sq_theory_source.csv"
-SELF_CSV = HERE / "fig5_ad_rigid_sq_theory_self_probe.csv"
-SHELL_CSV = HERE / "fig5_ad_rigid_sq_theory_alias_shell.csv"
-MANIFEST = HERE / "fig5_ad_rigid_sq_theory_manifest.json"
-SELF_WORK = HERE / "fig5_ad_rigid_sq_theory_self_probes"
+PREDICTION_CSV = OUTPUT_ROOT / "legacy_fig5_ad_rigid_sq_prediction.csv"
+VALIDATION_CSV = OUTPUT_ROOT / "legacy_fig5_ad_rigid_sq_source.csv"
+SELF_CSV = OUTPUT_ROOT / "legacy_fig5_ad_rigid_sq_self_probe.csv"
+SHELL_CSV = OUTPUT_ROOT / "legacy_fig5_ad_rigid_sq_alias_shell.csv"
+MANIFEST = OUTPUT_ROOT / "legacy_fig5_ad_rigid_sq_manifest.json"
+SELF_WORK = OUTPUT_ROOT / "legacy_fig5_ad_rigid_sq_self_probes"
 
-sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "lammps_ad_total_validation"))
 import ad_sq_descriptor as adsq  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
@@ -100,8 +105,13 @@ def sha256(path: Path) -> str:
 
 
 def file_record(path: Path) -> dict[str, object]:
+    resolved = path.resolve()
+    try:
+        display_path = str(resolved.relative_to(PROJECT))
+    except ValueError:
+        display_path = str(resolved)
     return {
-        "path": str(path.relative_to(PROJECT)),
+        "path": display_path,
         "bytes": path.stat().st_size,
         "sha256": sha256(path),
     }
@@ -252,7 +262,7 @@ def case_for(target: Target, order: int, mesh: int) -> ADCase:
         # would silently invalidate the self-correction audit in a joint
         # (M, P, c_spread) sweep.
         case_id=(
-            f"fig5_ad_rigid_{target_tag(target.value)}_p{order}_m{mesh}_"
+            f"fig5_ad_{target_tag(target.value)}_p{order}_m{mesh}_"
             f"cs{parameter_tag(target.csplit)}_cw{parameter_tag(target.cspread)}"
         ),
         mesh=mesh,
@@ -521,6 +531,11 @@ def validate_after_prediction(predictions: list[dict[str, object]]) -> list[dict
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--legacy-rigid-diagnostic",
+        action="store_true",
+        help="required acknowledgement that this pair-only closure is not the Figure 5 AD workflow",
+    )
     parser.add_argument("--alias-shell", type=int, default=4)
     parser.add_argument("--samples-per-shell", type=int, default=8192)
     parser.add_argument(
@@ -535,6 +550,11 @@ def main() -> None:
         help="write the a-priori table but do not open the AD/Ewald holdout archive",
     )
     args = parser.parse_args()
+    if not args.legacy_rigid_diagnostic:
+        parser.error(
+            "pass --legacy-rigid-diagnostic to run the retained pair-only closure; "
+            "use build_fig5_ad_coordinate_screen.py for Figure 5"
+        )
     adcommon.configure_lmp(args.lmp)
     if args.alias_shell < 1:
         raise ValueError("--alias-shell must be at least one")
@@ -569,7 +589,7 @@ def main() -> None:
         print(
             json.dumps(
                 {
-                    "stage": "a_priori_AD_prediction",
+                    "stage": "legacy_rigid_stag_diagnostic",
                     "candidate": number,
                     "total": len(specs),
                     "target": target.value,
@@ -604,11 +624,12 @@ def main() -> None:
         records.append(file_record(SCAN_SUMMARY))
     manifest = {
         "schema_version": 1,
-        "purpose": "supporting finite-band AD components and legacy rigid-SPC/E diagnostic",
+        "purpose": "legacy pair-only rigid-SPC/E S_tag diagnostic; not Figure 5 AD",
         "logical_order": [
+            "explicit legacy-diagnostic acknowledgement",
             "rigid SPC/E topology/charges plus coarse PPPM normalization",
-            "unit-charge AD self probes and a-priori rigid S_tag pair predictions",
-            "write frozen prediction table",
+            "unit-charge AD self probes and pair-only rigid S_tag predictions",
+            "write diagnostic table",
             "optionally join independent frames-26--51 AD/Ewald validation",
         ],
         "prediction": {
@@ -621,7 +642,11 @@ def main() -> None:
             "rigid_model": "orientationally averaged SPC/E intramolecular geometry",
             "residual_self": "unit-charge-probed two-harmonic LAMMPS correction plus converged cell quadrature",
             "total_error": "rigid pair, residual self, and Eq. (56) Fourier terms combined in quadrature",
-            "closure_limit": "no intermolecular correlations, off-diagonal physical-mode aliases, or pair-self cross terms",
+            "closure_limit": (
+                "pair-only closure: no source/target self correlations, target-cell phases, "
+                "off-diagonal physical-mode aliases, or alias/self cross terms"
+            ),
+            "used_for_figure5_selection_or_plot": False,
             "alias_shell": args.alias_shell,
             "samples_per_shell": args.samples_per_shell,
         },

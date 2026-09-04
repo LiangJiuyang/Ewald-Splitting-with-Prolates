@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Pilot-freeze and 51-frame production-LAMMPS AD validation for SPC/E water.
+"""Legacy finite-band direct-force diagnostic for SPC/E-water ESP-AD.
 
-The script enforces the following order:
+This retained diagnostic predates the formal Figure 5 AD workflow.  It uses a
+matched finite-band direct-force difference on pilot frames, so it must not be
+used for manuscript parameter selection or for the Figure 5 AD curves.  The
+formal workflow is ``build_fig5_ad_coordinate_screen.py``; production
+ESP-AD/Ewald helpers used by that workflow are in ``water_ad_production.py``.
+
+The legacy diagnostic enforces the following order:
 
 1. read only frames 0--24 and no Ewald total-force reference;
 2. use a matched finite-band direct reference to build homogeneous and
@@ -11,6 +17,8 @@ The script enforces the following order:
 
 The pilot-conditioned result is an implementation-specific operator
 calibration, not the homogeneous analytical AD estimator of the manuscript.
+All generated files are written below ESP_ERROR_BENCH_OUTPUT_DIR, never below
+the source bundle.
 """
 
 from __future__ import annotations
@@ -20,11 +28,16 @@ import hashlib
 import json
 import math
 import platform
+import sys
 import time
 from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+
+SECTION_ROOT = Path(__file__).resolve().parents[1]
+if str(SECTION_ROOT) not in sys.path:
+    sys.path.insert(0, str(SECTION_ROOT))
 
 import ad_validation_common as adcommon
 
@@ -53,9 +66,11 @@ from ad_validation_common import (
 
 import fixed_ad_reference as adref
 import fixed_ik_reference as ikref
+from generated_output import section_output_root
 
 
-WORK = HERE / "runs_water"
+OUTDIR = section_output_root() / "legacy_fig5_direct_band"
+WORK = OUTDIR / "runs_water"
 WATER_ROOT = PROJECT / "numerical_examples/water_trajectory_benchmark"
 WATER_DATA = WATER_ROOT / "water.data"
 TRAJECTORY = WATER_ROOT / "water_short_traj.lammpstrj"
@@ -65,15 +80,15 @@ PILOT_INPUTS = HERE / "water_ad_pilot_inputs.json"
 PILOT_COUNT = 25
 TOTAL_COUNT = 51
 
-SELF_CSV = HERE / "water_ad_self_probe.csv"
-PILOT_CSV = HERE / "water_ad_pilot_prediction_by_frame.csv"
-FROZEN_JSON = HERE / "water_ad_pilot_frozen.json"
-DETAIL_CSV = HERE / "water_ad_total_by_frame.csv"
-SUMMARY_CSV = HERE / "water_ad_partition_summary.csv"
-COMPONENT_CSV = HERE / "water_ad_estimator_components.csv"
-REFERENCE_CSV = HERE / "water_ewald_reference_crosscheck.csv"
-MANIFEST = HERE / "water_ad_manifest.json"
-RAW_MANIFEST = HERE / "water_raw_artifact_manifest.json"
+SELF_CSV = OUTDIR / "water_ad_self_probe.csv"
+PILOT_CSV = OUTDIR / "water_ad_pilot_prediction_by_frame.csv"
+FROZEN_JSON = OUTDIR / "water_ad_pilot_frozen.json"
+DETAIL_CSV = OUTDIR / "water_ad_total_by_frame.csv"
+SUMMARY_CSV = OUTDIR / "water_ad_partition_summary.csv"
+COMPONENT_CSV = OUTDIR / "water_ad_estimator_components.csv"
+REFERENCE_CSV = OUTDIR / "water_ewald_reference_crosscheck.csv"
+MANIFEST = OUTDIR / "water_ad_manifest.json"
+RAW_MANIFEST = OUTDIR / "water_raw_artifact_manifest.json"
 SOURCE_SNAPSHOT_MANIFEST = HERE / "lammps_source_snapshot/source_snapshot_manifest.json"
 
 MOLECULAR_PREAMBLE = """bond_style harmonic
@@ -447,6 +462,11 @@ def partition_summary(case: ADCase, rows: list[dict], partition: str) -> dict:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--legacy-direct-band-diagnostic",
+        action="store_true",
+        help="required acknowledgement that this is not the formal Figure 5 workflow",
+    )
     parser.add_argument("--reuse-lammps", action="store_true")
     parser.add_argument(
         "--lmp",
@@ -454,7 +474,10 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="ESP-LAMMPS executable; defaults to ESP_LAMMPS_BIN",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.legacy_direct_band_diagnostic:
+        parser.error("pass --legacy-direct-band-diagnostic to run this retained diagnostic")
+    return args
 
 
 def main() -> None:

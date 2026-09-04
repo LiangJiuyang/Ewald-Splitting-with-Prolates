@@ -1,4 +1,4 @@
-# Matched fixed-band ESP-IK order scan for Figure 5.
+# Matched fixed-influence ESP i k point for Figure 5.
 newton on
 units real
 atom_style full
@@ -21,6 +21,5 @@ neigh_modify every 1 delay 0 check yes one 4000
 thermo_style custom step atoms
 thermo 100
 
-dump force all custom 1 inputs/representative_lammps/fig5_esp_ik_p5_m12.forces.dump id fx fy fz
-dump_modify force sort id format line "%d %.17g %.17g %.17g"
+# The Figure-5 runner writes force dumps only under ESP_ERROR_BENCH_OUTPUT_DIR.
 rerun numerical_examples/water_trajectory_benchmark/water_short_traj.lammpstrj dump x y z ix iy iz box yes format native

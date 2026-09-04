@@ -143,8 +143,17 @@ Both modes are available with `kspace_style esp` and the controlled
 
 ## Regenerate source data
 
-The main entry points are listed below. They write generated CSV and JSON
-files beside the corresponding runner unless stated otherwise.
+The main entry points are listed below. Generated CSV/JSON tables, manifests,
+diagnostics, and rendered figures are written outside the repository. Before
+running any generator, choose an external result directory:
+
+```bash
+export ESP_ERROR_BENCH_OUTPUT_DIR=/path/outside/Ewald-Splitting-results
+```
+
+The Figure 5 artifacts will then be under
+`$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5/`. The repository contains
+only source code and required simulation inputs.
 
 ### Figures 2-4
 
@@ -183,11 +192,19 @@ followed by independent Ewald validation on frames 26--51:
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage prediction
 ```
 
-The lower AD row uses target-conditioned structure factors measured from
-coordinate frames 1--25. These are inserted into the exact cell-moment source
-weights of the production AD operator. Residual-self and closed Fourier terms
-are then added in quadrature. The prediction process reads neither holdout
-coordinates nor Ewald forces.
+The lower AD row evaluates the full-source production AD aliasing quadratic
+form on coordinate frames 1--25. Each target field uses the complete
+\(\rho(\mathbf q)=\sum_jq_j\exp[-i\mathbf q\cdot\mathbf r_j]\), including
+the \(j=i\) source contribution, together with the target particle's actual
+cell phase. The fitted LAMMPS self correction is applied to that same vector
+field before the RMS is formed, retaining alias/self cross terms. The closed
+Fourier tail remains a separately reported scalar term. The prediction process
+reads neither holdout coordinates nor Ewald forces.
+
+The fixed-influence ik prediction likewise uses unbuffered prefix readers for
+only frames 1--25 of both the coordinate trajectory and the coarse PPPM force
+dump. The frozen JSON records the two exact input-prefix SHA-256 digests; it
+does not hash or read the remaining holdout records before selection.
 
 Run the estimator checks, generate the full fixed-band curves, and freeze both
 joint candidate selections:
@@ -220,31 +237,46 @@ python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
   --validate-joint 1e-5 --lmp "$LMP"
 ```
 
-Run the shell-convergence audit and the optional direct finite-band diagnostic
-after freezing. Neither output is read by the selector:
+Run the retained legacy shell-convergence audit and the optional direct
+finite-band diagnostic after freezing. Neither output calibrates or alters the
+selector. The direct-band result is an independent implementation check of the
+full-source quadratic form: on the same coordinates the two are algebraically
+identical.
 
 ```bash
 for TARGET in 1e-4 1e-5; do
   python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
-    --theory-audit "$TARGET"
+    --legacy-stag-theory-audit "$TARGET"
   python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
     --diagnostic-direct-check "$TARGET"
 done
 ```
 
-The AD candidate tables report the five-block frame SEM, alias importance-
-sampling SEM, their quadrature combination, and the one-sided 95% upper value
-using Student t with four degrees of freedom. The theoretical total currently
-neglects covariance among pair, residual-self, and Fourier contributions; this
-assumption is repeated in every prediction manifest. Open black stars mark the
-frozen AD selections; their later validation remains in the retained source
-tables and manifests but is not plotted.
+The AD candidate tables report the five-block frame SEM and the one-sided 95%
+upper value using Student t with four degrees of freedom. Source/gather aliases
+are evaluated implicitly by the full discrete grid operator, so no alias
+importance-sampling SEM is used. Alias/self covariance is retained in the
+vector RMS; only covariance with the separately closed Fourier tail remains
+an explicit approximation. Frozen AD selections and their later validation
+remain in the external result tables and manifests but are not plotted
+separately.
 
-The retained Figure 5 result artifacts are under
-`src/numerical_test/redesigned_section5/fig5_ad_coordinate_screen/`.
-Each joint-target directory contains the pre-validation candidate CSV, its
-frozen-selection JSON, pilot-block and alias audits, independent holdout
-tables, and a manifest linking every retained artifact by SHA-256.
+`lammps_ad_total_validation/run_water_ad_legacy_direct_band_diagnostic.py`
+is retained only as an explicitly acknowledged finite-band diagnostic. It
+requires `--legacy-direct-band-diagnostic` and is not part of the Figure 5
+selection or validation workflow. Formal production ESP-AD/Ewald helpers are
+in `water_ad_production.py`.
+
+`build_fig5_ad_rigid_sq_theory.py` and
+`run_ad_rigid_theory_selection.py` are likewise retained only for the
+pair-only rigid-`S_tag` diagnostic. Both require
+`--legacy-rigid-diagnostic`; neither writes a current Figure 5 source table
+or participates in parameter selection.
+
+Each external Figure 5 joint-target directory contains the pre-validation
+candidate CSV, its frozen-selection JSON, pilot-block and alias audits,
+independent holdout tables, and a manifest linking every generated artifact
+by SHA-256.
 
 A candidate is eligible only when `sigma_up >= 1` and its one-sided upper
 value is no larger than the target. The deterministic tie-break minimizes
@@ -285,7 +317,12 @@ python3 "$FIGDIR/plot_redesigned_main_figures.py"
 ```
 
 It writes editable PDF/SVG files, 300 dpi PNG previews, and 600 dpi TIFF
-files beside the plotting script.
+files under `$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5/`.
+To regenerate only Figure 5 after its three source tables are available, use:
+
+```bash
+python3 "$FIGDIR/plot_redesigned_main_figures.py" --figure 5
+```
 
 ## Representative LAMMPS inputs
 
@@ -317,7 +354,11 @@ listed = subprocess.check_output(
     ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "."]
 )
 paths = sorted(
-    Path(os.fsdecode(item)) for item in listed.split(b"\0") if item
+    path
+    for item in listed.split(b"\0")
+    if item
+    for path in [Path(os.fsdecode(item))]
+    if path.is_file()
 )
 lines = []
 for path in paths:

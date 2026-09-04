@@ -1,3 +1,5 @@
+# Representative production-AD point for Figure 5. M=12 is source-only:
+# the full-source selector excludes it below the resolved-band threshold.
 newton on
 units real
 atom_style full
@@ -22,7 +24,5 @@ thermo_style custom step atoms ecoul elong
 thermo_modify flush yes
 thermo 100
 
-dump force all custom 1 inputs/representative_lammps/fig5_esp_ad_p5_m12.forces.dump id fx fy fz
-dump_modify force sort id format line "%d %.17g %.17g %.17g"
-
+# The Figure-5 runner writes force dumps only under ESP_ERROR_BENCH_OUTPUT_DIR.
 rerun numerical_examples/water_trajectory_benchmark/water_short_traj.lammpstrj dump x y z ix iy iz box yes format native

@@ -11,8 +11,8 @@ Core evidence chain
     Fig. 2 validates Fourier truncation; Fig. 3 validates matched fixed-
     influence ik and analytical-differentiation mesh estimators; Fig. 4 tests
     the molecular structure-factor correction; Fig. 5 compares fixed-influence
-    ik theoretical analysis and full-source AD theory from 25 pilot
-    frames, each with independent validation, and shows a fixed-G,
+    ik theoretical analysis and vector-complete AD pair/self theory from 25
+    pilot frames, each with independent validation, and shows a fixed-G,
     fixed-P=5 PPPM measurement baseline;
     Fig. 6
     tests the grid--window trade-off under a common PSWF split.
@@ -4306,14 +4306,16 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
 
 
 def figure5_theory_and_coordinate_ad() -> dict[str, object]:
-    """Draw Figure 5 with fixed-IK and the full-source AD quadratic form.
+    """Draw Figure 5 with fixed-IK and vector-complete AD theory.
 
     Panels (a,b) use the frozen fixed-influence IK theoretical analysis.
-    Panels (c,d) use the full source density and target cell phases from the
-    25 pilot frames in the production-matched AD quadratic form. Dashed curves
-    use frames 1--25, and filled markers report independent Ewald validation on
-    frames 26--51. Frozen AD selections and their subsequent validation are
-    retained in the source data but are not plotted separately.
+    Panels (c,d) use a phase-resolved full-source/target-cell descriptor from
+    the 25 pilot frames.  The AD pair and production residual-self vectors are
+    added before squaring; measured S_tag(q) remains a diagonal diagnostic.
+    The closed Fourier term is analytical. Dashed curves use frames 1--25,
+    and filled markers report independent Ewald validation on frames 26--51.
+    Frozen AD selections and their subsequent validation are retained in the
+    source data but are not plotted separately.
     """
 
     theory_rows = read_rows("fig5_fixed_ik_theory_grid_source.csv")
@@ -4367,13 +4369,17 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         for row in coordinate_ad_rows
     }
     if len(coordinate_ad_rows) != expected_count or coordinate_ad_keys != expected_keys:
-        raise ValueError("Figure 5 full-source AD matrix is incomplete")
+        raise ValueError("Figure 5 spectral AD matrix is incomplete")
     if any(
         str(row["prediction_reference_force_accessed"]).lower() == "true"
         or str(row["prediction_holdout_coordinates_accessed"]).lower() == "true"
         or str(row["prediction_molecular_coordinates_accessed"]).lower() != "true"
         or row["prediction_structure_input"]
-        != "full rho(q) and target cell phases from frames 1--25"
+        != (
+            "phase-resolved full-source and target-cell descriptor from "
+            "frames 1--25; measured S_tag retained as a diagonal diagnostic"
+        )
+        or "vector-complete" not in row["ad_estimator"]
         or int(row["validation_frame_first"]) != 26
         or int(row["validation_frame_last"]) != 51
         or int(row["validation_frame_count"]) != 26
@@ -4386,10 +4392,10 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         for row in coordinate_ad_rows
     ):
         raise ValueError(
-            "Figure 5 full-source AD source violates the fixed-band contract"
+            "Figure 5 spectral AD source violates the fixed-band contract"
         )
 
-    # The two strict-window selections are frozen from full-source AD theory
+    # The two strict-window selections are frozen from spectral AD theory
     # before their Ewald holdout checks are opened.
     coordinate_screen_dirs = {
         1.0e-4: OUTPUT_ROOT / "fig5_ad_coordinate_screen" / "joint_1e-4",
@@ -4402,7 +4408,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         manifest = json.loads((directory / "manifest.json").read_text())
         if len(summary_rows) != 1:
             raise ValueError(
-                f"Figure 5 full-source AD has invalid summary: {directory}"
+                f"Figure 5 spectral AD has invalid summary: {directory}"
             )
         selected = dict(frozen["selected"])
         summary = summary_rows[0]
@@ -4424,7 +4430,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             or bool(validation.get("used_for_selection"))
         ):
             raise ValueError(
-                "Figure 5 full-source AD violates the frozen-selection "
+                "Figure 5 spectral AD violates the frozen-selection "
                 f"contract: {directory}"
             )
         coordinate_screens[target] = {"selected": selected, "summary": summary}
@@ -4641,7 +4647,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 for row in all_rows:
                     append_source(
                         panel=panel,
-                        record_type="AD full-source theoretical prediction",
+                        record_type="AD vector-complete theoretical prediction",
                         series=f"ESP P={order}",
                         differentiation="AD",
                         target=target,
@@ -4652,8 +4658,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                             row, "predicted_total_relative_combined_sem"
                         ),
                         source_partition=(
-                            "full rho(q) and target cell phases from coordinate frames "
-                            "1-25; no Ewald-force difference"
+                            "phase-resolved full-source and target-cell descriptor "
+                            "from coordinate frames 1-25; no reference forces"
                         ),
                         estimator=row["ad_estimator"],
                         used_for_selection=True,
@@ -4744,7 +4750,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             order = int(selected["order"])
             append_source(
                 panel=panel,
-                record_type="AD joint-window full-source theoretical prediction",
+                record_type="AD joint-window vector-complete theoretical prediction",
                 series=f"joint AD candidate P={order}",
                 differentiation="AD",
                 target=target,
@@ -4753,8 +4759,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 relative_rms=predicted,
                 relative_rms_sem=predicted_sem,
                 source_partition=(
-                    "full rho(q) and target cell phases from coordinate frames 1-25; "
-                    "no Ewald-force difference"
+                    "phase-resolved full-source and target-cell descriptor from "
+                    "coordinate frames 1-25; no reference forces"
                 ),
                 estimator=selected["ad_estimator"],
                 used_for_selection=True,
@@ -4851,7 +4857,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
     save_figure(
         fig,
         "fig5_pppm_efficiency",
-        "Fixed-influence IK and full-source AD theory with independent Ewald validation",
+        "Fixed-influence IK and vector-complete AD theory with independent Ewald validation",
     )
     return {
         "layout": "2 x 2",
@@ -4881,7 +4887,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         "ad_coordinate_screen_uses_reference_force_differences": False,
         "ad_coordinate_screen_curve_style": "dashed line without markers",
         "ad_coordinate_screen_selection_scope": (
-            "production-matched full-source AD theory on the pilot coordinates; "
+            "vector-complete AD pair/self theory on the pilot coordinates; "
             "frozen joint selections are retained in source data only"
         ),
         "ad_coordinate_joint_screen_rows": 2,
@@ -4913,7 +4919,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         "ad_coordinate_joint_screen_uses_reference_force_differences": False,
         "ad_coordinate_joint_screen_holdout_frames": [26, 51],
         "ad_coordinate_joint_screen_curve_style": (
-            "frozen full-source AD theory selection and independent validation "
+            "frozen vector-complete AD theory selection and independent validation "
             "retained in source data but not plotted separately"
         ),
         "validation_curve_style": "filled markers with balanced-block SEM; no connecting line",
@@ -6427,9 +6433,8 @@ def write_source_inventory() -> None:
             ),
             "role": (
                 "panels a/b: fixed-influence ik theoretical analysis and independent "
-                "validation for P=5--9; panels c/d: production-matched AD theory "
-                "using full rho(q) and target cell phases from 25 pilot frames, with independent "
-                "validation. "
+                "validation for P=5--9; panels c/d: production-matched, vector-complete "
+                "AD pair/self theory from 25 pilot frames, with independent validation. "
                 "Frozen AD candidates at targets of 1e-4 and 1e-5, with their holdout "
                 "values, remain in the source data but are not plotted separately. The "
                 "PPPM baseline uses fixed "
@@ -6437,7 +6442,7 @@ def write_source_inventory() -> None:
             ),
             "uncertainty": (
                 "top-row dashed curves are theoretical predictions from frames 1--25. "
-                "Bottom-row dashed curves use full-source AD theory; frame-block "
+                "Bottom-row dashed curves use the joint AD pair/self quadratic form; frame-block "
                 "SEMs are shown for validation markers. Filled ESP and AD markers "
                 "and open PPPM symbols use frames 26--51. All plotted validation symbols have "
                 "five-block pooled-RMS SEMs and no connecting lines"
@@ -6445,8 +6450,8 @@ def write_source_inventory() -> None:
             "operator_or_grid_convention": (
                 "all colored curves fix c_split=c_spread at 12.024 or 14.471. Panels "
                 "a/b use fixed-influence ik. Panels c/d use the matched production AD "
-                "operator with target-conditioned structure factors measured on frames "
-                "1--25. Frozen selections and their validation are source-data only. "
+                "operator with a phase-resolved full-source and target-cell descriptor "
+                "measured on frames 1--25. Frozen selections and their validation are source-data only. "
                 "M=12 remains in the source table but is "
                 "below the resolved-band domain and omitted from the main plot. "
                 "PPPM uses P=5 and its separately fixed Gaussian Ewald parameter "
@@ -6627,8 +6632,8 @@ def write_plot_manifest(
             "panels": {
                 "a": "fixed-influence ik, epsilon=1e-4, c_split=c_spread=12.024",
                 "b": "fixed-influence ik, epsilon=1e-5, c_split=c_spread=14.471",
-                "c": "full-source AD theory at c_split=c_spread=12.024",
-                "d": "full-source AD theory at c_split=c_spread=14.471",
+                "c": "vector-complete AD pair/self theory at c_split=c_spread=12.024",
+                "d": "vector-complete AD pair/self theory at c_split=c_spread=14.471",
             },
             "orders": figure5_summary["orders"],
             "fixed_bandlimits_by_target": {
@@ -6708,8 +6713,9 @@ def write_plot_manifest(
             ),
             "operator_scope": (
                 "panels a/b use fixed-influence ik and Eqs. (55) and (90). Panels c/d "
-                "use the matched production AD operator with full rho(q), target cell phases, "
-                "the production self correction, and the closed Fourier term. Frozen "
+                "use the matched production AD full-source alias vector with the "
+                "production residual-self correction applied before squaring, plus the "
+                "closed Fourier term. Measured S_tag and cell moments are diagnostics. Frozen "
                 "joint-window candidates and associated holdout values are source-data only. PPPM "
                 "uses P=5 and a separately frozen Gaussian Ewald parameter under "
                 "the differentiation convention of the row."
@@ -7055,7 +7061,7 @@ def main() -> None:
         print(
             "Created Figure 5 as PDF/SVG, 300 dpi PNG, and 600 dpi TIFF: "
             f"{figure5_summary['esp_theory_rows']} fixed-IK rows, "
-            f"{figure5_summary['ad_coordinate_screen_rows']} full-source AD rows, "
+            f"{figure5_summary['ad_coordinate_screen_rows']} vector-complete AD rows, "
             f"and {figure5_summary['pppm_rows']} fixed-G PPPM rows."
         )
         return
@@ -7070,10 +7076,10 @@ def main() -> None:
     verify_outputs()
     print("Created Figures 2--6 as PDF/SVG, 300 dpi PNG, and 600 dpi TIFF.")
     print(
-        "Figure 5 fixed-influence IK and full-source AD theory/validation, "
+        "Figure 5 fixed-influence IK and vector-complete AD theory/validation, "
         "with frozen joint AD checks: "
         f"{figure5_summary['esp_theory_rows']} ESP theory rows and "
-        f"{figure5_summary['ad_coordinate_screen_rows']} full-source AD rows and "
+        f"{figure5_summary['ad_coordinate_screen_rows']} vector-complete AD rows and "
         f"{figure5_summary['ad_coordinate_joint_screen_rows']} frozen joint AD checks and "
         f"{figure5_summary['pppm_rows']} fixed-G PPPM validation rows."
     )

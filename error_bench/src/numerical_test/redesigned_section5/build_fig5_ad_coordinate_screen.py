@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-r"""Generate and validate the full-source AD data for Figure 5.
+r"""Generate and validate the vector-complete AD theory data for Figure 5.
 
-Prediction is deliberately isolated from validation. It reads only trajectory
-frames 1--25, evaluates the complete production-matched AD alias operator
-with the full source density on those coordinates, and freezes the resulting
-candidate table. A separate action may then run production ESP-AD and tight
-Ewald on frames 26--51.
+Prediction is deliberately isolated from validation. It reads only frames
+1--25 and evaluates both the target-conditioned diagonal source spectrum
+``S_tag(q)`` and a phase-resolved full-source/target-cell descriptor.  The
+main AD prediction contracts the full-source pair alias and production
+residual-self vectors first and forms the particle RMS only afterwards.
+``S_tag`` and the exact homogeneous cell-moment estimator remain explicit
+diagonal-spectrum diagnostics.  The closed Fourier tail is then combined
+with the joint in-band pair/self RMS in quadrature.
 
-The legacy direct finite-band diagnostic remains behind the
-'--diagnostic-direct-check' action and never participates in selection. The
-full-source quadratic form used for selection is algebraically identical to
-that direct difference on fixed coordinates, but is evaluated from the
-explicit discrete source/gather and zero-alias operators and never reads a
-force dump or Ewald reference.
+The main prediction accumulates one analytical discrete-minus-continuum AD
+error operator.  It never reads LAMMPS forces, an Ewald force dump, holdout
+coordinates, or a precomputed finite-band force-difference table.
+
+The separate ``--diagnostic-direct-check`` action may evaluate that direct
+finite-band force difference *after* a selection is frozen. It is an
+implementation diagnostic only and never participates in selection.
 """
 
 from __future__ import annotations
@@ -38,14 +42,14 @@ AD_VALIDATION = HERE / "lammps_ad_total_validation"
 sys.path[:0] = [str(HERE), str(AD_VALIDATION)]
 
 import ad_sq_descriptor as adsq  # noqa: E402
-import ad_all_source_theory as allsource  # noqa: E402
+import ad_joint_quadratic as adjoint  # noqa: E402
 import fixed_ad_reference as adref  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
 # Shared targets, topology readers, and cell-quadrature helpers retain their
-# historical module name.  The current Figure 5 path never calls its rigid
-# S_tag predictor; that predictor is available only through explicit legacy
-# diagnostic scripts.
-import build_fig5_ad_rigid_sq_theory as baseline  # noqa: E402
+# historical module name. Its rigid-molecule predictor remains diagnostic;
+# the active Figure-5 path uses the pilot-coordinate joint vector, while
+# measured pilot-frame S_tag remains a diagonal diagnostic.
+import fig5_ad_theory_common as baseline  # noqa: E402
 import ad_validation_common as adcommon  # noqa: E402
 from generated_output import section_output_root  # noqa: E402
 from ad_validation_common import (  # noqa: E402
@@ -91,25 +95,15 @@ class Candidate:
 
 
 @dataclass
-class LegacyOffDiagonalTheory:
+class SpectralADTheory:
     candidate: Candidate
     population: adsq.ADSourceSpectrumPopulation
     correction: np.ndarray
     residual_self: float
     fourier: float
     self_metadata: dict[str, object]
-
-
-@dataclass
-class AllSourceCandidateTheory:
-    """Production-matched ingredients for one full-source AD prediction."""
-
-    candidate: Candidate
     operator: adref.ADOperator
     coeff: ikref.PSWFCoefficients
-    correction: np.ndarray
-    fourier_rms: float
-    self_metadata: dict[str, object]
 
 
 def sha256(path: Path) -> str:
@@ -222,283 +216,6 @@ def joint_candidates(target_value: float) -> list[Candidate]:
     return result
 
 
-def prepare_all_source_candidate(
-    candidate: Candidate,
-    charges: np.ndarray,
-    box: float,
-    *,
-    rerun_self_probes: bool,
-) -> AllSourceCandidateTheory:
-    """Prepare one candidate without constructing an off-diagonal spectrum."""
-
-    case = candidate.case
-    coeff = coefficients(case)
-    correction, _, audit = fit_self_correction(
-        case, box, SELF_WORK, rerun=rerun_self_probes
-    )
-    if int(audit["actual_mesh"]) != candidate.mesh:
-        raise RuntimeError(
-            f"{case.case_id}: LAMMPS rounded M={candidate.mesh} "
-            f"to M={audit['actual_mesh']}"
-        )
-    if float(audit["holdout_max_abs_component"]) > SELF_AUDIT_MAX:
-        raise RuntimeError(f"{case.case_id}: unit-charge self correction failed")
-    fourier_rms = ikref.closed_fourier_estimate(
-        charges,
-        box,
-        baseline.RCUT,
-        candidate.target.csplit,
-        coeff,
-        kmax=candidate.target.csplit / baseline.RCUT,
-    )
-    return AllSourceCandidateTheory(
-        candidate=candidate,
-        operator=operator(case, box),
-        coeff=coeff,
-        correction=correction,
-        fourier_rms=fourier_rms,
-        self_metadata={
-            "self_correction_sin1": float(correction[0]),
-            "self_correction_sin2": float(correction[1]),
-            "self_probe_fit_max_abs_component": float(audit["fit_max_abs_component"]),
-            "self_probe_holdout_max_abs_component": float(
-                audit["holdout_max_abs_component"]
-            ),
-        },
-    )
-
-
-def _pooled_rms(mean_squares: list[float]) -> float:
-    if not mean_squares:
-        raise ValueError("cannot pool an empty set of frame mean squares")
-    return math.sqrt(math.fsum(mean_squares) / len(mean_squares))
-
-
-def evaluate_all_source_theory(
-    theory: AllSourceCandidateTheory,
-    frames: list[tuple[int, np.ndarray, np.ndarray, float]],
-    force_scale: float,
-    pilot_prefix_sha256: str,
-) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
-    """Evaluate one full-source AD theory curve on frames 1--25.
-
-    The discrete source/gather field and its continuous zero-alias reference
-    are contracted before any particle RMS is formed.  Therefore the source
-    self contribution and its correlation with every other source are retained
-    by construction.  The closed Fourier tail remains an explicitly separate
-    scalar approximation and is recorded as the only covariance omission.
-    """
-
-    candidate = theory.candidate
-    raw_alias2: list[float] = []
-    correction2: list[float] = []
-    corrected_alias2: list[float] = []
-    alias_correction_cross: list[float] = []
-    frame_rows: list[dict[str, object]] = []
-    for frame_index, (timestep, q, xyz, box) in enumerate(frames):
-        if not math.isclose(box, theory.operator.box_length):
-            raise RuntimeError("all pilot frames must use the frozen cubic box")
-        field = allsource.evaluate_all_source_ad_aliasing(
-            q, xyz, theory.operator, theory.coeff.real, theory.correction
-        )
-        raw2 = allsource.mean_square(field.raw_aliasing)
-        correction2_value = allsource.mean_square(field.self_correction)
-        corrected2 = allsource.mean_square(field.corrected_aliasing)
-        # corrected = raw - correction; retain this term so the full-field
-        # identity is auditable without treating it as an independent RMS.
-        cross = float(
-            np.mean(
-                np.einsum(
-                    "ij,ij->i", field.raw_aliasing, -field.self_correction
-                )
-            )
-        )
-        if not math.isclose(
-            corrected2,
-            raw2 + correction2_value + 2.0 * cross,
-            rel_tol=2.0e-12,
-            abs_tol=2.0e-16,
-        ):
-            raise AssertionError("all-source alias/self vector identity failed")
-        raw_alias2.append(raw2)
-        correction2.append(correction2_value)
-        corrected_alias2.append(corrected2)
-        alias_correction_cross.append(cross)
-        frame_rows.append(
-            {
-                "candidate_id": candidate.case.case_id,
-                "target": candidate.target.value,
-                "pilot_frame": frame_index + 1,
-                "timestep": timestep,
-                "all_source_raw_alias_mean_square": raw2,
-                "self_correction_mean_square": correction2_value,
-                "alias_self_correction_dot_mean": cross,
-                "corrected_all_source_alias_mean_square": corrected2,
-                "pilot_coordinate_prefix_sha256": pilot_prefix_sha256,
-            }
-        )
-        print(
-            json.dumps(
-                {
-                    "stage": "all_source_ad_operator",
-                    "candidate": candidate.case.case_id,
-                    "frame": frame_index + 1,
-                    "frames": PILOT_N,
-                }
-            ),
-            flush=True,
-        )
-
-    raw_alias_rms = _pooled_rms(raw_alias2)
-    correction_rms = _pooled_rms(correction2)
-    corrected_alias_rms = _pooled_rms(corrected_alias2)
-    total = math.hypot(corrected_alias_rms, theory.fourier_rms)
-    relative = total / force_scale
-    block_rows: list[dict[str, object]] = []
-    block_relative: list[float] = []
-    for block_index, (start, stop) in enumerate(PILOT_BLOCKS):
-        block_alias = _pooled_rms(corrected_alias2[start:stop])
-        block_total = math.hypot(block_alias, theory.fourier_rms)
-        block_relative.append(block_total / force_scale)
-        block_rows.append(
-            {
-                "candidate_id": candidate.case.case_id,
-                "target": candidate.target.value,
-                "block": block_index + 1,
-                "frame_first": start + 1,
-                "frame_last": stop,
-                "all_source_alias_absolute_rms": block_alias,
-                "total_predicted_relative_rms": block_total / force_scale,
-            }
-        )
-    frame_sem = statistics.stdev(block_relative) / math.sqrt(len(block_relative))
-    upper95 = relative + ONE_SIDED_T95_DF4 * frame_sem
-    sigma_up = (
-        math.pi * baseline.RCUT * candidate.mesh / (candidate.target.csplit * frames[0][3])
-    )
-    row: dict[str, object] = {
-        "method": "ESP production AD",
-        "scope": candidate.scope,
-        "candidate_id": candidate.case.case_id,
-        "target": candidate.target.value,
-        "target_relative_rms": candidate.target.value,
-        "M": candidate.mesh,
-        "actual_nx": candidate.mesh,
-        "actual_grid_points": candidate.mesh**3,
-        "P": candidate.order,
-        "order": candidate.order,
-        "c_split": candidate.target.csplit,
-        "csplit": candidate.target.csplit,
-        "c_spread": candidate.target.cspread,
-        "cspread": candidate.target.cspread,
-        "epsilon_split": candidate.target.epsilon_split,
-        "epsilon_spread": candidate.target.epsilon_spread,
-        "sigma_up": sigma_up,
-        "resolved_band": sigma_up >= 1.0,
-        "all_source_raw_alias_rms": raw_alias_rms,
-        "all_source_self_correction_rms": correction_rms,
-        "all_source_alias_self_correction_dot_mean": float(
-            math.fsum(alias_correction_cross) / len(alias_correction_cross)
-        ),
-        "all_source_corrected_alias_rms": corrected_alias_rms,
-        "all_source_corrected_alias_absolute_rms": corrected_alias_rms,
-        "fourier_rms": theory.fourier_rms,
-        "fourier_absolute_rms": theory.fourier_rms,
-        "total_predicted_absolute_rms": total,
-        "predicted_total_absolute_rms": total,
-        "total_predicted_relative_rms": relative,
-        "predicted_total_relative_rms": relative,
-        "five_block_sem_relative": frame_sem,
-        "predicted_total_relative_five_block_sem": frame_sem,
-        "predicted_total_relative_block5_sem": frame_sem,
-        "alias_sampling_sem_relative": 0.0,
-        "predicted_total_relative_alias_sampling_sem": 0.0,
-        "combined_sem_relative": frame_sem,
-        "predicted_total_relative_combined_sem": frame_sem,
-        "one_sided_95_upper_relative": upper95,
-        "predicted_total_relative_one_sided_95_upper": upper95,
-        "captured_homogeneous_alias_fraction": 1.0,
-        "captured_homogeneous_chi2_fraction": 1.0,
-        "unresolved_homogeneous_alias_fraction": 0.0,
-        "unresolved_homogeneous_chi2_fraction": 0.0,
-        "alias_shell": "implicit_all_grid_aliases",
-        "samples_per_alias_shell": 0,
-        "base_mode_count": theory.operator.active_mode_count,
-        "zeroed_active_mode_count": theory.operator.zeroed_active_mode_count,
-        "prediction_passes_target": relative <= candidate.target.value,
-        "selection_passes_target": sigma_up >= 1.0 and upper95 <= candidate.target.value,
-        "selection_result": "pass" if sigma_up >= 1.0 and upper95 <= candidate.target.value else "fail",
-        "pilot_frames": "1--25",
-        "pilot_frame_count": PILOT_N,
-        "pilot_coordinate_prefix_sha256": pilot_prefix_sha256,
-        "screening_force_scale": force_scale,
-        "screening_force_scale_source": "coarse PPPM force evaluation on frames 1--25; no Ewald reference",
-        "prediction_reference_force_accessed": False,
-        "prediction_holdout_coordinates_accessed": False,
-        "prediction_molecular_coordinates_accessed": True,
-        "prediction_structure_input": "full rho(q) and target cell phases from frames 1--25",
-        "ad_estimator": "configuration-conditioned full-source AD alias quadratic form with production self correction",
-        "uncertainty_combination": "five contiguous pilot-frame block SEM; no Monte-Carlo alias sampling",
-        "covariance_approximation": "alias/self covariance retained exactly; Fourier-tail covariance is neglected",
-        **theory.self_metadata,
-    }
-    # The all-source operator evaluates the complete discrete source/gather
-    # response, so no finite alias shell is sampled.  Preserve a compact
-    # provenance row rather than fabricating a shell-resolved estimator.
-    alias_rows = [
-        {
-            "candidate_id": candidate.case.case_id,
-            "target": candidate.target.value,
-            "M": candidate.mesh,
-            "P": candidate.order,
-            "c_spread": candidate.target.cspread,
-            "alias_treatment": "implicit full discrete grid source/gather response",
-            "alias_sampling_sem_relative": 0.0,
-        }
-    ]
-    return row, block_rows, alias_rows
-
-
-def evaluate_all_source_screen(
-    candidates: list[Candidate], *, rerun_self_probes: bool
-) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], dict[str, object]]:
-    """Screen candidates using only the pilot-coordinate prefix."""
-
-    if not candidates:
-        raise ValueError("candidate list is empty")
-    frames, prefix_digest = load_pilot_frames()
-    charges = frames[0][1]
-    box = frames[0][3]
-    force_scale = baseline.coarse_force_scale()
-    started = time.time()
-    predictions: list[dict[str, object]] = []
-    blocks: list[dict[str, object]] = []
-    aliases: list[dict[str, object]] = []
-    for index, candidate in enumerate(candidates, start=1):
-        print(json.dumps({"stage": "prepare_all_source_ad_operator", "candidate": index, "candidate_count": len(candidates), "id": candidate.case.case_id}), flush=True)
-        theory = prepare_all_source_candidate(
-            candidate, charges, box, rerun_self_probes=rerun_self_probes
-        )
-        row, local_blocks, local_aliases = evaluate_all_source_theory(
-            theory, frames, force_scale, prefix_digest
-        )
-        predictions.append(row)
-        blocks.extend(local_blocks)
-        aliases.extend(local_aliases)
-    predictions.sort(key=lambda row: (-float(row["target_relative_rms"]), int(row["actual_grid_points"]), int(row["order"]), float(row["cspread"])))
-    return predictions, blocks, aliases, {
-        "elapsed_seconds": time.time() - started,
-        "pilot_coordinate_prefix_sha256": prefix_digest,
-        "pilot_coordinate_frames_read": PILOT_N,
-        "holdout_coordinate_frames_read": 0,
-        "structure_mode_count": "all source/gather aliases implicit in discrete grid evaluation",
-        "alias_shell": "implicit_all_grid_aliases",
-        "samples_per_shell": 0,
-        "covariance_policy": "all alias/self correlations retained before RMS; Fourier-tail covariance is neglected",
-        "uncertainty_policy": "five contiguous pilot-frame block SEM",
-    }
-
-
 def candidate_seed(candidate: Candidate, alias_shell: int) -> int:
     payload = (
         f"{candidate.target.value:.17g}|{candidate.mesh}|{candidate.order}|"
@@ -508,7 +225,7 @@ def candidate_seed(candidate: Candidate, alias_shell: int) -> int:
     return int.from_bytes(hashlib.sha256(payload).digest()[:4], "little")
 
 
-def prepare_legacy_offdiagonal_candidate(
+def prepare_spectral_theory_candidate(
     candidate: Candidate,
     charges: np.ndarray,
     box: float,
@@ -516,7 +233,7 @@ def prepare_legacy_offdiagonal_candidate(
     alias_shell: int,
     samples_per_shell: int,
     rerun_self_probes: bool,
-) -> LegacyOffDiagonalTheory:
+) -> SpectralADTheory:
     case = candidate.case
     coeff = coefficients(case)
     population = adsq.prepare_ad_source_spectrum_population(
@@ -573,17 +290,19 @@ def prepare_legacy_offdiagonal_candidate(
         "residual_self_n8_to_n12_relative": n8_to_n12,
         "residual_self_final_refinement_relative": final_refinement,
     }
-    return LegacyOffDiagonalTheory(
+    return SpectralADTheory(
         candidate=candidate,
         population=population,
         correction=correction,
         residual_self=residual_self,
         fourier=fourier,
         self_metadata=metadata,
+        operator=operator(case, box),
+        coeff=coeff,
     )
 
 
-def evaluate_legacy_offdiagonal_spectra(
+def evaluate_spectral_theory_spectra(
     frames: list[tuple[int, np.ndarray, np.ndarray, float]],
     modes: np.ndarray,
     *,
@@ -631,6 +350,12 @@ def pair_rms(charges: np.ndarray, chi2: float) -> float:
     return ikref.COULOMB_REAL * math.sqrt(max(pair_factor * chi2, 0.0))
 
 
+def pooled_rms(mean_squares: list[float]) -> float:
+    if not mean_squares:
+        raise ValueError("cannot pool an empty set of frame mean squares")
+    return math.sqrt(math.fsum(mean_squares) / len(mean_squares))
+
+
 def alias_relative_sem(
     charges: np.ndarray,
     chi2: float,
@@ -653,10 +378,11 @@ def alias_relative_sem(
     return (pair / total) * pair_sem / force_scale
 
 
-def evaluate_legacy_offdiagonal_theory(
-    theory: LegacyOffDiagonalTheory,
+def evaluate_spectral_theory(
+    theory: SpectralADTheory,
     mapping: dict[str, object],
     charges: np.ndarray,
+    frames: list[tuple[int, np.ndarray, np.ndarray, float]],
     tagged_mean: np.ndarray,
     charge_mean: np.ndarray,
     tagged_blocks: np.ndarray,
@@ -664,6 +390,14 @@ def evaluate_legacy_offdiagonal_theory(
     pilot_prefix_sha256: str,
     box: float,
 ) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
+    """Evaluate the Figure-5 vector-complete pair/self error formula.
+
+    ``S_tag`` reweights the exact homogeneous cell-moment estimator as a
+    diagonal-spectrum diagnostic.  The main prediction instead evaluates the
+    phase-resolved full-source AD error amplitude on every pilot frame, adds
+    the production self-correction vector, and only then forms the RMS.  This
+    retains pair/self and cross-mode covariance by construction.
+    """
     candidate = theory.candidate
     population = theory.population
     corrected_chi2, shell_values, shell_variances = (
@@ -675,9 +409,69 @@ def evaluate_legacy_offdiagonal_theory(
     homogeneous_pair = pair_rms(charges, population.homogeneous_chi2)
     corrected_pair = pair_rms(charges, corrected_chi2)
     ordinary_pair = pair_rms(charges, ordinary_chi2)
-    total = math.sqrt(
-        corrected_pair**2 + theory.residual_self**2 + theory.fourier**2
+
+    raw_alias2: list[float] = []
+    correction2: list[float] = []
+    alias_correction_cross: list[float] = []
+    distinct_pair2: list[float] = []
+    residual_self2: list[float] = []
+    pair_residual_self_cross: list[float] = []
+    joint_pair_self2: list[float] = []
+    vector_identity_residuals: list[float] = []
+    component_identity_residuals: list[float] = []
+    for _, frame_charges, xyz, frame_box in frames:
+        if not np.array_equal(frame_charges, charges):
+            raise RuntimeError("pilot-frame charges changed within the AD screen")
+        if not math.isclose(frame_box, theory.operator.box_length):
+            raise RuntimeError("pilot-frame cell changed within the AD screen")
+        moments = adjoint.evaluate_joint_pair_self_quadratic(
+            frame_charges,
+            xyz,
+            theory.operator,
+            theory.coeff.real,
+            theory.correction,
+        )
+        raw_alias2.append(moments.full_source_alias_mean_square)
+        correction2.append(moments.self_correction_mean_square)
+        alias_correction_cross.append(moments.alias_minus_correction_dot_mean)
+        distinct_pair2.append(moments.distinct_pair_mean_square)
+        residual_self2.append(moments.residual_self_mean_square)
+        pair_residual_self_cross.append(
+            moments.pair_residual_self_dot_mean
+        )
+        joint_pair_self2.append(moments.joint_pair_self_mean_square)
+        vector_identity_residuals.append(
+            moments.vector_identity_absolute_residual
+        )
+        component_identity_residuals.append(moments.component_identity_max_abs)
+
+    raw_alias_rms = pooled_rms(raw_alias2)
+    self_correction_rms = pooled_rms(correction2)
+    pair_self_cross = math.fsum(alias_correction_cross) / len(
+        alias_correction_cross
     )
+    phase_pair_rms = pooled_rms(distinct_pair2)
+    phase_residual_self_rms = pooled_rms(residual_self2)
+    phase_pair_self_cross = math.fsum(pair_residual_self_cross) / len(
+        pair_residual_self_cross
+    )
+    joint_pair_self_rms = pooled_rms(joint_pair_self2)
+    raw_correction_expanded_joint2 = (
+        raw_alias_rms**2 + self_correction_rms**2 + 2.0 * pair_self_cross
+    )
+    expanded_joint2 = (
+        phase_pair_rms**2
+        + phase_residual_self_rms**2
+        + 2.0 * phase_pair_self_cross
+    )
+    if not math.isclose(
+        joint_pair_self_rms**2,
+        expanded_joint2,
+        rel_tol=2.0e-12,
+        abs_tol=2.0e-18,
+    ):
+        raise AssertionError("pooled joint pair/self vector identity failed")
+    total = math.hypot(joint_pair_self_rms, theory.fourier)
     relative = total / force_scale
 
     block_rows: list[dict[str, object]] = []
@@ -687,9 +481,13 @@ def evaluate_legacy_offdiagonal_theory(
             population, mapping, tagged_blocks[block_index]
         )
         block_pair = pair_rms(charges, block_chi2)
-        block_total = math.sqrt(
-            block_pair**2 + theory.residual_self**2 + theory.fourier**2
-        )
+        block_phase_pair = pooled_rms(distinct_pair2[start:stop])
+        block_phase_self = pooled_rms(residual_self2[start:stop])
+        block_phase_cross = math.fsum(
+            pair_residual_self_cross[start:stop]
+        ) / (stop - start)
+        block_joint = pooled_rms(joint_pair_self2[start:stop])
+        block_total = math.hypot(block_joint, theory.fourier)
         block_relative.append(block_total / force_scale)
         block_rows.append(
             {
@@ -699,11 +497,15 @@ def evaluate_legacy_offdiagonal_theory(
                 "frame_first": start + 1,
                 "frame_last": stop,
                 "measured_stag_corrected_pair_rms": block_pair,
+                "phase_resolved_distinct_pair_absolute_rms": block_phase_pair,
+                "phase_resolved_residual_self_absolute_rms": block_phase_self,
+                "pair_residual_self_dot_mean": block_phase_cross,
+                "joint_pair_self_absolute_rms": block_joint,
                 "total_predicted_relative_rms": block_total / force_scale,
             }
         )
     frame_sem = statistics.stdev(block_relative) / math.sqrt(len(block_relative))
-    sampling_sem = alias_relative_sem(
+    diagonal_sampling_sem = alias_relative_sem(
         charges,
         corrected_chi2,
         corrected_pair,
@@ -711,7 +513,11 @@ def evaluate_legacy_offdiagonal_theory(
         force_scale,
         shell_variances,
     )
-    combined_sem = math.hypot(frame_sem, sampling_sem)
+    # The main joint operator includes every discrete grid alias directly, so
+    # it has no importance-sampling uncertainty.  The sampled S_tag quantity
+    # remains a diagnostic and its SEM is reported under a distinct field.
+    sampling_sem = 0.0
+    combined_sem = frame_sem
     upper95 = relative + ONE_SIDED_T95_DF4 * combined_sem
     sigma_up = (
         math.pi
@@ -746,8 +552,27 @@ def evaluate_legacy_offdiagonal_theory(
         "measured_stag_corrected_pair_rms": corrected_pair,
         "measured_stag_corrected_pair_absolute_rms": corrected_pair,
         "ordinary_sq_corrected_pair_rms_diagnostic": ordinary_pair,
-        "residual_self_rms": theory.residual_self,
-        "residual_self_absolute_rms": theory.residual_self,
+        "residual_self_rms": phase_residual_self_rms,
+        "residual_self_absolute_rms": phase_residual_self_rms,
+        "residual_self_cell_quadrature_rms_diagnostic": theory.residual_self,
+        "phase_resolved_distinct_pair_absolute_rms": phase_pair_rms,
+        "phase_resolved_residual_self_absolute_rms": phase_residual_self_rms,
+        "pair_residual_self_dot_mean": phase_pair_self_cross,
+        "full_source_alias_absolute_rms": raw_alias_rms,
+        "production_self_correction_absolute_rms": self_correction_rms,
+        "full_source_alias_self_correction_dot_mean": pair_self_cross,
+        "joint_pair_self_absolute_rms": joint_pair_self_rms,
+        "joint_pair_self_mean_square": joint_pair_self_rms**2,
+        "joint_pair_self_expanded_mean_square": expanded_joint2,
+        "joint_raw_alias_correction_expanded_mean_square": (
+            raw_correction_expanded_joint2
+        ),
+        "joint_pair_self_vector_identity_max_abs": max(
+            vector_identity_residuals
+        ),
+        "joint_pair_self_component_identity_max_abs": max(
+            component_identity_residuals
+        ),
         "fourier_rms": theory.fourier,
         "fourier_absolute_rms": theory.fourier,
         "total_predicted_absolute_rms": total,
@@ -759,6 +584,9 @@ def evaluate_legacy_offdiagonal_theory(
         "predicted_total_relative_block5_sem": frame_sem,
         "alias_sampling_sem_relative": sampling_sem,
         "predicted_total_relative_alias_sampling_sem": sampling_sem,
+        "diagonal_stag_alias_sampling_sem_relative_diagnostic": (
+            diagonal_sampling_sem
+        ),
         "combined_sem_relative": combined_sem,
         "predicted_total_relative_combined_sem": combined_sem,
         "one_sided_95_upper_relative": upper95,
@@ -799,16 +627,26 @@ def evaluate_legacy_offdiagonal_theory(
         "prediction_holdout_coordinates_accessed": False,
         "prediction_molecular_coordinates_accessed": True,
         "prediction_structure_input": (
-            "measured target-conditioned S_tag from frames 1--25"
+            "phase-resolved full-source and target-cell descriptor from "
+            "frames 1--25; measured S_tag retained as a diagonal diagnostic"
         ),
         "ad_estimator": (
-            "measured target-conditioned S_tag with exact AD cell-moment "
-            "source weights, production residual-self theory, and closed Fourier error"
+            "vector-complete full-source AD pair/self quadratic form from "
+            "pilot coordinates; measured S_tag and exact homogeneous cell "
+            "moments retained as diagnostics; closed Fourier error in quadrature"
+        ),
+        "pair_source_scope": "all source particles including j=i",
+        "self_source_scope": (
+            "production self correction applied to the same all-source vector"
         ),
         "uncertainty_combination": (
-            "quadrature of five-block frame SEM and alias importance-sampling SEM"
+            "five contiguous pilot-frame block SEM; the main joint operator "
+            "has no alias Monte Carlo sampling"
         ),
-        "covariance_approximation": "pair/self/Fourier covariances are neglected",
+        "covariance_approximation": (
+            "pair/self and in-band cross-mode covariance retained; covariance "
+            "between the joint in-band error and closed Fourier tail neglected"
+        ),
         **theory.self_metadata,
     }
     alias_rows = [
@@ -829,7 +667,7 @@ def evaluate_legacy_offdiagonal_theory(
     return row, block_rows, alias_rows
 
 
-def save_legacy_offdiagonal_spectra(
+def save_spectral_theory_spectra(
     path: Path,
     modes: np.ndarray,
     tagged_mean: np.ndarray,
@@ -853,7 +691,7 @@ def save_legacy_offdiagonal_spectra(
     )
 
 
-def evaluate_legacy_offdiagonal_screen(
+def evaluate_spectral_theory_screen(
     candidates: list[Candidate],
     *,
     alias_shell: int,
@@ -874,10 +712,10 @@ def evaluate_legacy_offdiagonal_screen(
     box = frames[0][3]
     force_scale = baseline.coarse_force_scale()
     started = time.time()
-    prepared: list[LegacyOffDiagonalTheory] = []
+    prepared: list[SpectralADTheory] = []
     for index, candidate in enumerate(candidates, start=1):
         prepared.append(
-            prepare_legacy_offdiagonal_candidate(
+            prepare_spectral_theory_candidate(
                 candidate,
                 charges,
                 box,
@@ -901,10 +739,10 @@ def evaluate_legacy_offdiagonal_screen(
         [item.population for item in prepared]
     )
     tagged_mean, charge_mean, tagged_blocks, charge_blocks = (
-        evaluate_legacy_offdiagonal_spectra(frames, modes, chunk_size=chunk_size)
+        evaluate_spectral_theory_spectra(frames, modes, chunk_size=chunk_size)
     )
     spectra_path.parent.mkdir(parents=True, exist_ok=True)
-    save_legacy_offdiagonal_spectra(
+    save_spectral_theory_spectra(
         spectra_path,
         modes,
         tagged_mean,
@@ -918,10 +756,11 @@ def evaluate_legacy_offdiagonal_screen(
     block_rows: list[dict[str, object]] = []
     alias_rows: list[dict[str, object]] = []
     for theory, mapping in zip(prepared, mappings):
-        row, local_blocks, local_aliases = evaluate_legacy_offdiagonal_theory(
+        row, local_blocks, local_aliases = evaluate_spectral_theory(
             theory,
             mapping,
             charges,
+            frames,
             tagged_mean,
             charge_mean,
             tagged_blocks,
@@ -949,10 +788,12 @@ def evaluate_legacy_offdiagonal_screen(
         "alias_shell": alias_shell,
         "samples_per_shell": samples_per_shell,
         "covariance_policy": (
-            "pair/self/Fourier terms are combined in quadrature; covariance is ignored"
+            "pair/self and in-band cross-mode covariance are retained in one "
+            "vector quadratic form; only in-band/Fourier-tail covariance is ignored"
         ),
         "uncertainty_policy": (
-            "frame-block and alias-sampling SEMs are combined in quadrature"
+            "five contiguous pilot-frame block SEM for the joint operator; "
+            "the S_tag alias-sampling SEM is diagnostic only"
         ),
     }
 
@@ -965,13 +806,15 @@ def prediction_manifest(
     runtime: dict[str, object],
 ) -> dict[str, object]:
     return {
-        "schema_version": 4,
+        "schema_version": 6,
         "purpose": purpose,
         "logical_order": [
             "read only coordinate frames 1--25 with the prefix reader",
-            "evaluate the complete all-source AD alias quadratic form on every pilot frame",
-            "apply the production self correction to the same all-source vector field",
-            "pool vector RMS values over five 5-frame blocks",
+            "evaluate measured target-conditioned S_tag(q) and ordinary S_q(q)",
+            "retain S_tag reweighting of the exact AD cell-moment estimator as a diagonal diagnostic",
+            "contract the full-source pair alias and production self-correction vectors before squaring",
+            "combine the resulting joint in-band RMS with the closed Fourier tail in quadrature",
+            "estimate uncertainty from five contiguous 5-frame pilot blocks",
             "freeze the complete candidate table and its SHA-256",
             "permit holdout coordinate/reference access only in a later validation action",
         ],
@@ -982,24 +825,29 @@ def prediction_manifest(
             "coordinate_prefix_sha256": runtime[
                 "pilot_coordinate_prefix_sha256"
             ],
-            "structure_input": "full rho(q) and target cell phases from frames 1--25",
+            "structure_input": (
+                "phase-resolved full-source and target-cell descriptor from frames "
+                "1--25; measured S_tag retained as a diagonal diagnostic"
+            ),
             "alias_formula": (
-                "configuration-conditioned full-source AD quadratic form with "
-                "all discrete source/gather aliases implicit in the production operator, "
-                "including j=i"
+                "one analytical discrete-source/gather minus continuum-band "
+                "AD error amplitude with all source particles, including j=i"
             ),
             "total_formula": (
-                "sqrt(mean_i |full-source alias vector minus production self correction|^2 "
-                "+ closed Fourier-tail RMS^2)"
+                "sqrt(<|e_full-source-alias-c_self|^2> + Delta_F_Fourier^2)"
             ),
             "covariance_approximation": (
-                "alias/self covariance retained in the vector RMS; Fourier-tail covariance is neglected"
+                "pair/self and in-band cross-mode covariance retained; covariance "
+                "between the joint in-band error and closed Fourier tail neglected"
             ),
             "frame_uncertainty": (
                 "SEM over five contiguous blocks of five pilot frames"
             ),
-            "alias_uncertainty": "none; the discrete source/gather response contains all aliases implicitly",
-            "combined_uncertainty": "five-block frame SEM",
+            "alias_uncertainty": (
+                "zero for the main all-alias joint operator; importance-sampling "
+                "SEM is retained only for the diagonal S_tag diagnostic"
+            ),
+            "combined_uncertainty": "five-block frame SEM for the joint operator",
             "upper_rule": (
                 "prediction + t_0.95,4 * combined_SEM; t_0.95,4="
                 f"{ONE_SIDED_T95_DF4:.14g}"
@@ -1013,7 +861,8 @@ def prediction_manifest(
                 "pilot_coordinate_prefix_sha256"
             ],
             "runner": file_record(Path(__file__)),
-            "all_source_descriptor": file_record(Path(allsource.__file__)),
+            "spectral_descriptor": file_record(Path(adsq.__file__)),
+            "joint_pair_self_quadratic": file_record(Path(adjoint.__file__)),
             "production_validation_helper": file_record(
                 AD_VALIDATION / "water_ad_production.py"
             ),
@@ -1031,16 +880,21 @@ def prediction_manifest(
 
 def write_baseline(args: argparse.Namespace) -> None:
     OUTDIR.mkdir(parents=True, exist_ok=True)
-    predictions, blocks, aliases, runtime = evaluate_all_source_screen(
-        baseline_candidates(), rerun_self_probes=args.rerun_self_probes
+    predictions, blocks, aliases, runtime = evaluate_spectral_theory_screen(
+        baseline_candidates(),
+        alias_shell=args.alias_shell,
+        samples_per_shell=args.samples_per_shell,
+        chunk_size=args.chunk_size,
+        rerun_self_probes=args.rerun_self_probes,
+        spectra_path=BASELINE_SPECTRA,
     )
     if len(predictions) != len(baseline.candidates()):
-        raise RuntimeError("baseline full-source AD matrix is incomplete")
+        raise RuntimeError("baseline spectral AD matrix is incomplete")
     write_csv(BASELINE_PREDICTION, predictions)
     write_csv(BASELINE_BLOCKS, blocks)
     write_csv(BASELINE_ALIASES, aliases)
     manifest = prediction_manifest(
-        "Figure 5 AD curves from full-source pilot-coordinate theory",
+        "Figure 5 AD curves from the vector-complete pilot-coordinate pair/self theory",
         BASELINE_PREDICTION,
         BASELINE_BLOCKS,
         BASELINE_ALIASES,
@@ -1075,7 +929,7 @@ def select_joint(rows: list[dict[str, object]]) -> dict[str, object]:
     passing = [row for row in rows if as_bool(row["selection_passes_target"])]
     if not passing:
         raise RuntimeError(
-            "no declared full-source AD candidate satisfies the "
+            "no declared vector-complete AD candidate satisfies the "
             "one-sided prediction target"
         )
     return min(
@@ -1091,8 +945,13 @@ def select_joint(rows: list[dict[str, object]]) -> dict[str, object]:
 def write_joint(target: float, args: argparse.Namespace) -> None:
     paths = joint_paths(target)
     paths["directory"].mkdir(parents=True, exist_ok=True)
-    predictions, blocks, aliases, runtime = evaluate_all_source_screen(
-        joint_candidates(target), rerun_self_probes=args.rerun_self_probes
+    predictions, blocks, aliases, runtime = evaluate_spectral_theory_screen(
+        joint_candidates(target),
+        alias_shell=args.alias_shell,
+        samples_per_shell=args.samples_per_shell,
+        chunk_size=args.chunk_size,
+        rerun_self_probes=args.rerun_self_probes,
+        spectra_path=paths["spectra"],
     )
     write_csv(paths["prediction"], predictions)
     write_csv(paths["blocks"], blocks)
@@ -1100,9 +959,9 @@ def write_joint(target: float, args: argparse.Namespace) -> None:
     selected = select_joint(predictions)
     prediction_sha = sha256(paths["prediction"])
     frozen = {
-        "schema_version": 2,
+        "schema_version": 3,
         "purpose": (
-            "full-source AD parameter selection frozen before "
+            "vector-complete AD pair/self parameter selection frozen before "
             "holdout coordinate or Ewald-force access"
         ),
         "candidate_set": {
@@ -1125,7 +984,8 @@ def write_joint(target: float, args: argparse.Namespace) -> None:
         "prediction_reference_force_accessed": False,
         "prediction_holdout_coordinates_accessed": False,
         "prediction_structure_input": (
-            "full rho(q) and target cell phases from frames 1--25"
+            "phase-resolved full-source and target-cell descriptor from frames "
+            "1--25; measured S_tag retained as a diagonal diagnostic"
         ),
         "selected": selected,
     }
@@ -1133,7 +993,7 @@ def write_joint(target: float, args: argparse.Namespace) -> None:
         json.dumps(frozen, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     manifest = prediction_manifest(
-        "joint full-source AD screen with deferred holdout validation",
+        "joint vector-complete AD pair/self screen with deferred holdout validation",
         paths["prediction"],
         paths["blocks"],
         paths["aliases"],
@@ -1484,18 +1344,38 @@ def diagnostic_direct_check(target: float) -> None:
     direct_rms = math.sqrt(
         float(np.mean([row["mesh_minus_direct_mean_square"] for row in rows]))
     )
-    theory_mesh = float(selected["all_source_corrected_alias_rms"])
+    diagonal_pair_rms = float(selected["measured_stag_corrected_pair_rms"])
+    pair_rms_value = float(
+        selected["phase_resolved_distinct_pair_absolute_rms"]
+    )
+    self_rms_value = float(selected["residual_self_rms"])
+    theory_band_rms = float(selected["joint_pair_self_absolute_rms"])
+    force_scale = float(selected["screening_force_scale"])
     summary = {
         "candidate_id": case.case_id,
         "target": target,
         "pilot_frames": "1--25",
-        "full_source_alias_operator_rms": theory_mesh,
+        "diagonal_stag_pair_rms_diagnostic": diagonal_pair_rms,
+        "phase_resolved_distinct_pair_rms": pair_rms_value,
+        "phase_resolved_residual_self_rms": self_rms_value,
+        "pair_residual_self_dot_mean": float(
+            selected["pair_residual_self_dot_mean"]
+        ),
+        "pair_self_scalar_quadrature_rms_diagnostic": math.hypot(
+            pair_rms_value, self_rms_value
+        ),
+        "vector_complete_pair_self_rms": theory_band_rms,
         "direct_finite_band_mesh_rms": direct_rms,
-        "full_source_to_legacy_direct_ratio": theory_mesh / direct_rms,
+        "vector_complete_to_direct_ratio": theory_band_rms / direct_rms,
+        "direct_finite_band_relative_rms": direct_rms / force_scale,
+        "spectral_total_relative_rms": float(
+            selected["predicted_total_relative_rms"]
+        ),
         "used_for_prediction": False,
         "used_for_selection": False,
         "diagnostic_definition": (
-            "legacy direct finite-band check against the frozen full-source alias operator"
+            "post-freeze comparison of direct finite-band force difference with "
+            "the frozen vector-complete pair/self quadratic form"
         ),
     }
     write_csv(paths["diagnostic_frames"], rows)
@@ -1513,13 +1393,8 @@ def diagnostic_direct_check(target: float) -> None:
     print(json.dumps(summary, indent=2))
 
 
-def legacy_stag_theory_audit(target: float, args: argparse.Namespace) -> None:
-    """Audit the retired pair-only S_tag closure after a current freeze.
-
-    This is retained only to quantify the historical off-diagonal
-    approximation.  It does not enter Figure 5 prediction, selection, or
-    validation.
-    """
+def spectral_theory_audit(target: float, args: argparse.Namespace) -> None:
+    """Audit shell convergence of the diagonal S_tag diagnostic estimator."""
     frozen, paths = verify_frozen(target)
     selected = frozen["selected"]
     frames, _ = load_pilot_frames()
@@ -1559,7 +1434,7 @@ def legacy_stag_theory_audit(target: float, args: argparse.Namespace) -> None:
             )
         )
     modes, mappings = adsq.population_mode_union(populations)
-    tagged, _, _, _ = evaluate_legacy_offdiagonal_spectra(
+    tagged, _, _, _ = evaluate_spectral_theory_spectra(
         frames, modes, chunk_size=args.chunk_size
     )
     force_scale = float(selected["screening_force_scale"])
@@ -1589,24 +1464,24 @@ def legacy_stag_theory_audit(target: float, args: argparse.Namespace) -> None:
                     population.captured_homogeneous_chi2
                     / population.homogeneous_chi2
                 ),
-                "legacy_offdiagonal_pair_relative_rms": pair / force_scale,
+                "spectral_pair_relative_rms": pair / force_scale,
                 "alias_sampling_chi2_sem": math.sqrt(
                     math.fsum(variances.values())
                 ),
                 "homogeneous_recovery_exact": True,
             }
         )
-    shell5 = float(rows[-1]["legacy_offdiagonal_pair_relative_rms"])
+    shell5 = float(rows[-1]["spectral_pair_relative_rms"])
     for row in rows:
-        row["legacy_relative_difference_from_shell5"] = (
-            float(row["legacy_offdiagonal_pair_relative_rms"]) / shell5 - 1.0
+        row["relative_difference_from_shell5"] = (
+            float(row["spectral_pair_relative_rms"]) / shell5 - 1.0
         )
     write_csv(paths["convergence"], rows)
     manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
     manifest["alias_shell_convergence"] = {
         "performed_after_selection_freeze": True,
         "used_for_prediction_or_selection": False,
-        "scope": "legacy off-diagonal S_tag diagnostic; not the full-source Figure-5 theory",
+        "scope": "Figure-5 diagonal S_tag diagnostic shell convergence",
         "shells": [1, 2, 3, 4, 5],
         "homogeneous_recovery_exact_for_every_shell": True,
         "output": file_record(paths["convergence"]),
@@ -1657,27 +1532,6 @@ def run_unit_tests() -> None:
     if tagged_error > 2.0e-14 or ordinary_error > 2.0e-14:
         raise AssertionError("target-conditioned spectrum direct-sum test failed")
 
-    all_source_operator = adref.build_ad_operator(
-        12, 4.0, 5, 1.0, 12.024, 12.024, coefficients(baseline.case_for(baseline.TARGETS[0], 5, 12))
-    )
-    all_source_coeff = coefficients(baseline.case_for(baseline.TARGETS[0], 5, 12))
-    all_source = allsource.evaluate_all_source_ad_aliasing(
-        q, xyz, all_source_operator, all_source_coeff.real, np.zeros(2)
-    )
-    legacy_mesh = adref.fixed_ad_mesh_force(q, xyz, all_source_operator, all_source_coeff.real)
-    legacy_band = ikref.direct_truncated_force(q, xyz, 4.0, all_source_operator.kernel)
-    all_source_mesh_error = float(np.max(np.abs(all_source.raw_mesh - legacy_mesh)))
-    all_source_band_error = float(
-        np.max(np.abs(all_source.continuum_band - legacy_band))
-    )
-    all_source_alias_error = float(
-        np.max(
-            np.abs(all_source.raw_aliasing - (legacy_mesh - legacy_band))
-        )
-    )
-    if max(all_source_mesh_error, all_source_band_error, all_source_alias_error) > 2.0e-13:
-        raise AssertionError("all-source analytical AD operator consistency test failed")
-
     target = baseline.TARGETS[0]
     case = baseline.case_for(target, 5, 12)
     population = adsq.prepare_ad_source_spectrum_population(
@@ -1704,16 +1558,58 @@ def run_unit_tests() -> None:
         or any(value != 0.0 for value in variances.values())
     ):
         raise AssertionError("S_tag=1 homogeneous recovery test failed")
+
+    joint_operator = adref.build_ad_operator(
+        12,
+        4.0,
+        5,
+        1.0,
+        target.csplit,
+        target.cspread,
+        coefficients(case),
+    )
+    joint_correction = np.asarray((1.25e-4, -2.5e-5), dtype=np.float64)
+    joint = adjoint.evaluate_joint_pair_self_quadratic(
+        q,
+        xyz,
+        joint_operator,
+        coefficients(case).real,
+        joint_correction,
+        mode_block_size=17,
+    )
+    reference_mesh = adref.fixed_ad_mesh_force(
+        q, xyz, joint_operator, coefficients(case).real
+    )
+    reference_band = ikref.direct_truncated_force(
+        q, xyz, 4.0, joint_operator.kernel
+    )
+    reference_joint = (
+        reference_mesh
+        - reference_band
+        - correction_force(q, xyz, 4.0, 12, joint_correction)
+    )
+    reference_joint2 = float(
+        np.mean(np.einsum("ij,ij->i", reference_joint, reference_joint))
+    )
+    joint_operator_error = abs(
+        joint.joint_pair_self_mean_square - reference_joint2
+    )
+    if joint_operator_error > 3.0e-15 * max(reference_joint2, 1.0):
+        raise AssertionError("joint pair/self analytical operator test failed")
     pilot, prefix_digest = load_pilot_frames()
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "evaluate_tagged_pair_spectrum_direct_sum_max_abs": tagged_error,
         "ordinary_sq_direct_sum_max_abs": ordinary_error,
-        "all_source_mesh_operator_max_abs": all_source_mesh_error,
-        "all_source_continuum_band_operator_max_abs": all_source_band_error,
-        "all_source_alias_operator_max_abs": all_source_alias_error,
         "homogeneous_recovery_bitwise_exact": exact_homogeneous,
         "homogeneous_chi2": population.homogeneous_chi2,
+        "joint_pair_self_vector_identity_absolute_residual": (
+            joint.vector_identity_absolute_residual
+        ),
+        "joint_pair_plus_residual_self_component_max_abs": (
+            joint.component_identity_max_abs
+        ),
+        "joint_pair_self_reference_mean_square_max_abs": joint_operator_error,
         "prefix_reader_frame_count": len(pilot),
         "prefix_reader_first_timestep": pilot[0][0],
         "prefix_reader_last_timestep": pilot[-1][0],
@@ -1735,10 +1631,10 @@ def parse_args() -> argparse.Namespace:
     action.add_argument("--validate-joint", type=float, metavar="TARGET")
     action.add_argument("--diagnostic-direct-check", type=float, metavar="TARGET")
     action.add_argument(
-        "--legacy-stag-theory-audit",
+        "--spectral-theory-audit",
         type=float,
         metavar="TARGET",
-        help="post-freeze diagnostic for the retired pair-only S_tag closure",
+        help="post-freeze shell-convergence audit for the diagonal S_tag diagnostic",
     )
     action.add_argument("--self-test", action="store_true")
     parser.add_argument("--alias-shell", type=int, default=5)
@@ -1774,8 +1670,8 @@ def main() -> None:
         validate_joint(args.validate_joint, rerun_lammps=args.rerun_lammps)
     elif args.diagnostic_direct_check is not None:
         diagnostic_direct_check(args.diagnostic_direct_check)
-    elif args.legacy_stag_theory_audit is not None:
-        legacy_stag_theory_audit(args.legacy_stag_theory_audit, args)
+    elif args.spectral_theory_audit is not None:
+        spectral_theory_audit(args.spectral_theory_audit, args)
     elif args.self_test:
         run_unit_tests()
     else:

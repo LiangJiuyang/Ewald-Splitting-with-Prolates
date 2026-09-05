@@ -1,5 +1,5 @@
 # Representative production-AD point for Figure 5. M=12 is source-only:
-# the full-source selector excludes it below the resolved-band threshold.
+# the theory selector excludes it below the resolved-band threshold.
 newton on
 units real
 atom_style full

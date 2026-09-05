@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-r"""Structure-aware descriptor for the implemented AD mesh-pair estimator.
+r"""Structure-aware diagonal descriptor for the implemented AD mesh operator.
 
-This is retained for Figure 4 and for explicit legacy Figure-5 diagnostics.
-It is not the current Figure-5 AD estimator: the latter uses the full-source,
-target-cell-phase-resolved quadratic form in ad_all_source_theory.
+Figure 5 reports this descriptor as an auditable diagonal-spectrum diagnostic.
+It reweights the ``i != j`` source contribution with measured
+target-conditioned ``S_tag`` and recovers the exact homogeneous cell-moment
+result when ``S_tag=1``.  The active Figure-5 prediction is the phase-resolved
+joint pair/self quadratic form in :mod:`ad_joint_quadratic`, because a scalar
+``S_tag`` cannot retain cross-mode or pair/self covariance. Figure 4 uses this
+descriptor for its structure-spectrum analysis.
 
 The production AD path uses the classical derivative of the tabulated
 piecewise-polynomial spreading stencil.  Its homogeneous pair estimator is
@@ -46,8 +50,9 @@ numerator is the exact diagonal-in-physical-mode contribution
 uncorrelated limit is one, so it can replace the scalar ``S_q`` in the existing
 pair estimator without changing the homogeneous reference.  Unlike ordinary
 ``S_q``, it retains the lowest-order target--source correlation required by a
-force RMS.  It still does *not* contain cross physical-mode or cross gather-
-alias coherences; it is deliberately a low-rank diagnostic closure.
+force RMS.  It still does *not* contain cross physical-mode, pair/self, or
+cross gather-alias coherences; it is deliberately a low-rank diagnostic
+closure and is not the vector-complete Figure-5 selection statistic.
 """
 
 from __future__ import annotations

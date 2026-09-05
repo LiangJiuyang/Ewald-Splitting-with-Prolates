@@ -192,14 +192,25 @@ followed by independent Ewald validation on frames 26--51:
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage prediction
 ```
 
-The lower AD row evaluates the full-source production AD aliasing quadratic
-form on coordinate frames 1--25. Each target field uses the complete
-\(\rho(\mathbf q)=\sum_jq_j\exp[-i\mathbf q\cdot\mathbf r_j]\), including
-the \(j=i\) source contribution, together with the target particle's actual
-cell phase. The fitted LAMMPS self correction is applied to that same vector
-field before the RMS is formed, retaining alias/self cross terms. The closed
-Fourier tail remains a separately reported scalar term. The prediction process
-reads neither holdout coordinates nor Ewald forces.
+The lower AD row is a pilot-coordinate reciprocal-space theory on frames
+1--25. Its main statistic is a phase-resolved full-source/target-cell
+quadratic form. For each target, the alias field includes every source,
+including \(j=i\); the production self-correction vector is applied to that
+same field before the particle norm is formed:
+\[
+\Delta F_{\rm band}^2=
+\left\langle\left|\mathbf e_{\rm full\ source}^{\rm alias}
+-\mathbf c_{\rm self}\right|^2\right\rangle.
+\]
+This retains pair/self and in-band cross-mode covariance. The measured
+target-conditioned \(S_{\rm tag}(\mathbf q)\), ordinary \(S_q\), exact
+homogeneous cell-moment pair RMS, and residual-self cell quadrature remain in
+the output as diagonal-spectrum diagnostics. The final prediction is
+\(\Delta F_{\rm pred}^2=\Delta F_{\rm band}^2+
+\Delta F_{\rm Fourier}^2\); covariance with the closed Fourier tail is the
+remaining approximation. Prediction reads neither holdout coordinates nor
+LAMMPS/Ewald force output and does not consume a finite-band force-difference
+table.
 
 The fixed-influence ik prediction likewise uses unbuffered prefix readers for
 only frames 1--25 of both the coordinate trajectory and the coarse PPPM force
@@ -237,29 +248,30 @@ python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
   --validate-joint 1e-5 --lmp "$LMP"
 ```
 
-Run the retained legacy shell-convergence audit and the optional direct
+Run the diagonal-spectrum shell-convergence audit and the optional direct
 finite-band diagnostic after freezing. Neither output calibrates or alters the
-selector. The direct-band result is an independent implementation check of the
-full-source quadratic form: on the same coordinates the two are algebraically
-identical.
+selector. The direct-band result is a separate numerical comparison of the
+vector-complete pair/self prediction; it is never used for screening.
 
 ```bash
 for TARGET in 1e-4 1e-5; do
   python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
-    --legacy-stag-theory-audit "$TARGET"
+    --spectral-theory-audit "$TARGET"
   python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
     --diagnostic-direct-check "$TARGET"
 done
 ```
 
-The AD candidate tables report the five-block frame SEM and the one-sided 95%
-upper value using Student t with four degrees of freedom. Source/gather aliases
-are evaluated implicitly by the full discrete grid operator, so no alias
-importance-sampling SEM is used. Alias/self covariance is retained in the
-vector RMS; only covariance with the separately closed Fourier tail remains
-an explicit approximation. Frozen AD selections and their later validation
-remain in the external result tables and manifests but are not plotted
-separately.
+The AD candidate tables report the five-block frame SEM and one-sided 95%
+upper value using Student t with four degrees of freedom. The main joint
+operator includes all discrete aliases and therefore has no Monte Carlo alias
+uncertainty. The alias-sampling SEM is retained only for the diagonal
+\(S_{\rm tag}\) diagnostic. The exact homogeneous all-alias AD cell-moment
+value is the \(S_{\rm tag}=1\) diagnostic baseline. Pair/self covariance is
+retained; joint-band/Fourier-tail covariance remains the explicit
+approximation.
+Frozen AD selections and their later validation remain in the external result
+tables and manifests but are not plotted separately.
 
 `lammps_ad_total_validation/run_water_ad_legacy_direct_band_diagnostic.py`
 is retained only as an explicitly acknowledged finite-band diagnostic. It
@@ -267,11 +279,9 @@ requires `--legacy-direct-band-diagnostic` and is not part of the Figure 5
 selection or validation workflow. Formal production ESP-AD/Ewald helpers are
 in `water_ad_production.py`.
 
-`build_fig5_ad_rigid_sq_theory.py` and
-`run_ad_rigid_theory_selection.py` are likewise retained only for the
-pair-only rigid-`S_tag` diagnostic. Both require
-`--legacy-rigid-diagnostic`; neither writes a current Figure 5 source table
-or participates in parameter selection.
+`fig5_ad_theory_common.py` contains only the fixed candidate definitions,
+pilot-only normalization, and converged residual-self quadrature shared by the
+current Figure 5 AD workflow. It does not implement a separate selector.
 
 Each external Figure 5 joint-target directory contains the pre-validation
 candidate CSV, its frozen-selection JSON, pilot-block and alias audits,

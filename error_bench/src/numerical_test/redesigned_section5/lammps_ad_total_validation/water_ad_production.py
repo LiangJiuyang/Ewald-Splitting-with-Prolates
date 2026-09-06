@@ -15,7 +15,6 @@ from pathlib import Path
 import numpy as np
 
 from ad_validation_common import (
-    HERE,
     PROJECT,
     ADCase,
     ad_kspace_input,
@@ -24,9 +23,10 @@ from ad_validation_common import (
     run_lammps,
 )
 import fixed_ik_reference as ikref
+from generated_output import section_output_root
 
 
-WORK = HERE / "runs_water"
+WORK = section_output_root() / "lammps_ad_total_validation" / "runs_water"
 WATER_ROOT = PROJECT / "numerical_examples/water_trajectory_benchmark"
 WATER_DATA = WATER_ROOT / "water.data"
 TRAJECTORY = WATER_ROOT / "water_short_traj.lammpstrj"

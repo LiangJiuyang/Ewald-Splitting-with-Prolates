@@ -11,8 +11,8 @@ Core evidence chain
     Fig. 2 validates Fourier truncation; Fig. 3 validates matched fixed-
     influence ik and analytical-differentiation mesh estimators; Fig. 4 tests
     the molecular structure-factor correction; Fig. 5 compares fixed-influence
-    ik theoretical analysis and vector-complete AD pair/self theory from 25
-    pilot frames, each with independent validation, and shows a fixed-G,
+    ik theory and conditional pair/self AD theory frozen from 25 pilot
+    frames, each with independent validation, and shows a fixed-G,
     fixed-P=5 PPPM measurement baseline;
     Fig. 6
     tests the grid--window trade-off under a common PSWF split.
@@ -4305,22 +4305,22 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
     }
 
 
-def figure5_theory_and_coordinate_ad() -> dict[str, object]:
-    """Draw Figure 5 with fixed-IK and vector-complete AD theory.
+def figure5_theory_and_stag_ad() -> dict[str, object]:
+    """Draw Figure 5 with fixed-IK and conditional pair/self AD theory.
 
     Panels (a,b) use the frozen fixed-influence IK theoretical analysis.
-    Panels (c,d) use a phase-resolved full-source/target-cell descriptor from
-    the 25 pilot frames.  The AD pair and production residual-self vectors are
-    added before squaring; measured S_tag(q) remains a diagonal diagnostic.
-    The closed Fourier term is analytical. Dashed curves use frames 1--25,
-    and filled markers report independent Ewald validation on frames 26--51.
-    Frozen AD selections and their subsequent validation are retained in the
-    source data but are not plotted separately.
+    Panels (c,d) use structural spectra frozen from pilot frames 1--25. The
+    coherent all-source AD pair and self-correction fields are added before
+    cell squaring; the zero-mean pair fluctuation and closed Fourier tail
+    complete the theory.
+    Dashed curves are predictions; filled markers are independent Ewald
+    validation on frames 26--51.  Frozen AD selections and their validation
+    are retained in the source data but are not plotted separately.
     """
 
     theory_rows = read_rows("fig5_fixed_ik_theory_grid_source.csv")
-    coordinate_ad_rows = read_path_rows(
-        OUTPUT_ROOT / "fig5_ad_coordinate_screen" / "baseline_source.csv"
+    stag_ad_rows = read_path_rows(
+        OUTPUT_ROOT / "fig5_ad_stag_screen" / "baseline_source.csv"
     )
     pppm_rows = read_path_rows(
         OUTPUT_ROOT
@@ -4364,22 +4364,25 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
     ):
         raise ValueError("Figure 5 theory source does not state the required estimators")
 
-    coordinate_ad_keys = {
+    stag_ad_keys = {
         (value(row, "target_relative_rms"), int(row["order"]), int(row["actual_nx"]))
-        for row in coordinate_ad_rows
+        for row in stag_ad_rows
     }
-    if len(coordinate_ad_rows) != expected_count or coordinate_ad_keys != expected_keys:
+    if len(stag_ad_rows) != expected_count or stag_ad_keys != expected_keys:
         raise ValueError("Figure 5 spectral AD matrix is incomplete")
     if any(
         str(row["prediction_reference_force_accessed"]).lower() == "true"
         or str(row["prediction_holdout_coordinates_accessed"]).lower() == "true"
-        or str(row["prediction_molecular_coordinates_accessed"]).lower() != "true"
+        or str(row["prediction_molecular_coordinates_accessed"]).lower() != "false"
+        or str(row["prediction_unit_charge_force_accessed"]).lower() != "false"
+        or str(row["prediction_particlewise_force_difference_evaluated"]).lower()
+        != "false"
         or row["prediction_structure_input"]
-        != (
-            "phase-resolved full-source and target-cell descriptor from "
-            "frames 1--25; measured S_tag retained as a diagonal diagnostic"
-        )
-        or "vector-complete" not in row["ad_estimator"]
+        != "measured target-conditioned S_tag from frames 1--25"
+        or row["prediction_coherent_structure_input"]
+        != "charge-class conditional pair amplitudes from frames 1--25"
+        or "conditional-mean AD pair/self theory" not in row["ad_estimator"]
+        or str(row["pair_self_covariance_included"]).lower() != "true"
         or int(row["validation_frame_first"]) != 26
         or int(row["validation_frame_last"]) != 51
         or int(row["validation_frame_count"]) != 26
@@ -4389,7 +4392,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             abs_tol=5.0e-4,
         )
         or not math.isclose(value(row, "csplit"), value(row, "cspread"), abs_tol=5.0e-4)
-        for row in coordinate_ad_rows
+        for row in stag_ad_rows
     ):
         raise ValueError(
             "Figure 5 spectral AD source violates the fixed-band contract"
@@ -4397,12 +4400,12 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
 
     # The two strict-window selections are frozen from spectral AD theory
     # before their Ewald holdout checks are opened.
-    coordinate_screen_dirs = {
-        1.0e-4: OUTPUT_ROOT / "fig5_ad_coordinate_screen" / "joint_1e-4",
-        1.0e-5: OUTPUT_ROOT / "fig5_ad_coordinate_screen" / "joint_1e-5",
+    stag_screen_dirs = {
+        1.0e-4: OUTPUT_ROOT / "fig5_ad_stag_screen" / "stag_1e-4",
+        1.0e-5: OUTPUT_ROOT / "fig5_ad_stag_screen" / "stag_1e-5",
     }
-    coordinate_screens: dict[float, dict[str, object]] = {}
-    for target, directory in coordinate_screen_dirs.items():
+    stag_screens: dict[float, dict[str, object]] = {}
+    for target, directory in stag_screen_dirs.items():
         frozen = json.loads((directory / "frozen_selection.json").read_text())
         summary_rows = read_path_rows(directory / "holdout_validation_summary.csv")
         manifest = json.loads((directory / "manifest.json").read_text())
@@ -4418,7 +4421,13 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             or not bool(selected["selection_passes_target"])
             or bool(selected["prediction_reference_force_accessed"])
             or bool(selected["prediction_holdout_coordinates_accessed"])
-            or not bool(selected["prediction_molecular_coordinates_accessed"])
+            or bool(selected["prediction_molecular_coordinates_accessed"])
+            or bool(selected["prediction_unit_charge_force_accessed"])
+            or bool(selected["prediction_particlewise_force_difference_evaluated"])
+            or selected["prediction_structure_input"]
+            != "measured target-conditioned S_tag from frames 1--25"
+            or selected["prediction_coherent_structure_input"]
+            != "charge-class conditional pair amplitudes from frames 1--25"
             or int(summary["validation_frame_count"]) != 26
             or summary["validation_frames"] != "26--51"
             or summary["selection_used_holdout"].strip().lower() != "false"
@@ -4433,7 +4442,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 "Figure 5 spectral AD violates the frozen-selection "
                 f"contract: {directory}"
             )
-        coordinate_screens[target] = {"selected": selected, "summary": summary}
+        stag_screens[target] = {"selected": selected, "summary": summary}
 
     panel_by_operator_target = {
         ("ik", 1.0e-4): "a",
@@ -4545,7 +4554,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         else:
             per_target = [
                 row
-                for row in coordinate_ad_rows
+                for row in stag_ad_rows
                 if math.isclose(value(row, "target_relative_rms"), target, abs_tol=1.0e-15)
             ]
             first_ad_screen[f"{target:.0e}"] = {}
@@ -4647,7 +4656,7 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 for row in all_rows:
                     append_source(
                         panel=panel,
-                        record_type="AD vector-complete theoretical prediction",
+                        record_type="AD conditional pair/self theoretical prediction",
                         series=f"ESP P={order}",
                         differentiation="AD",
                         target=target,
@@ -4658,8 +4667,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                             row, "predicted_total_relative_combined_sem"
                         ),
                         source_partition=(
-                            "phase-resolved full-source and target-cell descriptor "
-                            "from coordinate frames 1-25; no reference forces"
+                            "frozen S_tag and conditional pair spectra from frames 1-25; "
+                            "prediction reopens no coordinates or forces"
                         ),
                         estimator=row["ad_estimator"],
                         used_for_selection=True,
@@ -4738,9 +4747,9 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             )
 
         if method == "ad":
-            coordinate_screen = coordinate_screens[target]
-            selected = coordinate_screen["selected"]
-            summary = coordinate_screen["summary"]
+            stag_screen = stag_screens[target]
+            selected = stag_screen["selected"]
+            summary = stag_screen["summary"]
             assert isinstance(selected, dict)
             assert isinstance(summary, dict)
             predicted = float(selected["predicted_total_relative_rms"])
@@ -4750,8 +4759,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             order = int(selected["order"])
             append_source(
                 panel=panel,
-                record_type="AD joint-window vector-complete theoretical prediction",
-                series=f"joint AD candidate P={order}",
+                record_type="AD frozen conditional pair/self theoretical selection",
+                series=f"selected AD candidate P={order}",
                 differentiation="AD",
                 target=target,
                 order=order,
@@ -4759,8 +4768,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 relative_rms=predicted,
                 relative_rms_sem=predicted_sem,
                 source_partition=(
-                    "phase-resolved full-source and target-cell descriptor from "
-                    "coordinate frames 1-25; no reference forces"
+                    "frozen S_tag and conditional pair spectra from frames 1-25; "
+                    "prediction reopens no coordinates or forces"
                 ),
                 estimator=selected["ad_estimator"],
                 used_for_selection=True,
@@ -4768,8 +4777,8 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
             )
             append_source(
                 panel=panel,
-                record_type="AD joint-window Ewald holdout validation",
-                series=f"joint AD candidate P={order}",
+                record_type="AD frozen-selection Ewald holdout validation",
+                series=f"selected AD candidate P={order}",
                 differentiation="AD",
                 target=target,
                 order=order,
@@ -4857,13 +4866,13 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
     save_figure(
         fig,
         "fig5_pppm_efficiency",
-        "Fixed-influence IK and vector-complete AD theory with independent Ewald validation",
+        "Fixed-influence IK and conditional pair/self AD theory with independent Ewald validation",
     )
     return {
         "layout": "2 x 2",
         "esp_rows": len(theory_rows),
         "esp_theory_rows": len(theory_rows),
-        "ad_coordinate_screen_rows": len(coordinate_ad_rows),
+        "ad_stag_screen_rows": len(stag_ad_rows),
         "pppm_rows": sum(len(rows) for rows in pppm_by_operator_target.values()),
         "pppm_rows_by_panel": {
             panel_by_operator_target[key]: len(rows)
@@ -4872,26 +4881,26 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
         "esp_displayed_rows": sum(
             value(row, "sigma_up") >= 1.0 for row in theory_rows
         ),
-        "ad_coordinate_screen_displayed_rows": sum(
-            value(row, "sigma_up") >= 1.0 for row in coordinate_ad_rows
+        "ad_stag_screen_displayed_rows": sum(
+            value(row, "sigma_up") >= 1.0 for row in stag_ad_rows
         ),
         "pppm_displayed_rows": sum(len(rows) for rows in pppm_by_operator_target.values()),
         "orders": list(expected_orders),
         "first_theory_resolved_crossings": first_theory,
         "first_validation_resolved_crossings": first_ik_validation,
-        "first_ad_coordinate_screen_resolved_crossings": first_ad_screen,
+        "first_ad_stag_screen_resolved_crossings": first_ad_screen,
         "first_ad_validation_resolved_crossings": first_ad_validation,
         "theory_frames": [1, 25],
         "theory_uses_reference_force_differences": False,
         "theory_curve_style": "dashed line without markers",
-        "ad_coordinate_screen_uses_reference_force_differences": False,
-        "ad_coordinate_screen_curve_style": "dashed line without markers",
-        "ad_coordinate_screen_selection_scope": (
-            "vector-complete AD pair/self theory on the pilot coordinates; "
-            "frozen joint selections are retained in source data only"
+        "ad_stag_screen_uses_reference_force_differences": False,
+        "ad_stag_screen_curve_style": "dashed line without markers",
+        "ad_stag_screen_selection_scope": (
+            "frozen conditional pair/self AD theory; selected candidates "
+            "and independent holdout values are retained in source data only"
         ),
-        "ad_coordinate_joint_screen_rows": 2,
-        "ad_coordinate_joint_screen": {
+        "ad_stag_selection_rows": 2,
+        "ad_stag_selection": {
             f"{target:.0e}": {
                 "actual_nx": int(screen["selected"]["actual_nx"]),
                 "actual_grid_points": int(screen["selected"]["actual_grid_points"]),
@@ -4914,12 +4923,12 @@ def figure5_theory_and_coordinate_ad() -> dict[str, object]:
                 ),
                 "selection_used_holdout": False,
             }
-            for target, screen in coordinate_screens.items()
+            for target, screen in stag_screens.items()
         },
-        "ad_coordinate_joint_screen_uses_reference_force_differences": False,
-        "ad_coordinate_joint_screen_holdout_frames": [26, 51],
-        "ad_coordinate_joint_screen_curve_style": (
-            "frozen vector-complete AD theory selection and independent validation "
+        "ad_stag_selection_uses_reference_force_differences": False,
+        "ad_stag_selection_holdout_frames": [26, 51],
+        "ad_stag_selection_curve_style": (
+            "frozen conditional pair/self AD theory selection and independent validation "
             "retained in source data but not plotted separately"
         ),
         "validation_curve_style": "filled markers with balanced-block SEM; no connecting line",
@@ -6410,21 +6419,23 @@ def write_source_inventory() -> None:
                 "fig5_fixed_ik_theory_grid_source.csv; "
                 "fig5_fixed_ik_theory_grid_manifest.json; "
                 "build_fig5_fixed_ik_theory_grid.py; "
-                "fig5_ad_coordinate_screen/baseline_prediction.csv; "
-                "fig5_ad_coordinate_screen/baseline_prediction_by_frame.csv; "
-                "fig5_ad_coordinate_screen/baseline_alias_shell.csv; "
-                "fig5_ad_coordinate_screen/baseline_structure_spectra.npz; "
-                "fig5_ad_coordinate_screen/baseline_source.csv; "
-                "fig5_ad_coordinate_screen/baseline_manifest.json; "
-                "fig5_ad_coordinate_screen/joint_1e-4/"
+                "fig5_ad_stag_screen/pilot_stag_spectrum.npz; "
+                "fig5_ad_stag_screen/pilot_stag_spectrum_frozen.json; "
+                "fig5_ad_stag_screen/pilot_stag_spectrum_manifest.json; "
+                "fig5_ad_stag_screen/baseline_prediction.csv; "
+                "fig5_ad_stag_screen/baseline_prediction_by_frame.csv; "
+                "fig5_ad_stag_screen/baseline_alias_shell.csv; "
+                "fig5_ad_stag_screen/baseline_source.csv; "
+                "fig5_ad_stag_screen/baseline_manifest.json; "
+                "fig5_ad_stag_screen/stag_1e-4/"
                 "prediction_before_validation.csv; "
-                "fig5_ad_coordinate_screen/joint_1e-4/frozen_selection.json; "
-                "fig5_ad_coordinate_screen/joint_1e-4/"
+                "fig5_ad_stag_screen/stag_1e-4/frozen_selection.json; "
+                "fig5_ad_stag_screen/stag_1e-4/"
                 "holdout_validation_summary.csv; "
-                "fig5_ad_coordinate_screen/joint_1e-5/"
+                "fig5_ad_stag_screen/stag_1e-5/"
                 "prediction_before_validation.csv; "
-                "fig5_ad_coordinate_screen/joint_1e-5/frozen_selection.json; "
-                "fig5_ad_coordinate_screen/joint_1e-5/"
+                "fig5_ad_stag_screen/stag_1e-5/frozen_selection.json; "
+                "fig5_ad_stag_screen/stag_1e-5/"
                 "holdout_validation_summary.csv; "
                 "build_fig5_ad_coordinate_screen.py; "
                 "fig5_pppm_ik_ad_fixed_g_scan/"
@@ -6433,8 +6444,8 @@ def write_source_inventory() -> None:
             ),
             "role": (
                 "panels a/b: fixed-influence ik theoretical analysis and independent "
-                "validation for P=5--9; panels c/d: production-matched, vector-complete "
-                "AD pair/self theory from 25 pilot frames, with independent validation. "
+                "validation for P=5--9; panels c/d: conditional pair/self AD "
+                "cell-moment theory frozen from 25 pilot frames, with independent validation. "
                 "Frozen AD candidates at targets of 1e-4 and 1e-5, with their holdout "
                 "values, remain in the source data but are not plotted separately. The "
                 "PPPM baseline uses fixed "
@@ -6442,16 +6453,20 @@ def write_source_inventory() -> None:
             ),
             "uncertainty": (
                 "top-row dashed curves are theoretical predictions from frames 1--25. "
-                "Bottom-row dashed curves use the joint AD pair/self quadratic form; frame-block "
-                "SEMs are shown for validation markers. Filled ESP and AD markers "
+                "Bottom-row dashed curves combine zero-mean S_tag fluctuations with "
+                "coherent all-source pair and self-correction fields before cell squaring, then add "
+                "closed Fourier theory in quadrature. Filled ESP and AD markers "
                 "and open PPPM symbols use frames 26--51. All plotted validation symbols have "
                 "five-block pooled-RMS SEMs and no connecting lines"
             ),
             "operator_or_grid_convention": (
                 "all colored curves fix c_split=c_spread at 12.024 or 14.471. Panels "
-                "a/b use fixed-influence ik. Panels c/d use the matched production AD "
-                "operator with a phase-resolved full-source and target-cell descriptor "
-                "measured on frames 1--25. Frozen selections and their validation are source-data only. "
+                "a/b use fixed-influence ik. Panels c/d use measured S_tag and "
+                "charge-class conditional pair spectra with exact AD cell-moment source "
+                "weights; the coherent all-source pair and production self-correction "
+                "fields are added before cell squaring, with the equivalent distinct-pair "
+                "plus residual-self form checked explicitly. Frozen selections and their "
+                "validation are source-data only. "
                 "M=12 remains in the source table but is "
                 "below the resolved-band domain and omitted from the main plot. "
                 "PPPM uses P=5 and its separately fixed Gaussian Ewald parameter "
@@ -6606,22 +6621,22 @@ def write_plot_manifest(
             "theory_freeze": "fig5_fixed_ik_theory_grid_frozen.json",
             "theory_runner": "build_fig5_fixed_ik_theory_grid.py",
             "theory_validation_join": "fig5_fixed_ik_theory_grid_source.csv",
-            "ad_coordinate_screen_source": "fig5_ad_coordinate_screen/baseline_source.csv",
-            "ad_coordinate_screen_manifest": "fig5_ad_coordinate_screen/baseline_manifest.json",
-            "ad_coordinate_screen_runner": "build_fig5_ad_coordinate_screen.py",
-            "ad_coordinate_screen_sources": {
+            "ad_stag_screen_source": "fig5_ad_stag_screen/baseline_source.csv",
+            "ad_stag_screen_manifest": "fig5_ad_stag_screen/baseline_manifest.json",
+            "ad_stag_screen_runner": "build_fig5_ad_coordinate_screen.py",
+            "ad_stag_screen_sources": {
                 "1e-04": (
-                    "fig5_ad_coordinate_screen/joint_1e-4/"
+                    "fig5_ad_stag_screen/stag_1e-4/"
                     "prediction_before_validation.csv; "
-                    "fig5_ad_coordinate_screen/joint_1e-4/frozen_selection.json; "
-                    "fig5_ad_coordinate_screen/joint_1e-4/"
+                    "fig5_ad_stag_screen/stag_1e-4/frozen_selection.json; "
+                    "fig5_ad_stag_screen/stag_1e-4/"
                     "holdout_validation_summary.csv"
                 ),
                 "1e-05": (
-                    "fig5_ad_coordinate_screen/joint_1e-5/"
+                    "fig5_ad_stag_screen/stag_1e-5/"
                     "prediction_before_validation.csv; "
-                    "fig5_ad_coordinate_screen/joint_1e-5/frozen_selection.json; "
-                    "fig5_ad_coordinate_screen/joint_1e-5/"
+                    "fig5_ad_stag_screen/stag_1e-5/frozen_selection.json; "
+                    "fig5_ad_stag_screen/stag_1e-5/"
                     "holdout_validation_summary.csv"
                 ),
             },
@@ -6632,8 +6647,8 @@ def write_plot_manifest(
             "panels": {
                 "a": "fixed-influence ik, epsilon=1e-4, c_split=c_spread=12.024",
                 "b": "fixed-influence ik, epsilon=1e-5, c_split=c_spread=14.471",
-                "c": "vector-complete AD pair/self theory at c_split=c_spread=12.024",
-                "d": "vector-complete AD pair/self theory at c_split=c_spread=14.471",
+                "c": "conditional pair/self AD theory at c_split=c_spread=12.024",
+                "d": "conditional pair/self AD theory at c_split=c_spread=14.471",
             },
             "orders": figure5_summary["orders"],
             "fixed_bandlimits_by_target": {
@@ -6656,38 +6671,38 @@ def write_plot_manifest(
                 "theory_uses_reference_force_differences"
             ],
             "theory_curve_style": figure5_summary["theory_curve_style"],
-            "ad_coordinate_screen_uses_reference_force_differences": figure5_summary[
-                "ad_coordinate_screen_uses_reference_force_differences"
+            "ad_stag_screen_uses_reference_force_differences": figure5_summary[
+                "ad_stag_screen_uses_reference_force_differences"
             ],
-            "ad_coordinate_screen_curve_style": figure5_summary[
-                "ad_coordinate_screen_curve_style"
+            "ad_stag_screen_curve_style": figure5_summary[
+                "ad_stag_screen_curve_style"
             ],
-            "ad_coordinate_screen_selection_scope": figure5_summary[
-                "ad_coordinate_screen_selection_scope"
+            "ad_stag_screen_selection_scope": figure5_summary[
+                "ad_stag_screen_selection_scope"
             ],
-            "ad_coordinate_joint_screen": figure5_summary["ad_coordinate_joint_screen"],
-            "ad_coordinate_joint_screen_rows": figure5_summary[
-                "ad_coordinate_joint_screen_rows"
+            "ad_stag_selection": figure5_summary["ad_stag_selection"],
+            "ad_stag_selection_rows": figure5_summary[
+                "ad_stag_selection_rows"
             ],
-            "ad_coordinate_joint_screen_uses_reference_force_differences": figure5_summary[
-                "ad_coordinate_joint_screen_uses_reference_force_differences"
+            "ad_stag_selection_uses_reference_force_differences": figure5_summary[
+                "ad_stag_selection_uses_reference_force_differences"
             ],
-            "ad_coordinate_joint_screen_holdout_frames": figure5_summary[
-                "ad_coordinate_joint_screen_holdout_frames"
+            "ad_stag_selection_holdout_frames": figure5_summary[
+                "ad_stag_selection_holdout_frames"
             ],
-            "ad_coordinate_joint_screen_curve_style": figure5_summary[
-                "ad_coordinate_joint_screen_curve_style"
+            "ad_stag_selection_curve_style": figure5_summary[
+                "ad_stag_selection_curve_style"
             ],
             "validation_curve_style": figure5_summary["validation_curve_style"],
             "pppm_curve_style": figure5_summary["pppm_curve_style"],
             "esp_rows": figure5_summary["esp_rows"],
             "esp_theory_rows": figure5_summary["esp_theory_rows"],
-            "ad_coordinate_screen_rows": figure5_summary["ad_coordinate_screen_rows"],
+            "ad_stag_screen_rows": figure5_summary["ad_stag_screen_rows"],
             "pppm_rows": figure5_summary["pppm_rows"],
             "pppm_rows_by_panel": figure5_summary["pppm_rows_by_panel"],
             "esp_displayed_rows": figure5_summary["esp_displayed_rows"],
-            "ad_coordinate_screen_displayed_rows": figure5_summary[
-                "ad_coordinate_screen_displayed_rows"
+            "ad_stag_screen_displayed_rows": figure5_summary[
+                "ad_stag_screen_displayed_rows"
             ],
             "pppm_displayed_rows": figure5_summary["pppm_displayed_rows"],
             "first_theory_resolved_crossings": figure5_summary[
@@ -6696,8 +6711,8 @@ def write_plot_manifest(
             "first_validation_resolved_crossings": figure5_summary[
                 "first_validation_resolved_crossings"
             ],
-            "first_ad_coordinate_screen_resolved_crossings": figure5_summary[
-                "first_ad_coordinate_screen_resolved_crossings"
+            "first_ad_stag_screen_resolved_crossings": figure5_summary[
+                "first_ad_stag_screen_resolved_crossings"
             ],
             "first_ad_validation_resolved_crossings": figure5_summary[
                 "first_ad_validation_resolved_crossings"
@@ -6709,14 +6724,16 @@ def write_plot_manifest(
                 "top-row predictions use frames 1--25. Colored bottom-row AD curves "
                 "combine five-block pilot SEMs and alias-sampling SEMs in quadrature. All "
                 "plotted holdout bars use five balanced pooled-RMS blocks from frames "
-                "26--51; joint-window holdout values remain in the source data only"
+                "26--51; frozen-selection holdout values remain in the source data only"
             ),
             "operator_scope": (
                 "panels a/b use fixed-influence ik and Eqs. (55) and (90). Panels c/d "
-                "use the matched production AD full-source alias vector with the "
-                "production residual-self correction applied before squaring, plus the "
-                "closed Fourier term. Measured S_tag and cell moments are diagnostics. Frozen "
-                "joint-window candidates and associated holdout values are source-data only. PPPM "
+                "use measured S_tag for zero-mean pair fluctuations and charge-class "
+                "conditional spectra for a coherent all-source pair field that is added to "
+                "the production self-correction field before cell squaring; the equivalent "
+                "distinct-pair plus residual-self form is checked; the closed Fourier "
+                "term is added in quadrature. Frozen selected candidates and associated "
+                "holdout values are source-data only. PPPM "
                 "uses P=5 and a separately frozen Gaussian Ewald parameter under "
                 "the differentiation convention of the row."
             ),
@@ -7056,12 +7073,12 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.figure == "5":
-        figure5_summary = figure5_theory_and_coordinate_ad()
+        figure5_summary = figure5_theory_and_stag_ad()
         verify_outputs(("fig5_pppm_efficiency",))
         print(
             "Created Figure 5 as PDF/SVG, 300 dpi PNG, and 600 dpi TIFF: "
             f"{figure5_summary['esp_theory_rows']} fixed-IK rows, "
-            f"{figure5_summary['ad_coordinate_screen_rows']} vector-complete AD rows, "
+            f"{figure5_summary['ad_stag_screen_rows']} conditional pair/self AD rows, "
             f"and {figure5_summary['pppm_rows']} fixed-G PPPM rows."
         )
         return
@@ -7069,18 +7086,18 @@ def main() -> None:
     figure3()
     figure_si_charge_spectrum()
     figure4()
-    figure5_summary = figure5_theory_and_coordinate_ad()
+    figure5_summary = figure5_theory_and_stag_ad()
     window_cost_crossover = figure7()
     write_source_inventory()
     write_plot_manifest(figure5_summary, window_cost_crossover)
     verify_outputs()
     print("Created Figures 2--6 as PDF/SVG, 300 dpi PNG, and 600 dpi TIFF.")
     print(
-        "Figure 5 fixed-influence IK and vector-complete AD theory/validation, "
-        "with frozen joint AD checks: "
+        "Figure 5 fixed-influence IK and conditional pair/self AD theory/validation, "
+        "with frozen AD selections: "
         f"{figure5_summary['esp_theory_rows']} ESP theory rows and "
-        f"{figure5_summary['ad_coordinate_screen_rows']} vector-complete AD rows and "
-        f"{figure5_summary['ad_coordinate_joint_screen_rows']} frozen joint AD checks and "
+        f"{figure5_summary['ad_stag_screen_rows']} conditional pair/self AD rows and "
+        f"{figure5_summary['ad_stag_selection_rows']} frozen AD selections and "
         f"{figure5_summary['pppm_rows']} fixed-G PPPM validation rows."
     )
     print(

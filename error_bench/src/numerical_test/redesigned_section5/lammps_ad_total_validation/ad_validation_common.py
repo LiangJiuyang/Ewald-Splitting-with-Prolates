@@ -7,9 +7,10 @@ The routines in this module deliberately keep three objects separate:
 2. the two-harmonic one-body correction used by development LAMMPS; and
 3. the residual self response left after that correction.
 
-The LAMMPS correction coefficients are identified only from unit-charge
-operator probes.  No random-system or water reference force enters that
-identification.
+The production selector reconstructs the LAMMPS correction coefficients from
+the deterministic reciprocal sums.  Unit-charge operator probes remain an
+independent implementation test; no random-system or water reference force
+enters either route.
 """
 
 from __future__ import annotations
@@ -562,6 +563,129 @@ def correction_force(
 ) -> np.ndarray:
     fraction = np.mod(np.asarray(xyz) / (box_length / mesh), 1.0)
     return (np.asarray(q) ** 2)[:, None] * correction_from_fraction(fraction, ab)
+
+
+def production_self_correction_coefficients(
+    case: ADCase,
+    box_length: float,
+    *,
+    coeff: ikref.PSWFCoefficients | None = None,
+    ad_operator: adref.ADOperator | None = None,
+) -> tuple[np.ndarray, dict[str, float | int | str]]:
+    """Reproduce the cubic-cell ESP AD self-correction analytically.
+
+    This is the direct NumPy counterpart of ``ESP::compute_sf_precoeff()``
+    followed by the self-coefficient accumulation in ``compute_gf_ad()``.
+    It uses the same five compact-support transform lanes, reciprocal Green
+    values, harmonic prefactors, and force-unit conversion.  No particle
+    coordinates or LAMMPS force output enter the calculation.
+    """
+
+    if not math.isfinite(box_length) or box_length <= 0.0:
+        raise ValueError("box_length must be finite and positive")
+    local_coeff = coefficients(case) if coeff is None else coeff
+    local_operator = (
+        operator(case, box_length) if ad_operator is None else ad_operator
+    )
+    if local_operator.mesh != case.mesh or local_operator.order != case.order:
+        raise ValueError("AD operator does not match the self-correction case")
+    if not math.isclose(local_operator.box_length, box_length, abs_tol=1.0e-14):
+        raise ValueError("AD operator box length does not match the case")
+
+    mesh = case.mesh
+    spacing = box_length / mesh
+    modes = np.rint(np.fft.fftfreq(mesh) * mesh).astype(np.int64)
+    lanes = np.arange(5, dtype=np.int64)
+
+    def transforms(offset: int) -> np.ndarray:
+        wave_number = (2.0 * math.pi / box_length) * (
+            modes[:, None] + mesh * (lanes[None, :] + offset)
+        )
+        return adref.lammps_deconvolution_1d(
+            wave_number,
+            spacing,
+            case.order,
+            case.cspread,
+            local_coeff.spread,
+        )
+
+    w0 = transforms(-2)
+    w1 = transforms(-1)
+    w2 = transforms(0)
+    norm0 = np.sum(w0 * w0, axis=1)
+    overlap1 = np.sum(w0 * w1, axis=1)
+    overlap2 = np.sum(w0 * w2, axis=1)
+
+    green = np.asarray(local_operator.green, dtype=np.float64)
+    first_by_axis = np.asarray(
+        (
+            np.sum(
+                green
+                * overlap1[:, None, None]
+                * norm0[None, :, None]
+                * norm0[None, None, :]
+            ),
+            np.sum(
+                green
+                * norm0[:, None, None]
+                * overlap1[None, :, None]
+                * norm0[None, None, :]
+            ),
+            np.sum(
+                green
+                * norm0[:, None, None]
+                * norm0[None, :, None]
+                * overlap1[None, None, :]
+            ),
+        ),
+        dtype=np.float64,
+    )
+    second_by_axis = np.asarray(
+        (
+            np.sum(
+                green
+                * overlap2[:, None, None]
+                * norm0[None, :, None]
+                * norm0[None, None, :]
+            ),
+            np.sum(
+                green
+                * norm0[:, None, None]
+                * overlap2[None, :, None]
+                * norm0[None, None, :]
+            ),
+            np.sum(
+                green
+                * norm0[:, None, None]
+                * norm0[None, :, None]
+                * overlap2[None, None, :]
+            ),
+        ),
+        dtype=np.float64,
+    )
+    first_spread = float(np.max(first_by_axis) - np.min(first_by_axis))
+    second_spread = float(np.max(second_by_axis) - np.min(second_by_axis))
+    symmetry_scale = max(
+        float(np.max(np.abs(first_by_axis))),
+        float(np.max(np.abs(second_by_axis))),
+        1.0,
+    )
+    if max(first_spread, second_spread) > 2.0e-13 * symmetry_scale:
+        raise FloatingPointError("cubic AD self coefficients lost axis symmetry")
+
+    prefactor = math.pi * mesh / box_length**4
+    # fieldforce_ad multiplies both stored harmonics by 2*q_i^2 and qqrd2e.
+    correction = 2.0 * COULOMB_REAL * prefactor * np.asarray(
+        (float(np.mean(first_by_axis)), 2.0 * float(np.mean(second_by_axis)))
+    )
+    return correction, {
+        "self_correction_source": (
+            "analytical reproduction of ESP::compute_sf_precoeff and compute_gf_ad"
+        ),
+        "self_correction_transform_lanes": 5,
+        "self_correction_axis_spread_sin1": first_spread,
+        "self_correction_axis_spread_sin2": second_spread,
+    }
 
 
 def fit_self_correction(

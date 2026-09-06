@@ -192,41 +192,58 @@ followed by independent Ewald validation on frames 26--51:
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage prediction
 ```
 
-The lower AD row is a pilot-coordinate reciprocal-space theory on frames
-1--25. Its main statistic is a phase-resolved full-source/target-cell
-quadratic form. For each target, the alias field includes every source,
-including \(j=i\); the production self-correction vector is applied to that
-same field before the particle norm is formed:
+The lower AD row uses a target-conditioned structure-factor theory. A
+dedicated prefix-only stage reads coordinate frames 1--25 and freezes the
+mean and five block means of \(S_{\rm tag}(\mathbf q)\), ordinary \(S_q\) for
+diagnosis, and the charge-class conditional pair amplitude
+\(\mu_a(\mathbf q)\). Candidate prediction then reopens neither molecular
+coordinates nor force arrays. It decomposes
+\(S_{\rm tag}=S_{\rm fluct}+S_{\rm coherent}\), contracts the zero-mean part
+with the exact homogeneous AD cell-moment weights, and forms a coherent
+all-source pair field that includes \(i=j\). The production self-correction
+vector is added before cell squaring:
 \[
-\Delta F_{\rm band}^2=
-\left\langle\left|\mathbf e_{\rm full\ source}^{\rm alias}
--\mathbf c_{\rm self}\right|^2\right\rangle.
+\Delta F_{\rm mesh}^2=\Delta F_{\rm pair,fluct}^2+
+\left\langle\left|\mathbf F_{\rm pair,all,coherent}+
+\mathbf F_{\rm self,correction}\right|^2\right\rangle_{\rm cell},
+\qquad
+\Delta F_{\rm pred}^2=\Delta F_{\rm mesh}^2+
+\Delta F_{\rm Fourier}^2.
 \]
-This retains pair/self and in-band cross-mode covariance. The measured
-target-conditioned \(S_{\rm tag}(\mathbf q)\), ordinary \(S_q\), exact
-homogeneous cell-moment pair RMS, and residual-self cell quadrature remain in
-the output as diagonal-spectrum diagnostics. The final prediction is
-\(\Delta F_{\rm pred}^2=\Delta F_{\rm band}^2+
-\Delta F_{\rm Fourier}^2\); covariance with the closed Fourier tail is the
-remaining approximation. Prediction reads neither holdout coordinates nor
-LAMMPS/Ewald force output and does not consume a finite-band force-difference
-table.
+The code also constructs and checks the algebraically equivalent
+\(\mathbf F_{j\ne i}+\mathbf F_{\rm residual-self}\) decomposition. Thus the
+pair/self cross term is retained explicitly without double counting the raw
+mesh self response. The remaining approximations are the diagonal
+physical-mode closure for the zero-mean pair fluctuation, omission of
+coherent source aliases beyond the six nearest faces, and omission of
+in-band/Fourier-tail covariance. Every prediction row and manifest records
+these choices.
+The pilot coordinates enter only through the frozen structure spectrum: the
+formal prediction never evaluates a particlewise mesh force, finite-band
+force, or their difference. Such force-operator calculations are confined to
+the post-freeze diagnostic command below.
+The two-harmonic self-correction coefficients are reproduced directly from
+the deterministic sums in `ESP::compute_sf_precoeff()` and
+`ESP::compute_gf_ad()`; the formal prediction does not read single-charge
+LAMMPS force dumps. Independent unit-charge probes remain operator tests.
 
 The fixed-influence ik prediction likewise uses unbuffered prefix readers for
 only frames 1--25 of both the coordinate trajectory and the coarse PPPM force
 dump. The frozen JSON records the two exact input-prefix SHA-256 digests; it
 does not hash or read the remaining holdout records before selection.
 
-Run the estimator checks, generate the full fixed-band curves, and freeze both
-joint candidate selections:
+Freeze the pilot spectrum first, run the estimator checks, generate the full
+fixed-band curves, and freeze both measured-\(S_{\rm tag}\) selections:
 
 ```bash
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
+  --freeze-pilot-spectrum
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --self-test
-python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --baseline --lmp "$LMP"
+python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --baseline
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
-  --joint-target 1e-4 --lmp "$LMP"
+  --select-target 1e-4
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
-  --joint-target 1e-5 --lmp "$LMP"
+  --select-target 1e-5
 ```
 
 The candidate CSV and its SHA-256 are written before each
@@ -243,15 +260,15 @@ python3 "$FIGDIR/fig5_pppm_ik_ad_fixed_g_scan/run_fig5_pppm_ik_ad_fixed_g_scan.p
 python3 "$FIGDIR/build_fig5_fixed_ik_theory_grid.py" --stage validation
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" --join-baseline-validation
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
-  --validate-joint 1e-4 --lmp "$LMP"
+  --validate-selection 1e-4 --lmp "$LMP"
 python3 "$FIGDIR/build_fig5_ad_coordinate_screen.py" \
-  --validate-joint 1e-5 --lmp "$LMP"
+  --validate-selection 1e-5 --lmp "$LMP"
 ```
 
-Run the diagonal-spectrum shell-convergence audit and the optional direct
-finite-band diagnostic after freezing. Neither output calibrates or alters the
-selector. The direct-band result is a separate numerical comparison of the
-vector-complete pair/self prediction; it is never used for screening.
+Run the alias-shell convergence audit and optional joint-operator/direct-band
+diagnostic only after freezing. Neither output calibrates or alters the
+selector. The diagnostic evaluates particlewise operators and is never a
+Figure 5 prediction curve or screening input.
 
 ```bash
 for TARGET in 1e-4 1e-5; do
@@ -262,14 +279,13 @@ for TARGET in 1e-4 1e-5; do
 done
 ```
 
-The AD candidate tables report the five-block frame SEM and one-sided 95%
-upper value using Student t with four degrees of freedom. The main joint
-operator includes all discrete aliases and therefore has no Monte Carlo alias
-uncertainty. The alias-sampling SEM is retained only for the diagonal
-\(S_{\rm tag}\) diagnostic. The exact homogeneous all-alias AD cell-moment
-value is the \(S_{\rm tag}=1\) diagnostic baseline. Pair/self covariance is
-retained; joint-band/Fourier-tail covariance remains the explicit
-approximation.
+The AD candidate tables report the five-block spectrum SEM, alias
+importance-sampling SEM, their quadrature combination, and a one-sided 95%
+upper value using Student t with four degrees of freedom. Setting
+\(S_{\rm tag}=1\) recovers the exact homogeneous all-alias AD cell-moment
+estimator. Neither the raw mesh self response nor the self-correction field is
+structure weighted; their cell-wise cross terms with the coherent pair field
+are retained.
 Frozen AD selections and their later validation remain in the external result
 tables and manifests but are not plotted separately.
 
@@ -282,8 +298,13 @@ in `water_ad_production.py`.
 `fig5_ad_theory_common.py` contains only the fixed candidate definitions,
 pilot-only normalization, and converged residual-self quadrature shared by the
 current Figure 5 AD workflow. It does not implement a separate selector.
+`ad_pair_self_theory.py` implements the charge-class conditional-mean
+decomposition and the cell-wise pair/self vector sum. Its FINUFFT path uses an
+exact frequency-shift identity to process distant alias modes in bounded
+128-mode-wide tiles; this limits plan memory without truncating the requested
+mode set.
 
-Each external Figure 5 joint-target directory contains the pre-validation
+Each external Figure 5 `stag_*` directory contains the pre-validation
 candidate CSV, its frozen-selection JSON, pilot-block and alias audits,
 independent holdout tables, and a manifest linking every generated artifact
 by SHA-256.
@@ -292,8 +313,8 @@ A candidate is eligible only when `sigma_up >= 1` and its one-sided upper
 value is no larger than the target. The deterministic tie-break minimizes
 `M^3`, then `P`, then `c_spread`.
 
-Each runner records the actual executable SHA-256 in its manifest. To require
-a specific archived build, add `--require-lmp-sha256 SHA256`; the manuscript
+Each LAMMPS runner records the actual executable SHA-256 in its manifest. To
+require a specific archived build, add `--require-lmp-sha256 SHA256`; the manuscript
 validation executable used SHA-256
 `34332fa52c4e2ba72b9561cffbc841c9b4fdbf5809eb745b1c1656e4ac960d6a`.
 Portable manifests label a configured external executable as `$LMP`; the

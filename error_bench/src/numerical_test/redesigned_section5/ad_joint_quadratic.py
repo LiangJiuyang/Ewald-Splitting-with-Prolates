@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""Phase-resolved AD pair/self quadratic form used by Figure 5.
+r"""Post-selection phase-resolved AD pair/self diagnostic for Figure 5.
 
 The production AD reciprocal error over its represented Fourier band is
 written as one particlewise amplitude,
@@ -33,9 +33,11 @@ source/gather transfer minus its continuum in-band transfer in one
 accumulator.  It does not read LAMMPS forces, Ewald forces, holdout
 coordinates, or a finite-band force-difference table.
 
-The closed Fourier-tail estimate is intentionally outside this object.  The
-Figure-5 driver combines that scalar tail with the joint in-band RMS in
-quadrature and records the remaining band/tail covariance approximation.
+This object is not the Figure-5 prediction or selection statistic.  The main
+curve uses frozen ``S_tag`` for the zero-mean diagonal term and a frozen
+charge-class conditional amplitude for the coherent pair/self term.  This
+diagnostic is run only after selection to quantify cross-mode and residual
+pair/self covariance omitted by that conditional-mean closure.
 """
 
 from __future__ import annotations

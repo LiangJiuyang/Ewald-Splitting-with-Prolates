@@ -2,10 +2,12 @@
 r"""Shared definitions for the pure-theory Figure 5 AD workflow.
 
 The Figure 5 driver uses these fixed candidate sets, the pilot-only coarse
-force normalization, and a residual-self cell-quadrature diagnostic.  The
-active pair/self quadratic form is implemented in ``ad_joint_quadratic.py``;
-``ad_sq_descriptor.py`` supplies the measured-``S_tag`` diagonal diagnostic.
-This module deliberately contains no force-difference estimator or selector.
+force normalization, and the production residual-self cell quadrature.  The
+active estimator combines the measured-``S_tag`` diagonal fluctuation in
+``ad_sq_descriptor.py`` with the conditional pair/self closure in
+``ad_pair_self_theory.py``.  ``ad_joint_quadratic.py`` is restricted to a
+post-selection closure diagnostic.  This module deliberately contains no
+force-difference estimator or selector.
 """
 
 from __future__ import annotations
@@ -27,9 +29,7 @@ sys.path.insert(0, str(HERE / "lammps_ad_total_validation"))
 from ad_validation_common import ADCase, RCUT, residual_self_cell_rms  # noqa: E402
 
 
-PILOT_N = 25
 ORDERS = tuple(range(5, 10))
-SELF_AUDIT_MAX = 5.0e-10
 SELF_QUADRATURE_RELATIVE_MAX = 1.0e-7
 
 
@@ -71,57 +71,6 @@ def parameter_tag(value: float) -> str:
     """Return a stable path-safe tag for a continuous PSWF parameter."""
 
     return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", "p")
-
-
-def parse_force_prefix(path: Path, count: int) -> list[np.ndarray]:
-    """Read the first ``count`` force frames without opening later records."""
-
-    frames: list[np.ndarray] = []
-    with path.open(encoding="utf-8") as handle:
-        while len(frames) < count:
-            if handle.readline().strip() != "ITEM: TIMESTEP":
-                raise RuntimeError("malformed coarse-PPPM force dump")
-            handle.readline()
-            if handle.readline().strip() != "ITEM: NUMBER OF ATOMS":
-                raise RuntimeError("force dump misses atom count")
-            atom_count = int(handle.readline())
-            if not handle.readline().startswith("ITEM: BOX BOUNDS"):
-                raise RuntimeError("force dump misses box bounds")
-            for _ in range(3):
-                handle.readline()
-            header = handle.readline().split()[2:]
-            positions = {name: index for index, name in enumerate(header)}
-            if not {"id", "fx", "fy", "fz"}.issubset(positions):
-                raise RuntimeError("force dump lacks id/fx/fy/fz columns")
-            values = np.empty((atom_count, 3), dtype=np.float64)
-            seen = np.zeros(atom_count, dtype=bool)
-            for _ in range(atom_count):
-                fields = handle.readline().split()
-                atom_id = int(fields[positions["id"]]) - 1
-                if not 0 <= atom_id < atom_count or seen[atom_id]:
-                    raise RuntimeError("coarse-PPPM force dump has invalid atom IDs")
-                seen[atom_id] = True
-                values[atom_id] = [
-                    float(fields[positions[key]]) for key in ("fx", "fy", "fz")
-                ]
-            if not np.all(seen):
-                raise RuntimeError("coarse-PPPM force dump has missing atom IDs")
-            frames.append(values)
-    return frames
-
-
-def coarse_force_scale() -> float:
-    """Return the pilot-only normalization, without Ewald-force access."""
-
-    frames = parse_force_prefix(PILOT_FORCE_DUMP, PILOT_N)
-    per_frame = np.asarray(
-        [math.sqrt(float(np.mean(np.sum(force * force, axis=1)))) for force in frames],
-        dtype=np.float64,
-    )
-    scale = math.sqrt(float(np.mean(per_frame * per_frame)))
-    if not math.isclose(scale, 27.379457967539718, rel_tol=0.0, abs_tol=1.0e-12):
-        raise RuntimeError(f"unexpected Figure-5 coarse PPPM force scale: {scale:.16g}")
-    return scale
 
 
 def candidates() -> list[tuple[Target, int, int]]:

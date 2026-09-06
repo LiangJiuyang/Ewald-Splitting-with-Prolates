@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
-r"""Generate and validate the vector-complete AD theory data for Figure 5.
+r"""Generate and validate the structure-conditioned AD theory for Figure 5.
 
-Prediction is deliberately isolated from validation. It reads only frames
-1--25 and evaluates both the target-conditioned diagonal source spectrum
-``S_tag(q)`` and a phase-resolved full-source/target-cell descriptor.  The
-main AD prediction contracts the full-source pair alias and production
-residual-self vectors first and forms the particle RMS only afterwards.
-``S_tag`` and the exact homogeneous cell-moment estimator remain explicit
-diagonal-spectrum diagnostics.  The closed Fourier tail is then combined
-with the joint in-band pair/self RMS in quadrature.
+The workflow has a strict data boundary. ``--freeze-pilot-spectrum`` is the
+only prediction-side action that reads molecular coordinates: it reads the
+first 25 frames with a prefix reader and freezes ``S_tag(q)``, ordinary
+``S_q(q)``, and the charge-class-conditioned pair amplitude ``mu_a(q)`` with
+their input-prefix hashes. All candidate prediction and parameter-selection
+actions subsequently read only those frozen structural spectra, algorithm
+parameters, charge moments, and the frozen force normalization.
 
-The main prediction accumulates one analytical discrete-minus-continuum AD
-error operator.  It never reads LAMMPS forces, an Ewald force dump, holdout
-coordinates, or a precomputed finite-band force-difference table.
+The zero-mean pair fluctuation reweights the exact homogeneous AD cell-moment
+source weights. The coherent all-source pair field, including ``i=j``, and
+the production self-correction field are added as vectors on one mesh cell
+before squaring. This is checked against the equivalent distinct-pair plus
+residual-self decomposition. The closed Fourier tail is then added in
+quadrature. This is a pure spectral/cell-moment contraction and includes
+pair/self covariance without evaluating particlewise force differences.
 
-The separate ``--diagnostic-direct-check`` action may evaluate that direct
-finite-band force difference *after* a selection is frozen. It is an
-implementation diagnostic only and never participates in selection.
+The phase-resolved joint operator and direct finite-band force difference are
+available only through ``--diagnostic-direct-check`` after a selection has
+been frozen.  They diagnose the closure error and never participate in
+prediction or selection.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import gc
 import hashlib
 import json
 import math
@@ -42,35 +47,34 @@ AD_VALIDATION = HERE / "lammps_ad_total_validation"
 sys.path[:0] = [str(HERE), str(AD_VALIDATION)]
 
 import ad_sq_descriptor as adsq  # noqa: E402
+import ad_pair_self_theory as adps  # noqa: E402
 import ad_joint_quadratic as adjoint  # noqa: E402
 import fixed_ad_reference as adref  # noqa: E402
 import fixed_ik_reference as ikref  # noqa: E402
-# Shared targets, topology readers, and cell-quadrature helpers retain their
-# historical module name. Its rigid-molecule predictor remains diagnostic;
-# the active Figure-5 path uses the pilot-coordinate joint vector, while
-# measured pilot-frame S_tag remains a diagonal diagnostic.
+# Shared targets, normalization, and cell-quadrature helpers.
 import fig5_ad_theory_common as baseline  # noqa: E402
 import ad_validation_common as adcommon  # noqa: E402
 from generated_output import section_output_root  # noqa: E402
 from ad_validation_common import (  # noqa: E402
     coefficients,
     correction_force,
-    fit_self_correction,
     operator,
+    production_self_correction_coefficients,
 )
 
 
 TRAJECTORY = baseline.WATER_ROOT / "water_short_traj.lammpstrj"
 OUTPUT_ROOT = section_output_root()
 SCAN_SUMMARY = OUTPUT_ROOT / "fig5_ik_ad_order_scan" / "fig5_ik_ad_order_scan_summary.csv"
-OUTDIR = OUTPUT_ROOT / "fig5_ad_coordinate_screen"
-RUNTIME = OUTDIR / "runtime"
-SELF_WORK = RUNTIME / "self_probes"
+OUTDIR = OUTPUT_ROOT / "fig5_ad_stag_screen"
+
+PILOT_SPECTRUM = OUTDIR / "pilot_stag_spectrum.npz"
+PILOT_SPECTRUM_FROZEN = OUTDIR / "pilot_stag_spectrum_frozen.json"
+PILOT_SPECTRUM_MANIFEST = OUTDIR / "pilot_stag_spectrum_manifest.json"
 
 BASELINE_PREDICTION = OUTDIR / "baseline_prediction.csv"
 BASELINE_BLOCKS = OUTDIR / "baseline_prediction_by_frame.csv"
 BASELINE_ALIASES = OUTDIR / "baseline_alias_shell.csv"
-BASELINE_SPECTRA = OUTDIR / "baseline_structure_spectra.npz"
 BASELINE_SOURCE = OUTDIR / "baseline_source.csv"
 BASELINE_MANIFEST = OUTDIR / "baseline_manifest.json"
 UNIT_TESTS = OUTDIR / "theory_unit_tests.json"
@@ -79,7 +83,6 @@ PILOT_N = 25
 PILOT_BLOCKS = ((0, 5), (5, 10), (10, 15), (15, 20), (20, 25))
 HOLDOUT_BLOCKS = ((0, 5), (5, 10), (10, 15), (15, 20), (20, 26))
 ONE_SIDED_T95_DF4 = 2.13184678632665
-SELF_AUDIT_MAX = baseline.SELF_AUDIT_MAX
 
 
 @dataclass(frozen=True)
@@ -101,9 +104,32 @@ class SpectralADTheory:
     correction: np.ndarray
     residual_self: float
     fourier: float
+    ad_operator: adref.ADOperator
+    real_coeff: np.ndarray
+    self_quadrature_order_per_half: int
     self_metadata: dict[str, object]
-    operator: adref.ADOperator
-    coeff: ikref.PSWFCoefficients
+
+
+@dataclass(frozen=True)
+class FrozenPilotSpectrum:
+    modes: np.ndarray
+    tagged_mean: np.ndarray
+    charge_mean: np.ndarray
+    tagged_blocks: np.ndarray
+    charge_blocks: np.ndarray
+    conditional_pair_mean: np.ndarray
+    conditional_pair_blocks: np.ndarray
+    charge_classes: np.ndarray
+    class_counts: np.ndarray
+    charges: np.ndarray
+    box_length: float
+    force_scale: float
+    coordinate_prefix_sha256: str
+    force_prefix_sha256: str
+    alias_shell: int
+    samples_per_shell: int
+    candidate_catalog_sha256: str
+    artifact_sha256: str
 
 
 def sha256(path: Path) -> str:
@@ -131,10 +157,17 @@ def lammps_record() -> dict[str, object]:
 
 
 def relative_path(path: Path) -> str:
+    """Return a bundle-relative or configured-output-relative path."""
+
+    resolved = path.resolve()
     try:
-        return path.resolve().relative_to(PROJECT).as_posix()
+        return resolved.relative_to(PROJECT).as_posix()
     except ValueError:
-        return path.resolve().as_posix()
+        try:
+            suffix = resolved.relative_to(OUTPUT_ROOT)
+        except ValueError:
+            return resolved.as_posix()
+        return f"$OUTPUT_ROOT/{suffix.as_posix()}"
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -188,7 +221,7 @@ def baseline_candidates() -> list[Candidate]:
     ]
 
 
-def joint_candidates(target_value: float) -> list[Candidate]:
+def stag_candidates(target_value: float) -> list[Candidate]:
     if math.isclose(target_value, 1.0e-4, rel_tol=0.0, abs_tol=1.0e-15):
         csplit = 12.024
         meshes = (15, 16, 18, 20)
@@ -198,7 +231,7 @@ def joint_candidates(target_value: float) -> list[Candidate]:
         meshes = (16, 18, 20, 24)
         branches = ((14.471, 1.0e-5), (16.894, 1.0e-6))
     else:
-        raise ValueError("joint AD screens are defined only for 1e-4 and 1e-5")
+        raise ValueError("S_tag AD screens are defined only for 1e-4 and 1e-5")
 
     result: list[Candidate] = []
     for mesh in meshes:
@@ -212,8 +245,73 @@ def joint_candidates(target_value: float) -> list[Candidate]:
                     cspread=cspread,
                     meshes=(mesh,),
                 )
-                result.append(Candidate(target, order, mesh, "joint_window"))
+                result.append(Candidate(target, order, mesh, "stag_selection"))
     return result
+
+
+def all_spectrum_candidates() -> list[Candidate]:
+    """Return the deterministic union covered by the frozen pilot spectrum."""
+
+    by_id: dict[str, Candidate] = {}
+    for candidate in (
+        baseline_candidates() + stag_candidates(1.0e-4) + stag_candidates(1.0e-5)
+    ):
+        case_id = candidate.case.case_id
+        previous = by_id.get(case_id)
+        if previous is not None and (
+            previous.mesh != candidate.mesh
+            or previous.order != candidate.order
+            or previous.target.csplit != candidate.target.csplit
+            or previous.target.cspread != candidate.target.cspread
+        ):
+            raise RuntimeError(f"conflicting Figure-5 candidate ID: {case_id}")
+        by_id[case_id] = candidate
+    return [by_id[key] for key in sorted(by_id)]
+
+
+def candidate_catalog_sha256(
+    candidates: list[Candidate], alias_shell: int, samples_per_shell: int
+) -> str:
+    payload = {
+        "alias_shell": alias_shell,
+        "samples_per_shell": samples_per_shell,
+        "coherent_pair_self_closure": "charge-class conditional mean",
+        "coherent_source_aliases": adps.FACE_ALIASES.tolist(),
+        "candidates": [
+            {
+                "candidate_id": candidate.case.case_id,
+                "target": candidate.target.value,
+                "M": candidate.mesh,
+                "P": candidate.order,
+                "c_split": candidate.target.csplit,
+                "c_spread": candidate.target.cspread,
+            }
+            for candidate in candidates
+        ],
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def frozen_force_scale() -> tuple[float, str]:
+    """Read only the 25-frame normalization prefix during spectrum freezing."""
+
+    frames, prefix_digest = ikref.parse_force_dump_prefix(
+        baseline.PILOT_FORCE_DUMP, PILOT_N, return_sha256=True
+    )
+    per_frame = np.asarray(
+        [
+            math.sqrt(float(np.mean(np.sum(force * force, axis=1))))
+            for _, force in frames
+        ],
+        dtype=np.float64,
+    )
+    scale = math.sqrt(float(np.mean(per_frame * per_frame)))
+    if not math.isclose(scale, 27.379457967539718, rel_tol=0.0, abs_tol=1.0e-12):
+        raise RuntimeError(f"unexpected Figure-5 force scale: {scale:.16g}")
+    return scale, prefix_digest
 
 
 def candidate_seed(candidate: Candidate, alias_shell: int) -> int:
@@ -225,18 +323,16 @@ def candidate_seed(candidate: Candidate, alias_shell: int) -> int:
     return int.from_bytes(hashlib.sha256(payload).digest()[:4], "little")
 
 
-def prepare_spectral_theory_candidate(
+def prepare_population(
     candidate: Candidate,
     charges: np.ndarray,
     box: float,
     *,
     alias_shell: int,
     samples_per_shell: int,
-    rerun_self_probes: bool,
-) -> SpectralADTheory:
-    case = candidate.case
-    coeff = coefficients(case)
-    population = adsq.prepare_ad_source_spectrum_population(
+    coeff: ikref.PSWFCoefficients | None = None,
+) -> adsq.ADSourceSpectrumPopulation:
+    return adsq.prepare_ad_source_spectrum_population(
         q=charges,
         mesh=candidate.mesh,
         order=candidate.order,
@@ -244,21 +340,35 @@ def prepare_spectral_theory_candidate(
         rcut=baseline.RCUT,
         csplit=candidate.target.csplit,
         cspread=candidate.target.cspread,
-        coeff=coeff,
+        coeff=coefficients(candidate.case) if coeff is None else coeff,
         max_shell=alias_shell,
         samples_per_shell=samples_per_shell,
         seed=candidate_seed(candidate, alias_shell),
     )
-    correction, _, audit = fit_self_correction(
-        case, box, SELF_WORK, rerun=rerun_self_probes
+
+
+def prepare_spectral_theory_candidate(
+    candidate: Candidate,
+    charges: np.ndarray,
+    box: float,
+    *,
+    alias_shell: int,
+    samples_per_shell: int,
+) -> SpectralADTheory:
+    case = candidate.case
+    coeff = coefficients(case)
+    population = prepare_population(
+        candidate,
+        charges,
+        box,
+        alias_shell=alias_shell,
+        samples_per_shell=samples_per_shell,
+        coeff=coeff,
     )
-    if int(audit["actual_mesh"]) != candidate.mesh:
-        raise RuntimeError(
-            f"{case.case_id}: LAMMPS rounded M={candidate.mesh} "
-            f"to M={audit['actual_mesh']}"
-        )
-    if float(audit["holdout_max_abs_component"]) > SELF_AUDIT_MAX:
-        raise RuntimeError(f"{case.case_id}: unit-charge self correction failed")
+    ad_operator = operator(case, box)
+    correction, correction_metadata = production_self_correction_coefficients(
+        case, box, coeff=coeff, ad_operator=ad_operator
+    )
     (
         self_cell,
         self8,
@@ -279,10 +389,7 @@ def prepare_spectral_theory_candidate(
     metadata = {
         "self_correction_sin1": float(correction[0]),
         "self_correction_sin2": float(correction[1]),
-        "self_probe_fit_max_abs_component": float(audit["fit_max_abs_component"]),
-        "self_probe_holdout_max_abs_component": float(
-            audit["holdout_max_abs_component"]
-        ),
+        **correction_metadata,
         "residual_self_cell_rms": self_cell,
         "residual_self_cell_rms_n8": self8,
         "residual_self_cell_rms_n12": self12,
@@ -296,9 +403,10 @@ def prepare_spectral_theory_candidate(
         correction=correction,
         residual_self=residual_self,
         fourier=fourier,
+        ad_operator=ad_operator,
+        real_coeff=np.asarray(coeff.real, dtype=np.float64),
+        self_quadrature_order_per_half=quadrature_order,
         self_metadata=metadata,
-        operator=operator(case, box),
-        coeff=coeff,
     )
 
 
@@ -307,24 +415,55 @@ def evaluate_spectral_theory_spectra(
     modes: np.ndarray,
     *,
     chunk_size: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    backend: str,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
     tagged_sum = np.zeros(len(modes), dtype=np.float64)
     charge_sum = np.zeros(len(modes), dtype=np.float64)
     tagged_blocks = np.zeros((len(PILOT_BLOCKS), len(modes)), dtype=np.float64)
     charge_blocks = np.zeros_like(tagged_blocks)
+    conditional_sum: np.ndarray | None = None
+    conditional_blocks: np.ndarray | None = None
+    charge_classes: np.ndarray | None = None
+    class_counts: np.ndarray | None = None
     for frame_index, (_, q, xyz, box) in enumerate(frames):
-        tagged, ordinary = adsq.evaluate_tagged_pair_spectrum(
+        spectra = adps.evaluate_structure_spectra(
             q,
             xyz,
             box,
             modes,
+            backend=backend,
             chunk_size=chunk_size,
-            return_charge_spectrum=True,
         )
+        tagged = spectra.tagged_pair
+        ordinary = spectra.ordinary_charge
+        if conditional_sum is None:
+            charge_classes = spectra.charge_classes.copy()
+            class_counts = spectra.class_counts.copy()
+            conditional_sum = np.zeros_like(spectra.conditional_pair_mean)
+            conditional_blocks = np.zeros(
+                (len(PILOT_BLOCKS), *spectra.conditional_pair_mean.shape),
+                dtype=np.complex128,
+            )
+        elif not (
+            np.array_equal(charge_classes, spectra.charge_classes)
+            and np.array_equal(class_counts, spectra.class_counts)
+        ):
+            raise RuntimeError("target charge classes changed across pilot frames")
         tagged_sum += tagged
         charge_sum += ordinary
+        conditional_sum += spectra.conditional_pair_mean
         tagged_blocks[frame_index // 5] += tagged
         charge_blocks[frame_index // 5] += ordinary
+        conditional_blocks[frame_index // 5] += spectra.conditional_pair_mean
         print(
             json.dumps(
                 {
@@ -336,18 +475,53 @@ def evaluate_spectral_theory_spectra(
             ),
             flush=True,
         )
+    if (
+        conditional_sum is None
+        or conditional_blocks is None
+        or charge_classes is None
+        or class_counts is None
+    ):
+        raise RuntimeError("no pilot structure spectra were evaluated")
     return (
         tagged_sum / PILOT_N,
         charge_sum / PILOT_N,
         tagged_blocks / 5.0,
         charge_blocks / 5.0,
+        conditional_sum / PILOT_N,
+        conditional_blocks / 5.0,
+        charge_classes,
+        class_counts,
     )
 
 
 def pair_rms(charges: np.ndarray, chi2: float) -> float:
+    return math.sqrt(pair_mean_square(charges, chi2))
+
+
+def pair_mean_square(charges: np.ndarray, chi2: float) -> float:
     q2 = charges * charges
     pair_factor = float((np.sum(q2) ** 2 - np.sum(q2 * q2)) / len(charges))
-    return ikref.COULOMB_REAL * math.sqrt(max(pair_factor * chi2, 0.0))
+    return ikref.COULOMB_REAL**2 * max(pair_factor * chi2, 0.0)
+
+
+def fluctuation_s_tag(
+    tagged: np.ndarray, coherent: np.ndarray
+) -> tuple[np.ndarray, float]:
+    """Subtract the conditional mean while enforcing variance positivity."""
+
+    fluctuation = np.asarray(tagged, dtype=np.float64) - np.asarray(
+        coherent, dtype=np.float64
+    )
+    minimum = float(np.min(fluctuation, initial=0.0))
+    tolerance = 512.0 * np.finfo(np.float64).eps * max(
+        float(np.max(np.abs(tagged), initial=0.0)), 1.0
+    )
+    if minimum < -tolerance:
+        raise FloatingPointError(
+            "conditional-mean subtraction produced a negative pair variance: "
+            f"{minimum:.6e}"
+        )
+    return np.maximum(fluctuation, 0.0), minimum
 
 
 def pooled_rms(mean_squares: list[float]) -> float:
@@ -358,136 +532,147 @@ def pooled_rms(mean_squares: list[float]) -> float:
 
 def alias_relative_sem(
     charges: np.ndarray,
-    chi2: float,
-    pair: float,
     total: float,
     force_scale: float,
     shell_variances: dict[int, float],
 ) -> float:
-    if chi2 <= 0.0 or total <= 0.0:
+    if total <= 0.0:
         return 0.0
     chi_sem = math.sqrt(math.fsum(shell_variances.values()))
     q2 = charges * charges
     pair_factor = float((np.sum(q2) ** 2 - np.sum(q2 * q2)) / len(charges))
-    pair_sem = (
-        ikref.COULOMB_REAL
-        * math.sqrt(pair_factor)
+    total_sem = (
+        ikref.COULOMB_REAL**2
+        * pair_factor
         * chi_sem
-        / (2.0 * math.sqrt(chi2))
+        / (2.0 * total)
     )
-    return (pair / total) * pair_sem / force_scale
+    return total_sem / force_scale
 
 
 def evaluate_spectral_theory(
     theory: SpectralADTheory,
     mapping: dict[str, object],
     charges: np.ndarray,
-    frames: list[tuple[int, np.ndarray, np.ndarray, float]],
+    modes: np.ndarray,
     tagged_mean: np.ndarray,
     charge_mean: np.ndarray,
     tagged_blocks: np.ndarray,
+    conditional_pair_mean: np.ndarray,
+    conditional_pair_blocks: np.ndarray,
+    charge_classes: np.ndarray,
+    class_counts: np.ndarray,
     force_scale: float,
     pilot_prefix_sha256: str,
+    spectrum_artifact_sha256: str,
     box: float,
 ) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
-    """Evaluate the Figure-5 vector-complete pair/self error formula.
+    """Evaluate the Figure-5 AD theory from frozen structural spectra.
 
-    ``S_tag`` reweights the exact homogeneous cell-moment estimator as a
-    diagonal-spectrum diagnostic.  The main prediction instead evaluates the
-    phase-resolved full-source AD error amplitude on every pilot frame, adds
-    the production self-correction vector, and only then forms the RMS.  This
-    retains pair/self and cross-mode covariance by construction.
+    ``S_tag`` is decomposed into a charge-class conditional mean and a
+    zero-mean fluctuation. The latter enters the diagonal cell-moment theory.
+    The coherent all-source pair field (including ``i=j``) and the production
+    self-correction field are added on one mesh cell before squaring. This is
+    checked against the equivalent distinct-pair plus residual-self
+    decomposition. No coordinates or force arrays enter this function.
     """
     candidate = theory.candidate
     population = theory.population
-    corrected_chi2, shell_values, shell_variances = (
-        adsq.corrected_chi2_with_sampling(population, mapping, tagged_mean)
+    conditional_batch = np.concatenate(
+        (conditional_pair_mean[None, ...], conditional_pair_blocks), axis=0
+    )
+    coherent_batch = adps.coherent_s_tag(
+        charges, charge_classes, class_counts, conditional_batch
+    )
+    fluctuation_batch = np.empty_like(coherent_batch)
+    fluctuation_minima = []
+    all_tagged = np.concatenate((tagged_mean[None, :], tagged_blocks), axis=0)
+    for index in range(len(all_tagged)):
+        fluctuation_batch[index], minimum = fluctuation_s_tag(
+            all_tagged[index], coherent_batch[index]
+        )
+        fluctuation_minima.append(minimum)
+
+    fluctuation_chi2, shell_values, shell_variances = (
+        adsq.corrected_chi2_with_sampling(
+            population, mapping, fluctuation_batch[0]
+        )
+    )
+    diagonal_stag_chi2, _, _ = adsq.corrected_chi2_with_sampling(
+        population, mapping, tagged_mean
     )
     ordinary_chi2, _, _ = adsq.corrected_chi2_with_sampling(
         population, mapping, charge_mean
     )
+    joint = adps.coherent_pair_self_cell_moments(
+        q=charges,
+        frozen_modes=modes,
+        conditional_pair_mean=conditional_batch,
+        charge_classes=charge_classes,
+        class_counts=class_counts,
+        operator=theory.ad_operator,
+        real_coeff=theory.real_coeff,
+        self_correction=theory.correction,
+        quadrature_order_per_half=theory.self_quadrature_order_per_half,
+    )
+    coherent_pair2 = np.asarray(joint.coherent_pair_mean_square, dtype=np.float64)
+    all_source_pair2 = np.asarray(
+        joint.all_source_pair_mean_square, dtype=np.float64
+    )
+    coherent_joint2 = np.asarray(joint.coherent_joint_mean_square, dtype=np.float64)
+    self2 = np.asarray(joint.residual_self_mean_square, dtype=np.float64)
+    self_correction2 = np.asarray(
+        joint.self_correction_mean_square, dtype=np.float64
+    )
+    distinct_residual_cross = np.asarray(
+        joint.pair_self_dot_mean, dtype=np.float64
+    )
+    all_source_correction_cross = np.asarray(
+        joint.all_source_pair_self_correction_dot_mean, dtype=np.float64
+    )
+    expected_self2 = theory.residual_self * theory.residual_self
+    self_consistency = float(np.max(np.abs(self2 - expected_self2)))
+    if self_consistency > 2.0e-10 * max(expected_self2, 1.0e-300):
+        raise RuntimeError(
+            "joint-theory self moment differs from residual-self quadrature"
+        )
+
     homogeneous_pair = pair_rms(charges, population.homogeneous_chi2)
-    corrected_pair = pair_rms(charges, corrected_chi2)
+    fluctuation_pair2 = pair_mean_square(charges, fluctuation_chi2)
+    fluctuation_pair = math.sqrt(fluctuation_pair2)
+    corrected_pair2 = fluctuation_pair2 + float(coherent_pair2[0])
+    corrected_pair = math.sqrt(max(corrected_pair2, 0.0))
+    diagonal_stag_pair = pair_rms(charges, diagonal_stag_chi2)
     ordinary_pair = pair_rms(charges, ordinary_chi2)
-
-    raw_alias2: list[float] = []
-    correction2: list[float] = []
-    alias_correction_cross: list[float] = []
-    distinct_pair2: list[float] = []
-    residual_self2: list[float] = []
-    pair_residual_self_cross: list[float] = []
-    joint_pair_self2: list[float] = []
-    vector_identity_residuals: list[float] = []
-    component_identity_residuals: list[float] = []
-    for _, frame_charges, xyz, frame_box in frames:
-        if not np.array_equal(frame_charges, charges):
-            raise RuntimeError("pilot-frame charges changed within the AD screen")
-        if not math.isclose(frame_box, theory.operator.box_length):
-            raise RuntimeError("pilot-frame cell changed within the AD screen")
-        moments = adjoint.evaluate_joint_pair_self_quadratic(
-            frame_charges,
-            xyz,
-            theory.operator,
-            theory.coeff.real,
-            theory.correction,
-        )
-        raw_alias2.append(moments.full_source_alias_mean_square)
-        correction2.append(moments.self_correction_mean_square)
-        alias_correction_cross.append(moments.alias_minus_correction_dot_mean)
-        distinct_pair2.append(moments.distinct_pair_mean_square)
-        residual_self2.append(moments.residual_self_mean_square)
-        pair_residual_self_cross.append(
-            moments.pair_residual_self_dot_mean
-        )
-        joint_pair_self2.append(moments.joint_pair_self_mean_square)
-        vector_identity_residuals.append(
-            moments.vector_identity_absolute_residual
-        )
-        component_identity_residuals.append(moments.component_identity_max_abs)
-
-    raw_alias_rms = pooled_rms(raw_alias2)
-    self_correction_rms = pooled_rms(correction2)
-    pair_self_cross = math.fsum(alias_correction_cross) / len(
-        alias_correction_cross
-    )
-    phase_pair_rms = pooled_rms(distinct_pair2)
-    phase_residual_self_rms = pooled_rms(residual_self2)
-    phase_pair_self_cross = math.fsum(pair_residual_self_cross) / len(
-        pair_residual_self_cross
-    )
-    joint_pair_self_rms = pooled_rms(joint_pair_self2)
-    raw_correction_expanded_joint2 = (
-        raw_alias_rms**2 + self_correction_rms**2 + 2.0 * pair_self_cross
-    )
-    expanded_joint2 = (
-        phase_pair_rms**2
-        + phase_residual_self_rms**2
-        + 2.0 * phase_pair_self_cross
-    )
-    if not math.isclose(
-        joint_pair_self_rms**2,
-        expanded_joint2,
-        rel_tol=2.0e-12,
-        abs_tol=2.0e-18,
-    ):
-        raise AssertionError("pooled joint pair/self vector identity failed")
-    total = math.hypot(joint_pair_self_rms, theory.fourier)
+    mesh_joint2 = fluctuation_pair2 + float(coherent_joint2[0])
+    if mesh_joint2 < 0.0:
+        raise FloatingPointError("joint AD mesh variance became negative")
+    mesh_joint = math.sqrt(mesh_joint2)
+    total = math.hypot(mesh_joint, theory.fourier)
     relative = total / force_scale
 
     block_rows: list[dict[str, object]] = []
     block_relative: list[float] = []
     for block_index, (start, stop) in enumerate(PILOT_BLOCKS):
         block_chi2, _, _ = adsq.corrected_chi2_with_sampling(
-            population, mapping, tagged_blocks[block_index]
+            population, mapping, fluctuation_batch[block_index + 1]
         )
-        block_pair = pair_rms(charges, block_chi2)
-        block_phase_pair = pooled_rms(distinct_pair2[start:stop])
-        block_phase_self = pooled_rms(residual_self2[start:stop])
-        block_phase_cross = math.fsum(
-            pair_residual_self_cross[start:stop]
-        ) / (stop - start)
-        block_joint = pooled_rms(joint_pair_self2[start:stop])
-        block_total = math.hypot(block_joint, theory.fourier)
+        block_fluctuation_pair2 = pair_mean_square(charges, block_chi2)
+        block_pair2 = (
+            block_fluctuation_pair2 + float(coherent_pair2[block_index + 1])
+        )
+        block_all_source_pair2 = (
+            block_fluctuation_pair2
+            + float(all_source_pair2[block_index + 1])
+        )
+        block_mesh2 = (
+            block_fluctuation_pair2 + float(coherent_joint2[block_index + 1])
+        )
+        if block_pair2 < 0.0 or block_mesh2 < 0.0:
+            raise FloatingPointError("block joint AD variance became negative")
+        block_pair = math.sqrt(block_pair2)
+        block_mesh = math.sqrt(block_mesh2)
+        block_total = math.hypot(block_mesh, theory.fourier)
         block_relative.append(block_total / force_scale)
         block_rows.append(
             {
@@ -496,28 +681,36 @@ def evaluate_spectral_theory(
                 "block": block_index + 1,
                 "frame_first": start + 1,
                 "frame_last": stop,
+                "fluctuation_pair_rms": math.sqrt(block_fluctuation_pair2),
+                "coherent_pair_rms": math.sqrt(
+                    max(float(coherent_pair2[block_index + 1]), 0.0)
+                ),
                 "measured_stag_corrected_pair_rms": block_pair,
-                "phase_resolved_distinct_pair_absolute_rms": block_phase_pair,
-                "phase_resolved_residual_self_absolute_rms": block_phase_self,
-                "pair_residual_self_dot_mean": block_phase_cross,
-                "joint_pair_self_absolute_rms": block_joint,
+                "all_source_pair_rms": math.sqrt(block_all_source_pair2),
+                "residual_self_absolute_rms": theory.residual_self,
+                "self_correction_rms": math.sqrt(
+                    float(self_correction2[block_index + 1])
+                ),
+                "pair_self_dot_mean": float(
+                    all_source_correction_cross[block_index + 1]
+                ),
+                "distinct_pair_residual_self_dot_mean": float(
+                    distinct_residual_cross[block_index + 1]
+                ),
+                "joint_mesh_absolute_rms": block_mesh,
+                "fourier_absolute_rms": theory.fourier,
                 "total_predicted_relative_rms": block_total / force_scale,
             }
         )
     frame_sem = statistics.stdev(block_relative) / math.sqrt(len(block_relative))
     diagonal_sampling_sem = alias_relative_sem(
         charges,
-        corrected_chi2,
-        corrected_pair,
         total,
         force_scale,
         shell_variances,
     )
-    # The main joint operator includes every discrete grid alias directly, so
-    # it has no importance-sampling uncertainty.  The sampled S_tag quantity
-    # remains a diagnostic and its SEM is reported under a distinct field.
-    sampling_sem = 0.0
-    combined_sem = frame_sem
+    sampling_sem = diagonal_sampling_sem
+    combined_sem = math.hypot(frame_sem, sampling_sem)
     upper95 = relative + ONE_SIDED_T95_DF4 * combined_sem
     sigma_up = (
         math.pi
@@ -546,33 +739,37 @@ def evaluate_spectral_theory(
         "sigma_up": sigma_up,
         "resolved_band": sigma_up >= 1.0,
         "homogeneous_pair_chi2": population.homogeneous_chi2,
-        "measured_stag_corrected_pair_chi2": corrected_chi2,
+        "diagonal_stag_pair_chi2_diagnostic": diagonal_stag_chi2,
+        "fluctuation_pair_chi2": fluctuation_chi2,
         "homogeneous_pair_rms": homogeneous_pair,
         "homogeneous_pair_absolute_rms": homogeneous_pair,
+        "diagonal_stag_pair_rms_diagnostic": diagonal_stag_pair,
+        "fluctuation_pair_rms": fluctuation_pair,
+        "coherent_pair_rms": math.sqrt(max(float(coherent_pair2[0]), 0.0)),
         "measured_stag_corrected_pair_rms": corrected_pair,
         "measured_stag_corrected_pair_absolute_rms": corrected_pair,
         "ordinary_sq_corrected_pair_rms_diagnostic": ordinary_pair,
-        "residual_self_rms": phase_residual_self_rms,
-        "residual_self_absolute_rms": phase_residual_self_rms,
+        "residual_self_rms": theory.residual_self,
+        "residual_self_absolute_rms": theory.residual_self,
         "residual_self_cell_quadrature_rms_diagnostic": theory.residual_self,
-        "phase_resolved_distinct_pair_absolute_rms": phase_pair_rms,
-        "phase_resolved_residual_self_absolute_rms": phase_residual_self_rms,
-        "pair_residual_self_dot_mean": phase_pair_self_cross,
-        "full_source_alias_absolute_rms": raw_alias_rms,
-        "production_self_correction_absolute_rms": self_correction_rms,
-        "full_source_alias_self_correction_dot_mean": pair_self_cross,
-        "joint_pair_self_absolute_rms": joint_pair_self_rms,
-        "joint_pair_self_mean_square": joint_pair_self_rms**2,
-        "joint_pair_self_expanded_mean_square": expanded_joint2,
-        "joint_raw_alias_correction_expanded_mean_square": (
-            raw_correction_expanded_joint2
+        "all_source_pair_rms": math.sqrt(
+            max(fluctuation_pair2 + float(all_source_pair2[0]), 0.0)
         ),
-        "joint_pair_self_vector_identity_max_abs": max(
-            vector_identity_residuals
+        "self_correction_rms": math.sqrt(
+            max(float(self_correction2[0]), 0.0)
         ),
-        "joint_pair_self_component_identity_max_abs": max(
-            component_identity_residuals
+        "pair_self_dot_mean": float(all_source_correction_cross[0]),
+        "pair_self_cross_twice": 2.0 * float(
+            all_source_correction_cross[0]
         ),
+        "distinct_pair_residual_self_dot_mean": float(
+            distinct_residual_cross[0]
+        ),
+        "distinct_pair_residual_self_cross_twice": 2.0 * float(
+            distinct_residual_cross[0]
+        ),
+        "joint_mesh_rms": mesh_joint,
+        "joint_mesh_absolute_rms": mesh_joint,
         "fourier_rms": theory.fourier,
         "fourier_absolute_rms": theory.fourier,
         "total_predicted_absolute_rms": total,
@@ -584,9 +781,6 @@ def evaluate_spectral_theory(
         "predicted_total_relative_block5_sem": frame_sem,
         "alias_sampling_sem_relative": sampling_sem,
         "predicted_total_relative_alias_sampling_sem": sampling_sem,
-        "diagonal_stag_alias_sampling_sem_relative_diagnostic": (
-            diagonal_sampling_sem
-        ),
         "combined_sem_relative": combined_sem,
         "predicted_total_relative_combined_sem": combined_sem,
         "one_sided_95_upper_relative": upper95,
@@ -619,33 +813,64 @@ def evaluate_spectral_theory(
         "pilot_frames": "1--25",
         "pilot_frame_count": PILOT_N,
         "pilot_coordinate_prefix_sha256": pilot_prefix_sha256,
+        "frozen_pilot_spectrum_sha256": spectrum_artifact_sha256,
         "screening_force_scale": force_scale,
         "screening_force_scale_source": (
             "coarse PPPM force evaluation on frames 1--25; no Ewald reference"
         ),
         "prediction_reference_force_accessed": False,
         "prediction_holdout_coordinates_accessed": False,
-        "prediction_molecular_coordinates_accessed": True,
+        "prediction_molecular_coordinates_accessed": False,
+        "prediction_unit_charge_force_accessed": False,
+        "prediction_particlewise_force_difference_evaluated": False,
         "prediction_structure_input": (
-            "phase-resolved full-source and target-cell descriptor from "
-            "frames 1--25; measured S_tag retained as a diagonal diagnostic"
+            "measured target-conditioned S_tag from frames 1--25"
+        ),
+        "prediction_coherent_structure_input": (
+            "charge-class conditional pair amplitudes from frames 1--25"
         ),
         "ad_estimator": (
-            "vector-complete full-source AD pair/self quadratic form from "
-            "pilot coordinates; measured S_tag and exact homogeneous cell "
-            "moments retained as diagnostics; closed Fourier error in quadrature"
+            "conditional-mean AD pair/self theory: zero-mean S_tag fluctuation "
+            "plus coherent all-source pair and self correction added before "
+            "cell squaring; "
+            "closed Fourier error in quadrature"
         ),
-        "pair_source_scope": "all source particles including j=i",
+        "pair_source_scope": (
+            "all source particles including i=j; the deterministic raw mesh "
+            "self field is added to the S_tag distinct-source pair field"
+        ),
         "self_source_scope": (
-            "production self correction applied to the same all-source vector"
+            "negative production self-correction field combined with the "
+            "all-source pair field"
         ),
         "uncertainty_combination": (
-            "five contiguous pilot-frame block SEM; the main joint operator "
-            "has no alias Monte Carlo sampling"
+            "quadrature of five-block spectrum SEM and alias-importance-sampling SEM"
         ),
         "covariance_approximation": (
-            "pair/self and in-band cross-mode covariance retained; covariance "
-            "between the joint in-band error and closed Fourier tail neglected"
+            "zero-mean pair fluctuations retain a diagonal physical-mode "
+            "closure; coherent source aliases beyond six faces and "
+            "in-band/Fourier-tail covariance are neglected"
+        ),
+        "pair_self_covariance_included": True,
+        "pair_self_covariance_scope": (
+            "charge-class conditional coherent all-source pair field and "
+            "production self-correction field are added before cell squaring; "
+            "equivalent to distinct pair plus residual self"
+        ),
+        "equivalent_pair_self_decompositions": (
+            "F_pair,all + F_self,corr = F_pair,j!=i + F_residual-self"
+        ),
+        "equivalent_decomposition_component_max_abs": (
+            joint.equivalent_decomposition_component_max_abs
+        ),
+        "coherent_source_aliases": "zero plus six nearest faces",
+        "coherent_source_alias_count": len(adps.FACE_ALIASES),
+        "conditional_fluctuation_minimum": min(fluctuation_minima),
+        "joint_self_quadrature_consistency_absolute": self_consistency,
+        "joint_quadratic_identity_max_abs": joint.quadratic_identity_max_abs,
+        "joint_maximum_imaginary_component": joint.maximum_imaginary_component,
+        "joint_production_real_projection_applied": (
+            joint.production_real_projection_applied
         ),
         **theory.self_metadata,
     }
@@ -658,7 +883,7 @@ def evaluate_spectral_theory(
             "c_spread": candidate.target.cspread,
             "alias_shell": shell,
             "homogeneous_shell_chi2": population.shell_weight_sums[shell],
-            "measured_stag_shell_correction_chi2": shell_values[shell],
+            "fluctuation_stag_shell_correction_chi2": shell_values[shell],
             "importance_sampling_chi2_sem": math.sqrt(shell_variances[shell]),
             "samples": population.samples_per_shell,
         }
@@ -674,7 +899,18 @@ def save_spectral_theory_spectra(
     charge_mean: np.ndarray,
     tagged_blocks: np.ndarray,
     charge_blocks: np.ndarray,
+    conditional_pair_mean: np.ndarray,
+    conditional_pair_blocks: np.ndarray,
+    charge_classes: np.ndarray,
+    class_counts: np.ndarray,
+    charges: np.ndarray,
+    box_length: float,
+    force_scale: float,
     pilot_prefix_sha256: str,
+    force_prefix_sha256: str,
+    alias_shell: int,
+    samples_per_shell: int,
+    catalog_sha256: str,
 ) -> None:
     np.savez_compressed(
         path,
@@ -683,12 +919,325 @@ def save_spectral_theory_spectra(
         mean_charge_s_q=charge_mean,
         block_mean_target_conditioned_s_tag=tagged_blocks,
         block_mean_charge_s_q=charge_blocks,
+        mean_charge_class_conditional_pair_amplitude=np.asarray(
+            conditional_pair_mean, dtype=np.complex128
+        ),
+        block_mean_charge_class_conditional_pair_amplitude=np.asarray(
+            conditional_pair_blocks, dtype=np.complex128
+        ),
+        target_charge_classes=np.asarray(charge_classes, dtype=np.float64),
+        target_charge_class_counts=np.asarray(class_counts, dtype=np.int64),
         block_frame_bounds=np.asarray(
             ((1, 5), (6, 10), (11, 15), (16, 20), (21, 25)),
             dtype=np.int64,
         ),
+        charges=np.asarray(charges, dtype=np.float64),
+        box_length=np.asarray(box_length, dtype=np.float64),
+        force_scale=np.asarray(force_scale, dtype=np.float64),
         pilot_coordinate_prefix_sha256=np.asarray(pilot_prefix_sha256),
+        pilot_force_prefix_sha256=np.asarray(force_prefix_sha256),
+        alias_shell=np.asarray(alias_shell, dtype=np.int64),
+        samples_per_shell=np.asarray(samples_per_shell, dtype=np.int64),
+        candidate_catalog_sha256=np.asarray(catalog_sha256),
     )
+
+
+def freeze_pilot_spectrum(args: argparse.Namespace) -> None:
+    """Read frames 1--25 once and freeze all structural prediction inputs."""
+
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    frames, coordinate_prefix = load_pilot_frames()
+    charges = frames[0][1]
+    box = frames[0][3]
+    force_scale, force_prefix = frozen_force_scale()
+    candidates = all_spectrum_candidates()
+    catalog_sha = candidate_catalog_sha256(
+        candidates, args.alias_shell, args.samples_per_shell
+    )
+    populations = []
+    for index, candidate in enumerate(candidates, start=1):
+        populations.append(
+            prepare_population(
+                candidate,
+                charges,
+                box,
+                alias_shell=args.alias_shell,
+                samples_per_shell=args.samples_per_shell,
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "stage": "prepare_pilot_spectrum_modes",
+                    "candidate": index,
+                    "candidate_count": len(candidates),
+                    "id": candidate.case.case_id,
+                }
+            ),
+            flush=True,
+        )
+    diagonal_modes, _ = adsq.population_mode_union(populations)
+    coherent_mode_blocks = []
+    for candidate, population in zip(candidates, populations):
+        signed_base = np.concatenate(
+            (population.base_modes, -population.base_modes), axis=0
+        )
+        coherent_mode_blocks.append(
+            (
+                signed_base[:, None, :]
+                + candidate.mesh * adps.FACE_ALIASES[None, :, :]
+            ).reshape(-1, 3)
+        )
+    modes = adps.canonical_mode_union(diagonal_modes, *coherent_mode_blocks)
+    print(
+        json.dumps(
+            {
+                "stage": "pilot_spectrum_mode_union",
+                "mode_count": len(modes),
+            }
+        ),
+        flush=True,
+    )
+    del populations, diagonal_modes, coherent_mode_blocks
+    gc.collect()
+    (
+        tagged_mean,
+        charge_mean,
+        tagged_blocks,
+        charge_blocks,
+        conditional_mean,
+        conditional_blocks,
+        charge_classes,
+        class_counts,
+    ) = evaluate_spectral_theory_spectra(
+        frames,
+        modes,
+        chunk_size=args.chunk_size,
+        backend=args.structure_backend,
+    )
+    save_spectral_theory_spectra(
+        PILOT_SPECTRUM,
+        modes,
+        tagged_mean,
+        charge_mean,
+        tagged_blocks,
+        charge_blocks,
+        conditional_mean,
+        conditional_blocks,
+        charge_classes,
+        class_counts,
+        charges,
+        box,
+        force_scale,
+        coordinate_prefix,
+        force_prefix,
+        args.alias_shell,
+        args.samples_per_shell,
+        catalog_sha,
+    )
+    frozen = {
+        "schema_version": 2,
+        "purpose": "freeze Figure-5 structural inputs before AD prediction",
+        "structure_definition": (
+            "measured target-conditioned S_tag(q) and charge-class "
+            "conditional pair amplitude mu_a(q)"
+        ),
+        "ordinary_s_q_saved_as_diagnostic": True,
+        "coordinate_frames": "1--25",
+        "coordinate_frame_count": PILOT_N,
+        "coordinate_prefix_sha256": coordinate_prefix,
+        "force_normalization_frames": "1--25",
+        "force_prefix_sha256": force_prefix,
+        "force_scale": force_scale,
+        "candidate_catalog_sha256": catalog_sha,
+        "candidate_count": len(candidates),
+        "alias_shell": args.alias_shell,
+        "samples_per_shell": args.samples_per_shell,
+        "mode_count": len(modes),
+        "target_charge_classes": charge_classes.tolist(),
+        "target_charge_class_counts": class_counts.tolist(),
+        "structure_transform_backend": args.structure_backend,
+        "structure_transform_frequency_tile_width": (
+            adps.FINUFFT_TILE_WIDTH if args.structure_backend == "finufft" else None
+        ),
+        "structure_transform_tiling_is_exact": True,
+        "coherent_source_aliases": adps.FACE_ALIASES.tolist(),
+        "spectrum_artifact": file_record(PILOT_SPECTRUM),
+        "reference_force_accessed": False,
+        "holdout_coordinates_accessed": False,
+    }
+    PILOT_SPECTRUM_FROZEN.write_text(
+        json.dumps(frozen, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    manifest = {
+        "schema_version": 2,
+        "logical_order": [
+            "read only coordinate frames 1--25 with a prefix reader",
+            "evaluate S_tag, ordinary S_q, and charge-class conditional pair amplitudes per frame",
+            "average frames 1--25 and five contiguous five-frame blocks",
+            "freeze spectrum, normalization, candidate catalog, and SHA-256",
+            "allow later prediction to read only this frozen artifact",
+        ],
+        "inputs": {
+            "trajectory": {
+                "path": relative_path(TRAJECTORY),
+                "frames": "1--25",
+                "prefix_sha256": coordinate_prefix,
+            },
+            "force_normalization": {
+                "path": relative_path(baseline.PILOT_FORCE_DUMP),
+                "frames": "1--25",
+                "prefix_sha256": force_prefix,
+            },
+            "runner": file_record(Path(__file__)),
+            "spectral_descriptor": file_record(Path(adsq.__file__)),
+            "pair_self_theory": file_record(Path(adps.__file__)),
+            "ad_cell_moment_operator": file_record(Path(adref.__file__)),
+            "ad_self_correction": file_record(Path(adcommon.__file__)),
+            "theory_common": file_record(Path(baseline.__file__)),
+        },
+        "frozen_spectrum": file_record(PILOT_SPECTRUM_FROZEN),
+        "spectrum_artifact": file_record(PILOT_SPECTRUM),
+        "reference_force_accessed": False,
+        "holdout_coordinates_accessed": False,
+    }
+    PILOT_SPECTRUM_MANIFEST.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(frozen, indent=2))
+
+
+def load_frozen_pilot_spectrum(
+    *, alias_shell: int, samples_per_shell: int
+) -> FrozenPilotSpectrum:
+    """Verify and load the frozen spectrum without opening trajectory files."""
+
+    for path in (
+        PILOT_SPECTRUM,
+        PILOT_SPECTRUM_FROZEN,
+        PILOT_SPECTRUM_MANIFEST,
+    ):
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"run --freeze-pilot-spectrum before prediction: {path}"
+            )
+    frozen = json.loads(PILOT_SPECTRUM_FROZEN.read_text(encoding="utf-8"))
+    manifest = json.loads(PILOT_SPECTRUM_MANIFEST.read_text(encoding="utf-8"))
+    if int(frozen.get("schema_version", 0)) != 2:
+        raise RuntimeError("pilot spectrum uses an obsolete schema; refreeze it")
+    if manifest.get("frozen_spectrum") != file_record(PILOT_SPECTRUM_FROZEN):
+        raise RuntimeError("pilot-spectrum frozen JSON fails manifest verification")
+    if frozen.get("spectrum_artifact") != file_record(PILOT_SPECTRUM):
+        raise RuntimeError("pilot-spectrum artifact fails frozen SHA-256 verification")
+    if frozen.get("reference_force_accessed") is not False:
+        raise RuntimeError("pilot spectrum accessed a reference-force result")
+    if frozen.get("holdout_coordinates_accessed") is not False:
+        raise RuntimeError("pilot spectrum accessed holdout coordinates")
+    if int(frozen["alias_shell"]) != alias_shell:
+        raise RuntimeError("prediction alias shell differs from frozen spectrum")
+    if int(frozen["samples_per_shell"]) != samples_per_shell:
+        raise RuntimeError("prediction alias sample count differs from frozen spectrum")
+    expected_catalog = candidate_catalog_sha256(
+        all_spectrum_candidates(), alias_shell, samples_per_shell
+    )
+    if frozen["candidate_catalog_sha256"] != expected_catalog:
+        raise RuntimeError("candidate catalog differs from frozen pilot spectrum")
+
+    with np.load(PILOT_SPECTRUM, allow_pickle=False) as data:
+        result = FrozenPilotSpectrum(
+            modes=np.asarray(data["modes"], dtype=np.int64),
+            tagged_mean=np.asarray(
+                data["mean_target_conditioned_s_tag"], dtype=np.float64
+            ),
+            charge_mean=np.asarray(data["mean_charge_s_q"], dtype=np.float64),
+            tagged_blocks=np.asarray(
+                data["block_mean_target_conditioned_s_tag"], dtype=np.float64
+            ),
+            charge_blocks=np.asarray(
+                data["block_mean_charge_s_q"], dtype=np.float64
+            ),
+            conditional_pair_mean=np.asarray(
+                data["mean_charge_class_conditional_pair_amplitude"],
+                dtype=np.complex128,
+            ),
+            conditional_pair_blocks=np.asarray(
+                data["block_mean_charge_class_conditional_pair_amplitude"],
+                dtype=np.complex128,
+            ),
+            charge_classes=np.asarray(data["target_charge_classes"], dtype=np.float64),
+            class_counts=np.asarray(
+                data["target_charge_class_counts"], dtype=np.int64
+            ),
+            charges=np.asarray(data["charges"], dtype=np.float64),
+            box_length=float(data["box_length"]),
+            force_scale=float(data["force_scale"]),
+            coordinate_prefix_sha256=str(data["pilot_coordinate_prefix_sha256"]),
+            force_prefix_sha256=str(data["pilot_force_prefix_sha256"]),
+            alias_shell=int(data["alias_shell"]),
+            samples_per_shell=int(data["samples_per_shell"]),
+            candidate_catalog_sha256=str(data["candidate_catalog_sha256"]),
+            artifact_sha256=sha256(PILOT_SPECTRUM),
+        )
+    mode_count = len(result.modes)
+    if result.tagged_mean.shape != (mode_count,):
+        raise RuntimeError("frozen S_tag mean has an invalid shape")
+    if result.charge_mean.shape != (mode_count,):
+        raise RuntimeError("frozen S_q mean has an invalid shape")
+    if result.tagged_blocks.shape != (len(PILOT_BLOCKS), mode_count):
+        raise RuntimeError("frozen S_tag blocks have an invalid shape")
+    if result.charge_blocks.shape != (len(PILOT_BLOCKS), mode_count):
+        raise RuntimeError("frozen S_q blocks have an invalid shape")
+    class_count = len(result.charge_classes)
+    if result.class_counts.shape != (class_count,):
+        raise RuntimeError("frozen target-class counts have an invalid shape")
+    if result.conditional_pair_mean.shape != (class_count, mode_count):
+        raise RuntimeError("frozen conditional pair mean has an invalid shape")
+    if result.conditional_pair_blocks.shape != (
+        len(PILOT_BLOCKS),
+        class_count,
+        mode_count,
+    ):
+        raise RuntimeError("frozen conditional pair blocks have an invalid shape")
+    if not np.array_equal(
+        np.asarray(
+            [np.count_nonzero(result.charges == value) for value in result.charge_classes]
+        ),
+        result.class_counts,
+    ):
+        raise RuntimeError("frozen target charge classes disagree with charges")
+    if result.coordinate_prefix_sha256 != frozen["coordinate_prefix_sha256"]:
+        raise RuntimeError("coordinate-prefix hash differs inside spectrum artifact")
+    if result.force_prefix_sha256 != frozen["force_prefix_sha256"]:
+        raise RuntimeError("force-prefix hash differs inside spectrum artifact")
+    return result
+
+
+def mappings_for_frozen_modes(
+    populations: list[adsq.ADSourceSpectrumPopulation], modes: np.ndarray
+) -> list[dict[str, object]]:
+    lookup = {tuple(mode): index for index, mode in enumerate(modes.tolist())}
+    if len(lookup) != len(modes):
+        raise RuntimeError("frozen pilot spectrum contains duplicate modes")
+    mappings: list[dict[str, object]] = []
+    for population in populations:
+        try:
+            base = np.asarray(
+                [lookup[tuple(mode)] for mode in population.base_modes],
+                dtype=np.int64,
+            )
+            sampled = {
+                shell: np.asarray(
+                    [lookup[tuple(mode)] for mode in shell_modes],
+                    dtype=np.int64,
+                )
+                for shell, shell_modes in population.sampled_modes.items()
+            }
+        except KeyError as error:
+            raise RuntimeError(
+                "candidate requires a mode absent from the frozen pilot spectrum"
+            ) from error
+        mappings.append({"base": base, "sampled": sampled})
+    return mappings
 
 
 def evaluate_spectral_theory_screen(
@@ -696,9 +1245,6 @@ def evaluate_spectral_theory_screen(
     *,
     alias_shell: int,
     samples_per_shell: int,
-    chunk_size: int,
-    rerun_self_probes: bool,
-    spectra_path: Path,
 ) -> tuple[
     list[dict[str, object]],
     list[dict[str, object]],
@@ -707,10 +1253,11 @@ def evaluate_spectral_theory_screen(
 ]:
     if not candidates:
         raise ValueError("candidate list is empty")
-    frames, prefix_digest = load_pilot_frames()
-    charges = frames[0][1]
-    box = frames[0][3]
-    force_scale = baseline.coarse_force_scale()
+    spectrum = load_frozen_pilot_spectrum(
+        alias_shell=alias_shell, samples_per_shell=samples_per_shell
+    )
+    charges = spectrum.charges
+    box = spectrum.box_length
     started = time.time()
     prepared: list[SpectralADTheory] = []
     for index, candidate in enumerate(candidates, start=1):
@@ -721,7 +1268,6 @@ def evaluate_spectral_theory_screen(
                 box,
                 alias_shell=alias_shell,
                 samples_per_shell=samples_per_shell,
-                rerun_self_probes=rerun_self_probes,
             )
         )
         print(
@@ -735,42 +1281,45 @@ def evaluate_spectral_theory_screen(
             ),
             flush=True,
         )
-    modes, mappings = adsq.population_mode_union(
-        [item.population for item in prepared]
-    )
-    tagged_mean, charge_mean, tagged_blocks, charge_blocks = (
-        evaluate_spectral_theory_spectra(frames, modes, chunk_size=chunk_size)
-    )
-    spectra_path.parent.mkdir(parents=True, exist_ok=True)
-    save_spectral_theory_spectra(
-        spectra_path,
-        modes,
-        tagged_mean,
-        charge_mean,
-        tagged_blocks,
-        charge_blocks,
-        prefix_digest,
+    mappings = mappings_for_frozen_modes(
+        [item.population for item in prepared], spectrum.modes
     )
 
     predictions: list[dict[str, object]] = []
     block_rows: list[dict[str, object]] = []
     alias_rows: list[dict[str, object]] = []
-    for theory, mapping in zip(prepared, mappings):
+    for index, (theory, mapping) in enumerate(zip(prepared, mappings), start=1):
         row, local_blocks, local_aliases = evaluate_spectral_theory(
             theory,
             mapping,
             charges,
-            frames,
-            tagged_mean,
-            charge_mean,
-            tagged_blocks,
-            force_scale,
-            prefix_digest,
+            spectrum.modes,
+            spectrum.tagged_mean,
+            spectrum.charge_mean,
+            spectrum.tagged_blocks,
+            spectrum.conditional_pair_mean,
+            spectrum.conditional_pair_blocks,
+            spectrum.charge_classes,
+            spectrum.class_counts,
+            spectrum.force_scale,
+            spectrum.coordinate_prefix_sha256,
+            spectrum.artifact_sha256,
             box,
         )
         predictions.append(row)
         block_rows.extend(local_blocks)
         alias_rows.extend(local_aliases)
+        print(
+            json.dumps(
+                {
+                    "stage": "contract_ad_pair_self_theory",
+                    "candidate": index,
+                    "candidate_count": len(prepared),
+                    "id": theory.candidate.case.case_id,
+                }
+            ),
+            flush=True,
+        )
     predictions.sort(
         key=lambda row: (
             -float(row["target_relative_rms"]),
@@ -781,20 +1330,26 @@ def evaluate_spectral_theory_screen(
     )
     return predictions, block_rows, alias_rows, {
         "elapsed_seconds": time.time() - started,
-        "pilot_coordinate_prefix_sha256": prefix_digest,
-        "pilot_coordinate_frames_read": PILOT_N,
+        "pilot_coordinate_prefix_sha256": spectrum.coordinate_prefix_sha256,
+        "pilot_force_prefix_sha256": spectrum.force_prefix_sha256,
+        "frozen_pilot_spectrum_sha256": spectrum.artifact_sha256,
+        "pilot_coordinate_frames_read": 0,
+        "pilot_force_frames_read": 0,
         "holdout_coordinate_frames_read": 0,
-        "structure_mode_count": len(modes),
+        "particlewise_force_difference_evaluations": 0,
+        "structure_mode_count": len(spectrum.modes),
         "alias_shell": alias_shell,
         "samples_per_shell": samples_per_shell,
         "covariance_policy": (
-            "pair/self and in-band cross-mode covariance are retained in one "
-            "vector quadratic form; only in-band/Fourier-tail covariance is ignored"
+            "charge-class coherent all-source pair/self-correction covariance "
+            "retained before cell squaring; zero-mean pair fluctuations remain "
+            "diagonal in physical mode; in-band/Fourier-tail covariance is ignored"
         ),
         "uncertainty_policy": (
-            "five contiguous pilot-frame block SEM for the joint operator; "
-            "the S_tag alias-sampling SEM is diagnostic only"
+            "quadrature of five contiguous pilot-spectrum block SEM and "
+            "alias-importance-sampling SEM"
         ),
+        "prediction_structural_file_access": "frozen pilot spectrum only",
     }
 
 
@@ -806,48 +1361,60 @@ def prediction_manifest(
     runtime: dict[str, object],
 ) -> dict[str, object]:
     return {
-        "schema_version": 6,
+        "schema_version": 10,
         "purpose": purpose,
         "logical_order": [
-            "read only coordinate frames 1--25 with the prefix reader",
-            "evaluate measured target-conditioned S_tag(q) and ordinary S_q(q)",
-            "retain S_tag reweighting of the exact AD cell-moment estimator as a diagonal diagnostic",
-            "contract the full-source pair alias and production self-correction vectors before squaring",
-            "combine the resulting joint in-band RMS with the closed Fourier tail in quadrature",
-            "estimate uncertainty from five contiguous 5-frame pilot blocks",
+            "verify the separately frozen pilot-spectrum artifact and SHA-256",
+            "read no molecular coordinates or force arrays during prediction",
+            "split frozen S_tag into charge-class coherent and zero-mean fluctuation parts",
+            "contract the zero-mean fluctuation with exact homogeneous AD cell-moment weights",
+            "form the complete coherent all-source pair field including i=j",
+            "add the production self-correction field before cell squaring",
+            "add the closed Fourier theory in quadrature with the joint in-band result",
+            "combine five-block spectrum SEM and alias-sampling SEM in quadrature",
             "freeze the complete candidate table and its SHA-256",
             "permit holdout coordinate/reference access only in a later validation action",
         ],
         "prediction": {
             "reference_force_accessed": False,
             "holdout_coordinates_accessed": False,
-            "coordinate_frames": "1--25",
-            "coordinate_prefix_sha256": runtime[
-                "pilot_coordinate_prefix_sha256"
-            ],
+            "molecular_coordinates_accessed": False,
+            "unit_charge_force_accessed": False,
+            "particlewise_force_difference_evaluated": False,
+            "structural_file_access": "frozen pilot spectrum only",
             "structure_input": (
-                "phase-resolved full-source and target-cell descriptor from frames "
-                "1--25; measured S_tag retained as a diagonal diagnostic"
+                "measured target-conditioned S_tag from frames 1--25"
+            ),
+            "coherent_structure_input": (
+                "charge-class conditional pair amplitudes from frames 1--25"
             ),
             "alias_formula": (
-                "one analytical discrete-source/gather minus continuum-band "
-                "AD error amplitude with all source particles, including j=i"
+                "exact homogeneous AD cell-moment weights reweighted by the "
+                "zero-mean S_tag fluctuation; coherent mean uses zero plus "
+                "six nearest source face aliases"
             ),
             "total_formula": (
-                "sqrt(<|e_full-source-alias-c_self|^2> + Delta_F_Fourier^2)"
+                "sqrt(Delta_F_pair,fluctuation^2 + "
+                "mean_cell(|F_pair,all,coherent + F_self,correction|^2) + "
+                "Delta_F_Fourier^2)"
             ),
             "covariance_approximation": (
-                "pair/self and in-band cross-mode covariance retained; covariance "
-                "between the joint in-band error and closed Fourier tail neglected"
+                "all-source pair/self-correction covariance retained for the "
+                "charge-class conditional coherent field (equivalently, "
+                "distinct-pair/residual-self covariance); zero-mean pair "
+                "fluctuations remain diagonal in physical mode; coherent aliases "
+                "beyond six faces and in-band/Fourier-tail covariance neglected"
             ),
             "frame_uncertainty": (
-                "SEM over five contiguous blocks of five pilot frames"
+                "SEM from five frozen contiguous five-frame blocks of S_tag "
+                "and conditional pair spectra"
             ),
             "alias_uncertainty": (
-                "zero for the main all-alias joint operator; importance-sampling "
-                "SEM is retained only for the diagonal S_tag diagnostic"
+                "importance-sampling SEM of the finite-shell S_tag correction"
             ),
-            "combined_uncertainty": "five-block frame SEM for the joint operator",
+            "combined_uncertainty": (
+                "quadrature of frame-block and alias-sampling SEM; their covariance is ignored"
+            ),
             "upper_rule": (
                 "prediction + t_0.95,4 * combined_SEM; t_0.95,4="
                 f"{ONE_SIDED_T95_DF4:.14g}"
@@ -855,18 +1422,22 @@ def prediction_manifest(
         },
         "candidate_count": len(read_csv(predictions)),
         "inputs": {
-            "trajectory_path": relative_path(TRAJECTORY),
-            "trajectory_prefix_frames": "1--25",
-            "trajectory_prefix_sha256": runtime[
+            "frozen_pilot_spectrum": file_record(PILOT_SPECTRUM),
+            "frozen_pilot_spectrum_record": file_record(
+                PILOT_SPECTRUM_FROZEN
+            ),
+            "frozen_pilot_spectrum_manifest": file_record(
+                PILOT_SPECTRUM_MANIFEST
+            ),
+            "pilot_coordinate_prefix_sha256_provenance": runtime[
                 "pilot_coordinate_prefix_sha256"
+            ],
+            "pilot_force_prefix_sha256_provenance": runtime[
+                "pilot_force_prefix_sha256"
             ],
             "runner": file_record(Path(__file__)),
             "spectral_descriptor": file_record(Path(adsq.__file__)),
-            "joint_pair_self_quadratic": file_record(Path(adjoint.__file__)),
-            "production_validation_helper": file_record(
-                AD_VALIDATION / "water_ad_production.py"
-            ),
-            "lammps_executable": lammps_record(),
+            "pair_self_theory": file_record(Path(adps.__file__)),
         },
         "outputs": {
             path.name: file_record(path) for path in (predictions, blocks, aliases)
@@ -884,9 +1455,6 @@ def write_baseline(args: argparse.Namespace) -> None:
         baseline_candidates(),
         alias_shell=args.alias_shell,
         samples_per_shell=args.samples_per_shell,
-        chunk_size=args.chunk_size,
-        rerun_self_probes=args.rerun_self_probes,
-        spectra_path=BASELINE_SPECTRA,
     )
     if len(predictions) != len(baseline.candidates()):
         raise RuntimeError("baseline spectral AD matrix is incomplete")
@@ -894,7 +1462,7 @@ def write_baseline(args: argparse.Namespace) -> None:
     write_csv(BASELINE_BLOCKS, blocks)
     write_csv(BASELINE_ALIASES, aliases)
     manifest = prediction_manifest(
-        "Figure 5 AD curves from the vector-complete pilot-coordinate pair/self theory",
+        "Figure 5 AD curves from frozen conditional pair/self theory",
         BASELINE_PREDICTION,
         BASELINE_BLOCKS,
         BASELINE_ALIASES,
@@ -907,14 +1475,13 @@ def write_baseline(args: argparse.Namespace) -> None:
     print(BASELINE_PREDICTION)
 
 
-def joint_paths(target: float) -> dict[str, Path]:
-    directory = OUTDIR / f"joint_{target_tag(target)}"
+def stag_paths(target: float) -> dict[str, Path]:
+    directory = OUTDIR / f"stag_{target_tag(target)}"
     return {
         "directory": directory,
         "prediction": directory / "prediction_before_validation.csv",
         "blocks": directory / "prediction_blocks.csv",
         "aliases": directory / "prediction_alias_shell.csv",
-        "spectra": directory / "pilot_structure_spectra.npz",
         "frozen": directory / "frozen_selection.json",
         "detail": directory / "holdout_validation_by_frame.csv",
         "summary": directory / "holdout_validation_summary.csv",
@@ -925,11 +1492,11 @@ def joint_paths(target: float) -> dict[str, Path]:
     }
 
 
-def select_joint(rows: list[dict[str, object]]) -> dict[str, object]:
+def select_stag(rows: list[dict[str, object]]) -> dict[str, object]:
     passing = [row for row in rows if as_bool(row["selection_passes_target"])]
     if not passing:
         raise RuntimeError(
-            "no declared vector-complete AD candidate satisfies the "
+            "no declared conditional pair/self AD candidate satisfies the "
             "one-sided prediction target"
         )
     return min(
@@ -942,26 +1509,23 @@ def select_joint(rows: list[dict[str, object]]) -> dict[str, object]:
     )
 
 
-def write_joint(target: float, args: argparse.Namespace) -> None:
-    paths = joint_paths(target)
+def write_stag_selection(target: float, args: argparse.Namespace) -> None:
+    paths = stag_paths(target)
     paths["directory"].mkdir(parents=True, exist_ok=True)
     predictions, blocks, aliases, runtime = evaluate_spectral_theory_screen(
-        joint_candidates(target),
+        stag_candidates(target),
         alias_shell=args.alias_shell,
         samples_per_shell=args.samples_per_shell,
-        chunk_size=args.chunk_size,
-        rerun_self_probes=args.rerun_self_probes,
-        spectra_path=paths["spectra"],
     )
     write_csv(paths["prediction"], predictions)
     write_csv(paths["blocks"], blocks)
     write_csv(paths["aliases"], aliases)
-    selected = select_joint(predictions)
+    selected = select_stag(predictions)
     prediction_sha = sha256(paths["prediction"])
     frozen = {
-        "schema_version": 3,
+        "schema_version": 7,
         "purpose": (
-            "vector-complete AD pair/self parameter selection frozen before "
+            "conditional pair/self AD theory selection frozen before "
             "holdout coordinate or Ewald-force access"
         ),
         "candidate_set": {
@@ -981,11 +1545,19 @@ def write_joint(target: float, args: argparse.Namespace) -> None:
         "pilot_coordinate_prefix_sha256": runtime[
             "pilot_coordinate_prefix_sha256"
         ],
+        "frozen_pilot_spectrum_sha256": runtime[
+            "frozen_pilot_spectrum_sha256"
+        ],
         "prediction_reference_force_accessed": False,
         "prediction_holdout_coordinates_accessed": False,
+        "prediction_molecular_coordinates_accessed": False,
+        "prediction_unit_charge_force_accessed": False,
+        "prediction_particlewise_force_difference_evaluated": False,
         "prediction_structure_input": (
-            "phase-resolved full-source and target-cell descriptor from frames "
-            "1--25; measured S_tag retained as a diagonal diagnostic"
+            "measured target-conditioned S_tag from frames 1--25"
+        ),
+        "prediction_coherent_structure_input": (
+            "charge-class conditional pair amplitudes from frames 1--25"
         ),
         "selected": selected,
     }
@@ -993,7 +1565,7 @@ def write_joint(target: float, args: argparse.Namespace) -> None:
         json.dumps(frozen, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     manifest = prediction_manifest(
-        "joint vector-complete AD pair/self screen with deferred holdout validation",
+        "conditional pair/self AD theory screen with deferred holdout validation",
         paths["prediction"],
         paths["blocks"],
         paths["aliases"],
@@ -1016,7 +1588,7 @@ def write_joint(target: float, args: argparse.Namespace) -> None:
 
 
 def verify_frozen(target: float) -> tuple[dict[str, object], dict[str, Path]]:
-    paths = joint_paths(target)
+    paths = stag_paths(target)
     for key in ("prediction", "frozen", "manifest"):
         if not paths[key].is_file():
             raise FileNotFoundError(
@@ -1030,12 +1602,32 @@ def verify_frozen(target: float) -> tuple[dict[str, object], dict[str, Path]]:
     expected_frozen_record = file_record(paths["frozen"])
     if frozen_record != expected_frozen_record:
         raise RuntimeError("the frozen-selection JSON disagrees with its manifest SHA256")
+    prediction_contract = manifest.get("prediction")
+    if not isinstance(prediction_contract, dict):
+        raise RuntimeError("the selection manifest has no prediction contract")
+    for key in (
+        "reference_force_accessed",
+        "holdout_coordinates_accessed",
+        "molecular_coordinates_accessed",
+        "unit_charge_force_accessed",
+        "particlewise_force_difference_evaluated",
+    ):
+        if prediction_contract.get(key) is not False:
+            raise RuntimeError(f"the selection manifest violates its data boundary: {key}")
     if frozen["prediction_table_sha256"] != sha256(paths["prediction"]):
         raise RuntimeError("the frozen candidate table changed after selection")
     if bool(frozen["prediction_reference_force_accessed"]):
         raise RuntimeError("the frozen prediction accessed reference forces")
     if bool(frozen["prediction_holdout_coordinates_accessed"]):
         raise RuntimeError("the frozen prediction accessed holdout coordinates")
+    if bool(frozen["prediction_molecular_coordinates_accessed"]):
+        raise RuntimeError("the prediction stage reopened molecular coordinates")
+    if bool(frozen["prediction_unit_charge_force_accessed"]):
+        raise RuntimeError("the prediction stage read a unit-charge force result")
+    if bool(frozen["prediction_particlewise_force_difference_evaluated"]):
+        raise RuntimeError("the prediction stage evaluated a particlewise force difference")
+    if frozen["frozen_pilot_spectrum_sha256"] != sha256(PILOT_SPECTRUM):
+        raise RuntimeError("the frozen pilot spectrum changed after selection")
     selected = frozen["selected"]
     matches = [
         row
@@ -1070,7 +1662,7 @@ def verify_frozen(target: float) -> tuple[dict[str, object], dict[str, Path]]:
     return frozen, paths
 
 
-def validate_joint(target: float, *, rerun_lammps: bool) -> None:
+def validate_stag_selection(target: float, *, rerun_lammps: bool) -> None:
     frozen, paths = verify_frozen(target)
     selected = frozen["selected"]
     case_target = baseline.Target(
@@ -1294,6 +1886,8 @@ def active_mode_force(
 
 
 def diagnostic_direct_check(target: float) -> None:
+    """Compare the frozen S_tag theory with post-selection operator diagnostics."""
+
     frozen, paths = verify_frozen(target)
     selected = frozen["selected"]
     frames, prefix_digest = load_pilot_frames()
@@ -1322,66 +1916,103 @@ def diagnostic_direct_check(target: float) -> None:
         ]
     )
     rows = []
+    joint_pair2 = []
+    joint_self2 = []
+    joint_cross = []
+    joint_total2 = []
     for frame_index, (timestep, q, xyz, box) in enumerate(frames):
+        moments = adjoint.evaluate_joint_pair_self_quadratic(
+            q, xyz, op, coeff.real, correction
+        )
         mesh_force = adref.fixed_ad_mesh_force(q, xyz, op, coeff.real)
         mesh_force -= correction_force(
             q, xyz, box, candidate.mesh, correction
         )
         direct = active_mode_force(q, xyz, box, modes, kernel)
         difference = mesh_force - direct
+        direct2 = float(np.mean(np.sum(difference**2, axis=1)))
+        joint_pair2.append(moments.distinct_pair_mean_square)
+        joint_self2.append(moments.residual_self_mean_square)
+        joint_cross.append(moments.pair_residual_self_dot_mean)
+        joint_total2.append(moments.joint_pair_self_mean_square)
         rows.append(
             {
                 "candidate_id": case.case_id,
                 "pilot_frame": frame_index + 1,
                 "timestep": timestep,
-                "mesh_minus_direct_mean_square": float(
-                    np.mean(np.sum(difference**2, axis=1))
+                "phase_resolved_distinct_pair_mean_square": (
+                    moments.distinct_pair_mean_square
+                ),
+                "phase_resolved_residual_self_mean_square": (
+                    moments.residual_self_mean_square
+                ),
+                "phase_resolved_pair_self_dot_mean": (
+                    moments.pair_residual_self_dot_mean
+                ),
+                "phase_resolved_joint_mean_square": (
+                    moments.joint_pair_self_mean_square
+                ),
+                "mesh_minus_direct_mean_square": direct2,
+                "joint_to_direct_absolute_residual": abs(
+                    moments.joint_pair_self_mean_square - direct2
                 ),
                 "pilot_coordinate_prefix_sha256": prefix_digest,
+                "used_for_prediction": False,
                 "used_for_selection": False,
             }
         )
     direct_rms = math.sqrt(
         float(np.mean([row["mesh_minus_direct_mean_square"] for row in rows]))
     )
-    diagonal_pair_rms = float(selected["measured_stag_corrected_pair_rms"])
-    pair_rms_value = float(
-        selected["phase_resolved_distinct_pair_absolute_rms"]
-    )
-    self_rms_value = float(selected["residual_self_rms"])
-    theory_band_rms = float(selected["joint_pair_self_absolute_rms"])
+    theory_pair_rms = float(selected["measured_stag_corrected_pair_rms"])
+    theory_all_source_pair_rms = float(selected["all_source_pair_rms"])
+    theory_self_rms = float(selected["residual_self_rms"])
+    theory_self_correction_rms = float(selected["self_correction_rms"])
+    theory_band_rms = float(selected["joint_mesh_rms"])
+    phase_pair_rms = pooled_rms(joint_pair2)
+    phase_self_rms = pooled_rms(joint_self2)
+    phase_cross = math.fsum(joint_cross) / len(joint_cross)
+    phase_joint_rms = pooled_rms(joint_total2)
     force_scale = float(selected["screening_force_scale"])
     summary = {
         "candidate_id": case.case_id,
         "target": target,
         "pilot_frames": "1--25",
-        "diagonal_stag_pair_rms_diagnostic": diagonal_pair_rms,
-        "phase_resolved_distinct_pair_rms": pair_rms_value,
-        "phase_resolved_residual_self_rms": self_rms_value,
-        "pair_residual_self_dot_mean": float(
-            selected["pair_residual_self_dot_mean"]
+        "stag_theory_pair_rms": theory_pair_rms,
+        "stag_theory_all_source_pair_rms": theory_all_source_pair_rms,
+        "stag_theory_residual_self_rms": theory_self_rms,
+        "stag_theory_self_correction_rms": theory_self_correction_rms,
+        "stag_theory_pair_self_joint_rms": theory_band_rms,
+        "stag_theory_pair_self_dot_mean": float(selected["pair_self_dot_mean"]),
+        "stag_theory_distinct_pair_residual_self_dot_mean": float(
+            selected["distinct_pair_residual_self_dot_mean"]
         ),
-        "pair_self_scalar_quadrature_rms_diagnostic": math.hypot(
-            pair_rms_value, self_rms_value
-        ),
-        "vector_complete_pair_self_rms": theory_band_rms,
+        "phase_resolved_distinct_pair_rms": phase_pair_rms,
+        "phase_resolved_residual_self_rms": phase_self_rms,
+        "phase_resolved_pair_residual_self_dot_mean": phase_cross,
+        "phase_resolved_joint_pair_self_rms": phase_joint_rms,
         "direct_finite_band_mesh_rms": direct_rms,
-        "vector_complete_to_direct_ratio": theory_band_rms / direct_rms,
+        "phase_resolved_joint_to_direct_ratio": phase_joint_rms / direct_rms,
+        "stag_theory_to_phase_resolved_joint_ratio": (
+            theory_band_rms / phase_joint_rms
+        ),
         "direct_finite_band_relative_rms": direct_rms / force_scale,
-        "spectral_total_relative_rms": float(
+        "stag_theory_total_relative_rms": float(
             selected["predicted_total_relative_rms"]
         ),
         "used_for_prediction": False,
         "used_for_selection": False,
         "diagnostic_definition": (
-            "post-freeze comparison of direct finite-band force difference with "
-            "the frozen vector-complete pair/self quadratic form"
+            "post-freeze comparison of conditional all-source pair plus "
+            "self-correction spectral theory, its equivalent distinct-pair plus "
+            "residual-self form, the phase-resolved joint operator, and the "
+            "direct finite-band force difference"
         ),
     }
     write_csv(paths["diagnostic_frames"], rows)
     write_csv(paths["diagnostic"], [summary])
     manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
-    manifest["direct_finite_band_diagnostic"] = {
+    manifest["joint_operator_and_direct_finite_band_diagnostic"] = {
         "performed_after_selection_freeze": True,
         "used_for_prediction_or_selection": False,
         "summary": file_record(paths["diagnostic"]),
@@ -1394,12 +2025,15 @@ def diagnostic_direct_check(target: float) -> None:
 
 
 def spectral_theory_audit(target: float, args: argparse.Namespace) -> None:
-    """Audit shell convergence of the diagonal S_tag diagnostic estimator."""
+    """Audit shell convergence of the frozen-S_tag main pair estimator."""
     frozen, paths = verify_frozen(target)
     selected = frozen["selected"]
-    frames, _ = load_pilot_frames()
-    charges = frames[0][1]
-    box = frames[0][3]
+    spectrum = load_frozen_pilot_spectrum(
+        alias_shell=args.alias_shell,
+        samples_per_shell=args.samples_per_shell,
+    )
+    charges = spectrum.charges
+    box = spectrum.box_length
     target_spec = baseline.Target(
         value=target,
         epsilon_split=float(selected["epsilon_split"]),
@@ -1433,16 +2067,20 @@ def spectral_theory_audit(target: float, args: argparse.Namespace) -> None:
                 seed=candidate_seed(candidate, 5),
             )
         )
-    modes, mappings = adsq.population_mode_union(populations)
-    tagged, _, _, _ = evaluate_spectral_theory_spectra(
-        frames, modes, chunk_size=args.chunk_size
+    mappings = mappings_for_frozen_modes(populations, spectrum.modes)
+    force_scale = spectrum.force_scale
+    coherent = adps.coherent_s_tag(
+        charges,
+        spectrum.charge_classes,
+        spectrum.class_counts,
+        spectrum.conditional_pair_mean,
     )
-    force_scale = float(selected["screening_force_scale"])
+    fluctuation, _ = fluctuation_s_tag(spectrum.tagged_mean, coherent)
     rows = []
     for shell, population, mapping in zip(range(1, 6), populations, mappings):
         homogeneous, corrections, homogeneous_variance = (
             adsq.corrected_chi2_with_sampling(
-                population, mapping, np.ones(len(modes))
+                population, mapping, np.ones(len(spectrum.modes))
             )
         )
         if homogeneous != population.homogeneous_chi2:
@@ -1452,7 +2090,7 @@ def spectral_theory_audit(target: float, args: argparse.Namespace) -> None:
         if any(value != 0.0 for value in homogeneous_variance.values()):
             raise AssertionError("S_tag=1 has nonzero alias sampling variance")
         chi2, _, variances = adsq.corrected_chi2_with_sampling(
-            population, mapping, tagged
+            population, mapping, fluctuation
         )
         pair = pair_rms(charges, chi2)
         rows.append(
@@ -1464,24 +2102,24 @@ def spectral_theory_audit(target: float, args: argparse.Namespace) -> None:
                     population.captured_homogeneous_chi2
                     / population.homogeneous_chi2
                 ),
-                "spectral_pair_relative_rms": pair / force_scale,
+                "spectral_fluctuation_pair_relative_rms": pair / force_scale,
                 "alias_sampling_chi2_sem": math.sqrt(
                     math.fsum(variances.values())
                 ),
                 "homogeneous_recovery_exact": True,
             }
         )
-    shell5 = float(rows[-1]["spectral_pair_relative_rms"])
+    shell5 = float(rows[-1]["spectral_fluctuation_pair_relative_rms"])
     for row in rows:
         row["relative_difference_from_shell5"] = (
-            float(row["spectral_pair_relative_rms"]) / shell5 - 1.0
+            float(row["spectral_fluctuation_pair_relative_rms"]) / shell5 - 1.0
         )
     write_csv(paths["convergence"], rows)
     manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
     manifest["alias_shell_convergence"] = {
         "performed_after_selection_freeze": True,
         "used_for_prediction_or_selection": False,
-        "scope": "Figure-5 diagonal S_tag diagnostic shell convergence",
+        "scope": "Figure-5 zero-mean S_tag fluctuation shell convergence",
         "shells": [1, 2, 3, 4, 5],
         "homogeneous_recovery_exact_for_every_shell": True,
         "output": file_record(paths["convergence"]),
@@ -1531,6 +2169,63 @@ def run_unit_tests() -> None:
     ordinary_error = float(np.max(np.abs(fast[1] - expected_ordinary)))
     if tagged_error > 2.0e-14 or ordinary_error > 2.0e-14:
         raise AssertionError("target-conditioned spectrum direct-sum test failed")
+    joint_structure = adps.evaluate_structure_spectra(
+        q, xyz, 4.0, modes, backend="direct", chunk_size=2
+    )
+    joint_tagged_error = float(
+        np.max(np.abs(joint_structure.tagged_pair - expected_tagged))
+    )
+    joint_ordinary_error = float(
+        np.max(np.abs(joint_structure.ordinary_charge - expected_ordinary))
+    )
+    if joint_tagged_error > 2.0e-14 or joint_ordinary_error > 2.0e-14:
+        raise AssertionError("joint-theory structure-spectrum test failed")
+    far_modes = np.asarray(
+        (
+            (1, 0, 0),
+            (127, -4, 3),
+            (129, 2, -1),
+            (-257, 145, 9),
+            (399, -401, 255),
+            (-511, -382, 290),
+        ),
+        dtype=np.int64,
+    )
+    tiled_direct = adps.evaluate_structure_spectra(
+        q, xyz, 4.0, far_modes, backend="direct", chunk_size=2
+    )
+    tiled_finufft = adps.evaluate_structure_spectra(
+        q, xyz, 4.0, far_modes, backend="finufft"
+    )
+    tiled_errors = {
+        name: float(
+            np.max(
+                np.abs(
+                    getattr(tiled_finufft, name) - getattr(tiled_direct, name)
+                )
+            )
+        )
+        for name in (
+            "tagged_pair",
+            "ordinary_charge",
+            "conditional_pair_mean",
+        )
+    }
+    if max(tiled_errors.values()) > 5.0e-11:
+        raise AssertionError("frequency-tiled FINUFFT direct-sum test failed")
+    coherent_part = adps.coherent_s_tag(
+        q,
+        joint_structure.charge_classes,
+        joint_structure.class_counts,
+        joint_structure.conditional_pair_mean,
+    )
+    structure_fluctuation, structure_minimum = fluctuation_s_tag(
+        joint_structure.tagged_pair, coherent_part
+    )
+    if float(np.max(np.abs(structure_fluctuation))) > 3.0e-14:
+        raise AssertionError(
+            "one-target charge classes did not exhaust the tagged pair spectrum"
+        )
 
     target = baseline.TARGETS[0]
     case = baseline.case_for(target, 5, 12)
@@ -1569,6 +2264,68 @@ def run_unit_tests() -> None:
         coefficients(case),
     )
     joint_correction = np.asarray((1.25e-4, -2.5e-5), dtype=np.float64)
+    coherent_modes = adps.canonical_mode_union(
+        union, adps.face_alias_modes(joint_operator)
+    )
+    zero_conditional = np.zeros(
+        (len(joint_structure.charge_classes), len(coherent_modes)),
+        dtype=np.complex128,
+    )
+    homogeneous_joint = adps.coherent_pair_self_cell_moments(
+        q=q,
+        frozen_modes=coherent_modes,
+        conditional_pair_mean=zero_conditional,
+        charge_classes=joint_structure.charge_classes,
+        class_counts=joint_structure.class_counts,
+        operator=joint_operator,
+        real_coeff=coefficients(case).real,
+        self_correction=joint_correction,
+        quadrature_order_per_half=12,
+    )
+    if (
+        float(homogeneous_joint.coherent_pair_mean_square) != 0.0
+        or float(homogeneous_joint.pair_self_dot_mean) != 0.0
+        or float(homogeneous_joint.coherent_joint_mean_square)
+        != float(homogeneous_joint.residual_self_mean_square)
+    ):
+        raise AssertionError(
+            "zero conditional mean did not recover homogeneous pair/self closure"
+        )
+    nonzero_structure = adps.evaluate_structure_spectra(
+        q, xyz, 4.0, coherent_modes, backend="direct", chunk_size=17
+    )
+    nonzero_joint = adps.coherent_pair_self_cell_moments(
+        q=q,
+        frozen_modes=coherent_modes,
+        conditional_pair_mean=nonzero_structure.conditional_pair_mean,
+        charge_classes=nonzero_structure.charge_classes,
+        class_counts=nonzero_structure.class_counts,
+        operator=joint_operator,
+        real_coeff=coefficients(case).real,
+        self_correction=joint_correction,
+        quadrature_order_per_half=12,
+    )
+    nonzero_identity = abs(
+        float(nonzero_joint.coherent_joint_mean_square)
+        - (
+            float(nonzero_joint.coherent_pair_mean_square)
+            + float(nonzero_joint.residual_self_mean_square)
+            + 2.0 * float(nonzero_joint.pair_self_dot_mean)
+        )
+    )
+    if nonzero_identity > 2.0e-12:
+        raise AssertionError("nonzero pair/self vector-sum identity failed")
+    nonzero_all_source_identity = abs(
+        float(nonzero_joint.coherent_joint_mean_square)
+        - (
+            float(nonzero_joint.all_source_pair_mean_square)
+            + float(nonzero_joint.self_correction_mean_square)
+            + 2.0
+            * float(nonzero_joint.all_source_pair_self_correction_dot_mean)
+        )
+    )
+    if nonzero_all_source_identity > 2.0e-12:
+        raise AssertionError("nonzero all-source pair/self identity failed")
     joint = adjoint.evaluate_joint_pair_self_quadratic(
         q,
         xyz,
@@ -1597,12 +2354,95 @@ def run_unit_tests() -> None:
     if joint_operator_error > 3.0e-15 * max(reference_joint2, 1.0):
         raise AssertionError("joint pair/self analytical operator test failed")
     pilot, prefix_digest = load_pilot_frames()
+
+    # Exercise the formal predictor with every coordinate/force and
+    # force-difference entry point replaced by a failing sentinel.  This is
+    # the executable data-boundary contract: only the frozen spectrum may be
+    # opened after the freeze stage.
+    this_module = sys.modules[__name__]
+    guarded_entries = (
+        (this_module, "load_pilot_frames"),
+        (this_module, "frozen_force_scale"),
+        (this_module, "active_mode_force"),
+        (adref, "fixed_ad_mesh_force"),
+        (ikref, "direct_truncated_force"),
+        (ikref, "parse_charge_trajectory_prefix"),
+        (ikref, "parse_force_dump_prefix"),
+        (adjoint, "evaluate_joint_pair_self_quadratic"),
+        (adps, "evaluate_structure_spectra"),
+        (adcommon, "fit_self_correction"),
+    )
+    original_entries = [getattr(module, name) for module, name in guarded_entries]
+
+    def forbidden_prediction_access(*_args, **_kwargs):
+        raise AssertionError(
+            "formal Figure-5 AD prediction crossed its frozen-spectrum boundary"
+        )
+
+    try:
+        for module, name in guarded_entries:
+            setattr(module, name, forbidden_prediction_access)
+        guarded_rows, _, _, guarded_runtime = evaluate_spectral_theory_screen(
+            [Candidate(target, 5, 12, "data_boundary_test")],
+            alias_shell=5,
+            samples_per_shell=2048,
+        )
+    finally:
+        for (module, name), original in zip(guarded_entries, original_entries):
+            setattr(module, name, original)
+    if len(guarded_rows) != 1:
+        raise AssertionError("frozen-spectrum boundary test returned the wrong row count")
+    guarded_row = guarded_rows[0]
+    if (
+        guarded_runtime["pilot_coordinate_frames_read"] != 0
+        or guarded_runtime["pilot_force_frames_read"] != 0
+        or guarded_runtime["holdout_coordinate_frames_read"] != 0
+        or guarded_runtime["particlewise_force_difference_evaluations"] != 0
+        or bool(guarded_row["prediction_reference_force_accessed"])
+        or bool(guarded_row["prediction_holdout_coordinates_accessed"])
+        or bool(guarded_row["prediction_molecular_coordinates_accessed"])
+        or bool(guarded_row["prediction_unit_charge_force_accessed"])
+        or bool(guarded_row["prediction_particlewise_force_difference_evaluated"])
+    ):
+        raise AssertionError("formal Figure-5 AD prediction violated its data boundary")
+
     payload = {
-        "schema_version": 2,
+        "schema_version": 5,
         "evaluate_tagged_pair_spectrum_direct_sum_max_abs": tagged_error,
         "ordinary_sq_direct_sum_max_abs": ordinary_error,
+        "joint_structure_tagged_direct_sum_max_abs": joint_tagged_error,
+        "joint_structure_ordinary_direct_sum_max_abs": joint_ordinary_error,
+        "frequency_tiled_finufft_direct_sum_max_abs": tiled_errors,
+        "frequency_tiled_finufft_tile_width": adps.FINUFFT_TILE_WIDTH,
+        "conditional_decomposition_fluctuation_max_abs": float(
+            np.max(np.abs(structure_fluctuation))
+        ),
+        "conditional_decomposition_minimum_before_clip": structure_minimum,
         "homogeneous_recovery_bitwise_exact": exact_homogeneous,
         "homogeneous_chi2": population.homogeneous_chi2,
+        "homogeneous_zero_conditional_pair_mean_square": float(
+            homogeneous_joint.coherent_pair_mean_square
+        ),
+        "homogeneous_zero_conditional_pair_self_dot_mean": float(
+            homogeneous_joint.pair_self_dot_mean
+        ),
+        "homogeneous_joint_equals_residual_self_bitwise": (
+            float(homogeneous_joint.coherent_joint_mean_square)
+            == float(homogeneous_joint.residual_self_mean_square)
+        ),
+        "joint_production_real_projection_applied": (
+            homogeneous_joint.production_real_projection_applied
+        ),
+        "nonzero_pair_self_dot_mean": float(
+            nonzero_joint.pair_self_dot_mean
+        ),
+        "nonzero_pair_self_vector_sum_identity_max_abs": nonzero_identity,
+        "nonzero_all_source_pair_self_vector_sum_identity_max_abs": (
+            nonzero_all_source_identity
+        ),
+        "nonzero_equivalent_decomposition_component_max_abs": (
+            nonzero_joint.equivalent_decomposition_component_max_abs
+        ),
         "joint_pair_self_vector_identity_absolute_residual": (
             joint.vector_identity_absolute_residual
         ),
@@ -1614,6 +2454,8 @@ def run_unit_tests() -> None:
         "prefix_reader_first_timestep": pilot[0][0],
         "prefix_reader_last_timestep": pilot[-1][0],
         "prefix_reader_sha256": prefix_digest,
+        "formal_prediction_frozen_spectrum_boundary_enforced": True,
+        "formal_prediction_particlewise_force_difference_evaluations": 0,
         "passed": True,
     }
     UNIT_TESTS.write_text(
@@ -1625,22 +2467,28 @@ def run_unit_tests() -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--freeze-pilot-spectrum", action="store_true")
     action.add_argument("--baseline", action="store_true")
     action.add_argument("--join-baseline-validation", action="store_true")
-    action.add_argument("--joint-target", type=float, metavar="TARGET")
-    action.add_argument("--validate-joint", type=float, metavar="TARGET")
+    action.add_argument("--select-target", type=float, metavar="TARGET")
+    action.add_argument("--validate-selection", type=float, metavar="TARGET")
     action.add_argument("--diagnostic-direct-check", type=float, metavar="TARGET")
     action.add_argument(
         "--spectral-theory-audit",
         type=float,
         metavar="TARGET",
-        help="post-freeze shell-convergence audit for the diagonal S_tag diagnostic",
+        help="post-freeze shell-convergence audit for the S_tag main estimator",
     )
     action.add_argument("--self-test", action="store_true")
     parser.add_argument("--alias-shell", type=int, default=5)
     parser.add_argument("--samples-per-shell", type=int, default=2048)
     parser.add_argument("--chunk-size", type=int, default=512)
-    parser.add_argument("--rerun-self-probes", action="store_true")
+    parser.add_argument(
+        "--structure-backend",
+        choices=("finufft", "direct"),
+        default="finufft",
+        help="pilot structural-transform backend; FINUFFT is used for production",
+    )
     parser.add_argument("--rerun-lammps", action="store_true")
     parser.add_argument(
         "--lmp",
@@ -1660,14 +2508,18 @@ def main() -> None:
         raise ValueError("--samples-per-shell must be at least 64")
     if args.chunk_size < 1:
         raise ValueError("--chunk-size must be positive")
-    if args.baseline:
+    if args.freeze_pilot_spectrum:
+        freeze_pilot_spectrum(args)
+    elif args.baseline:
         write_baseline(args)
     elif args.join_baseline_validation:
         join_baseline_validation()
-    elif args.joint_target is not None:
-        write_joint(args.joint_target, args)
-    elif args.validate_joint is not None:
-        validate_joint(args.validate_joint, rerun_lammps=args.rerun_lammps)
+    elif args.select_target is not None:
+        write_stag_selection(args.select_target, args)
+    elif args.validate_selection is not None:
+        validate_stag_selection(
+            args.validate_selection, rerun_lammps=args.rerun_lammps
+        )
     elif args.diagnostic_direct_check is not None:
         diagnostic_direct_check(args.diagnostic_direct_check)
     elif args.spectral_theory_audit is not None:

@@ -367,13 +367,17 @@ Run representative inputs from the bundle root so their relative paths
 resolve correctly, for example:
 
 ```bash
+"$LMP" -in inputs/representative_lammps/fig3_ad_random_p5_m24.in
 "$LMP" -in inputs/representative_lammps/fig6_ik_pppm_selection.in
 "$LMP" -in inputs/representative_lammps/fig6_ad_pswf_selection.in
 ```
 
-`fig3_ad_random_p5_m24.in` is a generated-case snapshot. Its data and
-trajectory are created first by
-`lammps_ad_total_validation/run_operator_fig3_validation.py`.
+`fig3_ad_random_p5_m24.in` is a generated-case snapshot. It reads the data
+and trajectory created by
+`lammps_ad_total_validation/run_operator_fig3_validation.py` from
+`$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5/lammps_ad_total_validation/`.
+Run that generator first and keep `ESP_ERROR_BENCH_OUTPUT_DIR` set to the
+same external result root when invoking the representative input.
 
 ## Updating the checksum index
 

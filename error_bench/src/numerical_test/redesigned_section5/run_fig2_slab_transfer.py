@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from fixed_ik_reference import PSWF_SOURCE_DIR, parse_charge_data
+from generated_output import section_output_root
 from fig2_fourier_reference import (
     ExactPSWFContinuation,
     direct_force_from_kernel,
@@ -40,12 +41,13 @@ from run_fig2_fourier_validation import (
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parents[2]
+OUTPUT_ROOT = section_output_root(create=True)
 SLAB_ROOT = PROJECT_ROOT / "numerical_examples" / "inhomogeneous_charges"
-RANDOM_SUMMARY = HERE / "fig2_fourier_truncation_summary.csv"
-BY_CONFIG = HERE / "fig2_slab_fourier_truncation_by_config.csv"
-SUMMARY = HERE / "fig2_slab_fourier_truncation_summary.csv"
-REFERENCE_CHECKS = HERE / "fig2_slab_infinity_reference_checks.csv"
-MANIFEST = HERE / "fig2_slab_fourier_manifest.json"
+RANDOM_SUMMARY = OUTPUT_ROOT / "fig2_fourier_truncation_summary.csv"
+BY_CONFIG = OUTPUT_ROOT / "fig2_slab_fourier_truncation_by_config.csv"
+SUMMARY = OUTPUT_ROOT / "fig2_slab_fourier_truncation_summary.csv"
+REFERENCE_CHECKS = OUTPUT_ROOT / "fig2_slab_infinity_reference_checks.csv"
+MANIFEST = OUTPUT_ROOT / "fig2_slab_fourier_manifest.json"
 
 
 def sha256(path: Path) -> str:

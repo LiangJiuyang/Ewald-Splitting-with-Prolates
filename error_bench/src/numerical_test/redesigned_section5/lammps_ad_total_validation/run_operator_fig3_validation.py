@@ -54,16 +54,20 @@ from ad_validation_common import (
 
 import fixed_ad_reference as adref
 import fixed_ik_reference as ikref
+from generated_output import manifest_path, section_output_root
 
 
-WORK = HERE / "runs_operator_fig3"
-SELF_CSV = HERE / "operator_self_probe.csv"
-TWO_CHARGE_CSV = HERE / "operator_two_charge_audit.csv"
-DETAIL_CSV = HERE / "fig3_lammps_ad_by_config.csv"
-SUMMARY_CSV = HERE / "fig3_lammps_ad_summary.csv"
-MANIFEST = HERE / "operator_fig3_manifest.json"
-RAW_MANIFEST = HERE / "operator_raw_artifact_manifest.json"
-SOURCE_SNAPSHOT_MANIFEST = HERE / "lammps_source_snapshot/source_snapshot_manifest.json"
+OUTPUT_ROOT = section_output_root()
+OUTDIR = OUTPUT_ROOT / "lammps_ad_total_validation"
+WORK = OUTDIR / "runs_operator_fig3"
+SELF_CSV = OUTDIR / "operator_self_probe.csv"
+TWO_CHARGE_CSV = OUTDIR / "operator_two_charge_audit.csv"
+DETAIL_CSV = OUTDIR / "fig3_lammps_ad_by_config.csv"
+SUMMARY_CSV = OUTDIR / "fig3_lammps_ad_summary.csv"
+MANIFEST = OUTDIR / "operator_fig3_manifest.json"
+RAW_MANIFEST = OUTDIR / "operator_raw_artifact_manifest.json"
+LAMMPS_PATCH = PROJECT / "lammps_esp_ik_ad_complete.patch"
+LAMMPS_UPSTREAM_COMMIT = "c4fe7a5bcf91f6b1ee634b1f79c55d671fa0badf"
 
 BOX = 48.0
 RANDOM_ROOT = PROJECT / "numerical_examples/random_charges"
@@ -423,6 +427,7 @@ def main() -> None:
     rerun = not args.reuse_lammps
     valid_cases, invalid_cases, key_to_id = unique_valid_cases()
     q, random_frames, input_paths = ordered_random_systems()
+    OUTDIR.mkdir(parents=True, exist_ok=True)
     WORK.mkdir(parents=True, exist_ok=True)
 
     correction_by_key: dict[tuple, np.ndarray] = {}
@@ -531,7 +536,7 @@ def main() -> None:
         {
             "purpose": "complete hash index of generated LAMMPS inputs, trajectories, logs, screens, total-force dumps, and pair/local dumps for the active unique Figure-3 cases",
             "artifacts": [
-                {"path": str(path.relative_to(PROJECT)), "sha256": sha256(path)}
+                {"path": manifest_path(path, PROJECT), "sha256": sha256(path)}
                 for path in raw_files
             ],
         },
@@ -540,6 +545,7 @@ def main() -> None:
     source_files = [
         Path(__file__),
         HERE / "ad_validation_common.py",
+        LAMMPS_PATCH,
         *reference_operator_dependencies(),
     ]
     output_files = [
@@ -557,8 +563,14 @@ def main() -> None:
             "lammps_executable_sha256": sha256(adcommon.LMP),
             "lammps_version": lammps_version(),
             "lammps_source_provenance": {
-                "path": str(SOURCE_SNAPSHOT_MANIFEST.relative_to(PROJECT)),
-                "sha256": sha256(SOURCE_SNAPSHOT_MANIFEST),
+                "upstream_repository": "https://github.com/lammps/lammps.git",
+                "upstream_commit": LAMMPS_UPSTREAM_COMMIT,
+                "patch_path": manifest_path(LAMMPS_PATCH, PROJECT),
+                "patch_sha256": sha256(LAMMPS_PATCH),
+                "verification": (
+                    "the executable SHA-256 and LAMMPS version above identify "
+                    "the binary used for this run"
+                ),
             },
             "operator": "development ESP AD with Fourier-polynomial deconvolution, classical derivative gather, and two-harmonic self correction",
             "force_units": "kcal mol^-1 A^-1 (LAMMPS units real)",
@@ -568,7 +580,7 @@ def main() -> None:
             "pair_force_sum_note": "pair_force_sum_norm is a translational/momentum-conservation diagnostic for the discrete AD mesh operator, not a LAMMPS-NumPy mismatch metric",
             "random_test": "ten neutral N=512 configurations; actual LAMMPS k-space forces for every valid Figure-3 tuple",
             "raw_artifact_index": {
-                "path": str(RAW_MANIFEST.relative_to(PROJECT)),
+                "path": manifest_path(RAW_MANIFEST, PROJECT),
                 "sha256": sha256(RAW_MANIFEST),
                 "n_files": len(raw_files),
             },
@@ -581,15 +593,15 @@ def main() -> None:
                 "absolute_component_units": "kcal mol^-1 A^-1",
             },
             "inputs": [
-                {"path": str(path.relative_to(PROJECT)), "sha256": sha256(path)}
+                {"path": manifest_path(path, PROJECT), "sha256": sha256(path)}
                 for path in input_paths
             ],
             "sources": [
-                {"path": str(path.relative_to(PROJECT)), "sha256": sha256(path)}
+                {"path": manifest_path(path, PROJECT), "sha256": sha256(path)}
                 for path in source_files
             ],
             "outputs": [
-                {"path": str(path.relative_to(PROJECT)), "sha256": sha256(path)}
+                {"path": manifest_path(path, PROJECT), "sha256": sha256(path)}
                 for path in output_files
             ],
             "python": platform.python_version(),

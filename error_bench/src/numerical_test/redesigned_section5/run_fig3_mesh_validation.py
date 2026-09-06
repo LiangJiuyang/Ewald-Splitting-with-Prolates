@@ -13,14 +13,16 @@ from pathlib import Path
 import numpy as np
 
 import fixed_ik_reference as ref
+from generated_output import section_output_root
 
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parents[2]
+OUTPUT_ROOT = section_output_root(create=True)
 RANDOM_ROOT = PROJECT / "numerical_examples" / "random_charges"
-OUTPUT = HERE / "fig3_mesh_validation_source.csv"
-BY_CONFIG = HERE / "fig3_mesh_validation_by_config.csv"
-MANIFEST = HERE / "fig3_mesh_validation_manifest.json"
+OUTPUT = OUTPUT_ROOT / "fig3_mesh_validation_source.csv"
+BY_CONFIG = OUTPUT_ROOT / "fig3_mesh_validation_by_config.csv"
+MANIFEST = OUTPUT_ROOT / "fig3_mesh_validation_manifest.json"
 
 RCUT = 9.0
 LBOX = 48.0
@@ -313,7 +315,10 @@ def main():
     MANIFEST.write_text(
         json.dumps(
             dict(
-                path_basis="bundle_root",
+                path_basis=(
+                    "bundle_root for distributed inputs; "
+                    "$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5 for outputs"
+                ),
                 purpose="Main Figure 3 operator-matched pure mesh validation",
                 source_configurations=[
                     str(path.resolve().relative_to(PROJECT)) for path in config_paths

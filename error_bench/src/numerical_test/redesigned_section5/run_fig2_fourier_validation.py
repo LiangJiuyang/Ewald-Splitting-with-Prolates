@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from fixed_ik_reference import parse_charge_data
+from generated_output import section_output_root
 from fig2_fourier_reference import (
     ExactPSWFContinuation,
     direct_force_from_kernel,
@@ -36,7 +37,14 @@ from fig2_fourier_reference import (
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parents[2]
+OUTPUT_ROOT = section_output_root(create=True)
 RANDOM_ROOT = PROJECT_ROOT / "numerical_examples" / "random_charges"
+BY_CONFIG = OUTPUT_ROOT / "fig2_fourier_truncation_by_config.csv"
+SUMMARY = OUTPUT_ROOT / "fig2_fourier_truncation_summary.csv"
+TAIL_CONVERGENCE = OUTPUT_ROOT / "fig2_eq46_tail_convergence.csv"
+REFERENCE_CHECKS = OUTPUT_ROOT / "fig2_infinity_reference_checks.csv"
+DIRECT_CONVERGENCE = OUTPUT_ROOT / "fig2_direct_cube_convergence.csv"
+MANIFEST = OUTPUT_ROOT / "fig2_fourier_manifest.json"
 RCUT = 9.0
 RECIPROCAL_MESH = 33
 TAIL_RADIUS = 320
@@ -264,27 +272,27 @@ def main() -> None:
         )
 
     write_csv(
-        HERE / "fig2_fourier_truncation_by_config.csv",
+        BY_CONFIG,
         list(by_config_rows[0]),
         by_config_rows,
     )
     write_csv(
-        HERE / "fig2_fourier_truncation_summary.csv",
+        SUMMARY,
         list(summary_rows[0]),
         summary_rows,
     )
     write_csv(
-        HERE / "fig2_eq46_tail_convergence.csv",
+        TAIL_CONVERGENCE,
         list(tail_rows[0]),
         tail_rows,
     )
     write_csv(
-        HERE / "fig2_infinity_reference_checks.csv",
+        REFERENCE_CHECKS,
         list(reference_rows[0]),
         reference_rows,
     )
     write_csv(
-        HERE / "fig2_direct_cube_convergence.csv",
+        DIRECT_CONVERGENCE,
         list(direct_convergence_rows[0]),
         direct_convergence_rows,
     )
@@ -378,7 +386,7 @@ def main() -> None:
             "fixed_ik_reference.py",
         ],
     }
-    (HERE / "fig2_fourier_manifest.json").write_text(
+    MANIFEST.write_text(
         json.dumps(manifest, indent=2) + "\n"
     )
 

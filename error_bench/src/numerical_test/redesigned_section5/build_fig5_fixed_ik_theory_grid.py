@@ -41,7 +41,7 @@ PROJECT = HERE.parents[2]
 sys.path.insert(0, str(HERE))
 from generated_output import section_output_root  # noqa: E402
 
-OUTPUT_ROOT = section_output_root()
+OUTPUT_ROOT = section_output_root(create=True)
 WATER_ROOT = PROJECT / "numerical_examples" / "water_trajectory_benchmark"
 TRAJECTORY = WATER_ROOT / "water_short_traj.lammpstrj"
 # This is a deliberately inexpensive full-force scale, not an Ewald reference.

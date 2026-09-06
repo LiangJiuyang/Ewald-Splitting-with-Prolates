@@ -26,6 +26,7 @@ import time
 import numpy as np
 
 import fixed_ik_reference as ref
+from generated_output import manifest_path, section_output_root
 from fig2_fourier_reference import (
     ExactPSWFContinuation,
     direct_force_from_kernel,
@@ -42,6 +43,7 @@ import sq_alias_tools as sqtools
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parents[2]
+OUTPUT_ROOT = section_output_root(create=True)
 TRAJECTORY = (
     PROJECT_ROOT
     / "numerical_examples"
@@ -64,14 +66,14 @@ EWALD_CROSSCHECKS = (
     dict(alpha=0.40, real_cutoff=16.0, reciprocal_mesh=47),
 )
 
-SUMMARY = HERE / "fig2_water_fourier_tail_summary.csv"
-BY_FRAME = HERE / "fig2_water_fourier_tail_by_frame.csv"
-PILOT_MODES = HERE / "fig2_water_fourier_tail_pilot_modes.csv"
-SQ_CONVERGENCE = HERE / "fig2_water_fourier_tail_sq_convergence.csv"
-TAIL_CONVERGENCE = HERE / "fig2_water_fourier_tail_radial_convergence.csv"
-REFERENCE_CHECKS = HERE / "fig2_water_fourier_tail_reference_checks.csv"
-REFERENCE_NPZ = HERE / "fig2_water_all_charge_coulomb_reference.npz"
-MANIFEST = HERE / "fig2_water_fourier_tail_manifest.json"
+SUMMARY = OUTPUT_ROOT / "fig2_water_fourier_tail_summary.csv"
+BY_FRAME = OUTPUT_ROOT / "fig2_water_fourier_tail_by_frame.csv"
+PILOT_MODES = OUTPUT_ROOT / "fig2_water_fourier_tail_pilot_modes.csv"
+SQ_CONVERGENCE = OUTPUT_ROOT / "fig2_water_fourier_tail_sq_convergence.csv"
+TAIL_CONVERGENCE = OUTPUT_ROOT / "fig2_water_fourier_tail_radial_convergence.csv"
+REFERENCE_CHECKS = OUTPUT_ROOT / "fig2_water_fourier_tail_reference_checks.csv"
+REFERENCE_NPZ = OUTPUT_ROOT / "fig2_water_all_charge_coulomb_reference.npz"
+MANIFEST = OUTPUT_ROOT / "fig2_water_fourier_tail_manifest.json"
 
 
 def sha256(path: Path) -> str:
@@ -84,7 +86,7 @@ def sha256(path: Path) -> str:
 
 def file_record(path: Path) -> dict[str, object]:
     return {
-        "path": str(path.relative_to(PROJECT_ROOT)),
+        "path": manifest_path(path, PROJECT_ROOT),
         "bytes": path.stat().st_size,
         "sha256": sha256(path),
     }

@@ -151,9 +151,11 @@ running any generator, choose an external result directory:
 export ESP_ERROR_BENCH_OUTPUT_DIR=/path/outside/Ewald-Splitting-results
 ```
 
-The Figure 5 artifacts will then be under
-`$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5/`. The repository contains
-only source code and required simulation inputs.
+Generated artifacts for Figures 2--5 will then be under
+`$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5/`. Figure 3 production-AD
+validation uses its `lammps_ad_total_validation/` subdirectory. Generators and
+the plotting driver resolve this same location through `generated_output.py`.
+The repository contains only source code and required simulation inputs.
 
 ### Figures 2-4
 
@@ -169,8 +171,8 @@ python3 "$FIGDIR/run_fig2_water_fourier_tail.py"
 python3 "$FIGDIR/run_fig3_mesh_validation.py"
 
 python3 "$FIGDIR/run_fig4_charge_spectrum.py"
-python3 "$FIGDIR/run_fig4_k_resolved_contribution.py"
 python3 "$FIGDIR/run_fig4_sq_correction.py"
+python3 "$FIGDIR/run_fig4_k_resolved_contribution.py"
 ```
 
 Pass the patched executable explicitly to the AD operator audit and direct
@@ -181,6 +183,10 @@ python3 "$FIGDIR/ad_operator_audit/run_ad_operator_audit.py" --lmp "$LMP"
 python3 "$FIGDIR/lammps_ad_total_validation/run_operator_fig3_validation.py" \
   --lmp "$LMP"
 ```
+
+The Figure 3 production-validation manifest records the distributed patch,
+its upstream LAMMPS commit, the executable SHA-256, and the reported LAMMPS
+version; it does not require an unbundled source-snapshot manifest.
 
 ### Figure 5
 

@@ -31,11 +31,13 @@ import finufft
 import numpy as np
 
 import fixed_ik_reference as ref
+from generated_output import manifest_path, section_output_root
 import sq_alias_tools as sqtools
 
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parents[2]
+OUTPUT_ROOT = section_output_root(create=True)
 TRAJECTORY = (
     PROJECT_ROOT
     / "numerical_examples"
@@ -44,8 +46,8 @@ TRAJECTORY = (
 )
 RANDOM_ROOT = PROJECT_ROOT / "numerical_examples" / "random_charges"
 
-SPECTRUM_OUT = HERE / "fig4_charge_spectrum_source.csv"
-MANIFEST_OUT = HERE / "fig4_charge_spectrum_manifest.json"
+SPECTRUM_OUT = OUTPUT_ROOT / "fig4_charge_spectrum_source.csv"
+MANIFEST_OUT = OUTPUT_ROOT / "fig4_charge_spectrum_manifest.json"
 
 PILOT_N = 25
 RANDOM_N = 10
@@ -63,7 +65,7 @@ ACCURACY_SEED = 20260819
 def file_record(path: Path) -> dict[str, object]:
     data = path.read_bytes()
     return {
-        "path": str(path.resolve().relative_to(PROJECT_ROOT)),
+        "path": manifest_path(path, PROJECT_ROOT),
         "bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
     }
@@ -350,7 +352,10 @@ def main() -> None:
     MANIFEST_OUT.write_text(
         json.dumps(
             {
-                "path_basis": "bundle_root",
+                "path_basis": (
+                    "bundle_root for distributed inputs; "
+                    "$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5 for outputs"
+                ),
                 "purpose": "Supporting Information volume-normalized physical charge-spectrum diagnostic",
                 "generated_utc": datetime.now(timezone.utc).isoformat(),
                 "generator": file_record(Path(__file__)),

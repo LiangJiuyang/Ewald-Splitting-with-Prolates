@@ -40,6 +40,7 @@ import scipy
 from scipy.special import sici
 
 import fixed_ik_reference as ref
+from generated_output import manifest_path, section_output_root
 from fig2_fourier_reference import (
     ExactPSWFContinuation,
     _sine_square_tail,
@@ -51,6 +52,7 @@ from sq_alias_tools import evaluate_sq_modes
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parents[2]
+OUTPUT_ROOT = section_output_root(create=True)
 TRAJECTORY = (
     PROJECT_ROOT
     / "numerical_examples"
@@ -58,11 +60,11 @@ TRAJECTORY = (
     / "water_short_traj.lammpstrj"
 )
 
-BLOCK_OUT = HERE / "fig2_water_fourier_prediction_by_block.csv"
-SUMMARY_OUT = HERE / "fig2_water_fourier_prediction_summary.csv"
-CONVERGENCE_OUT = HERE / "fig2_water_fourier_prediction_convergence.csv"
-ACCURACY_OUT = HERE / "fig2_water_finufft_accuracy.csv"
-MANIFEST_OUT = HERE / "fig2_water_fourier_prediction_manifest.json"
+BLOCK_OUT = OUTPUT_ROOT / "fig2_water_fourier_prediction_by_block.csv"
+SUMMARY_OUT = OUTPUT_ROOT / "fig2_water_fourier_prediction_summary.csv"
+CONVERGENCE_OUT = OUTPUT_ROOT / "fig2_water_fourier_prediction_convergence.csv"
+ACCURACY_OUT = OUTPUT_ROOT / "fig2_water_finufft_accuracy.csv"
+MANIFEST_OUT = OUTPUT_ROOT / "fig2_water_fourier_prediction_manifest.json"
 
 RCUT = 9.0
 RECIPROCAL_MESH = 21
@@ -112,7 +114,7 @@ def sha256(path: Path) -> str:
 
 def file_record(path: Path) -> dict[str, object]:
     return {
-        "path": str(path.resolve().relative_to(PROJECT_ROOT)),
+        "path": manifest_path(path, PROJECT_ROOT),
         "bytes": path.stat().st_size,
         "sha256": sha256(path),
     }
@@ -729,7 +731,10 @@ def main() -> None:
     write_csv(ACCURACY_OUT, accuracy_rows)
 
     manifest = {
-        "path_basis": "bundle_root",
+        "path_basis": (
+            "bundle_root for distributed inputs; "
+            "$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5 for outputs"
+        ),
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "artifact_role": (
             "frozen pilot-only SPC/E structure-factor prediction for the "

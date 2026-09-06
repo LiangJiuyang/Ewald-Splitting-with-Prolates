@@ -40,6 +40,7 @@ from scipy.spatial import cKDTree
 from scipy.special import erfc
 
 from fixed_ik_reference import COULOMB_REAL, PSWF_SOURCE_DIR, parse_charge_trajectory
+from generated_output import manifest_path, section_output_root
 from fig2_fourier_reference import (
     ExactPSWFContinuation,
     direct_force_from_kernel,
@@ -55,6 +56,7 @@ from fig2_fourier_reference import (
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parents[2]
+OUTPUT_ROOT = section_output_root(create=True)
 WATER_ROOT = PROJECT_ROOT / "numerical_examples" / "water_trajectory_benchmark"
 WATER_DATA = WATER_ROOT / "water.data"
 TRAJECTORY = WATER_ROOT / "water_short_traj.lammpstrj"
@@ -95,13 +97,13 @@ EWALD_CROSSCHECK = {
     "reciprocal_mesh": 55,
 }
 
-BY_FRAME = HERE / "fig2_water_fourier_reference_by_frame.csv"
-SUMMARY = HERE / "fig2_water_fourier_reference_summary.csv"
-BLOCKS = HERE / "fig2_water_fourier_reference_blocks.csv"
-EWALD_CHECKS = HERE / "fig2_water_direct_ewald_crosscheck.csv"
-SPLINE_CHECKS = HERE / "fig2_water_pswf_spline_accuracy.csv"
-EWALD_NPZ = HERE / "fig2_water_allcharge_direct_ewald_reference.npz"
-MANIFEST = HERE / "fig2_water_fourier_reference_manifest.json"
+BY_FRAME = OUTPUT_ROOT / "fig2_water_fourier_reference_by_frame.csv"
+SUMMARY = OUTPUT_ROOT / "fig2_water_fourier_reference_summary.csv"
+BLOCKS = OUTPUT_ROOT / "fig2_water_fourier_reference_blocks.csv"
+EWALD_CHECKS = OUTPUT_ROOT / "fig2_water_direct_ewald_crosscheck.csv"
+SPLINE_CHECKS = OUTPUT_ROOT / "fig2_water_pswf_spline_accuracy.csv"
+EWALD_NPZ = OUTPUT_ROOT / "fig2_water_allcharge_direct_ewald_reference.npz"
+MANIFEST = OUTPUT_ROOT / "fig2_water_fourier_reference_manifest.json"
 
 
 def sha256(path: Path) -> str:
@@ -113,12 +115,8 @@ def sha256(path: Path) -> str:
 
 
 def file_record(path: Path) -> dict[str, object]:
-    try:
-        display_path = str(path.relative_to(PROJECT_ROOT))
-    except ValueError:
-        display_path = str(path)
     return {
-        "path": display_path,
+        "path": manifest_path(path, PROJECT_ROOT),
         "bytes": path.stat().st_size,
         "sha256": sha256(path),
     }

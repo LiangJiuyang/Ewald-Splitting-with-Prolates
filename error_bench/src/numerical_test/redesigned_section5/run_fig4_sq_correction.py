@@ -14,18 +14,20 @@ from pathlib import Path
 import numpy as np
 
 import fixed_ik_reference as ref
+from generated_output import manifest_path, section_output_root
 import sq_alias_tools as sqtools
 
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parents[2]
+OUTPUT_ROOT = section_output_root(create=True)
 TRAJECTORY = PROJECT / "numerical_examples" / "water_trajectory_benchmark" / "water_short_traj.lammpstrj"
 RANDOM_ROOT = PROJECT / "numerical_examples" / "random_charges"
 
-CORRECTION_OUT = HERE / "fig4_sq_correction_source.csv"
-BY_FRAME_OUT = HERE / "fig4_sq_correction_by_frame.csv"
-SHELL_OUT = HERE / "fig4_sq_alias_shell_source.csv"
-MANIFEST = HERE / "fig4_sq_correction_manifest.json"
+CORRECTION_OUT = OUTPUT_ROOT / "fig4_sq_correction_source.csv"
+BY_FRAME_OUT = OUTPUT_ROOT / "fig4_sq_correction_by_frame.csv"
+SHELL_OUT = OUTPUT_ROOT / "fig4_sq_alias_shell_source.csv"
+MANIFEST = OUTPUT_ROOT / "fig4_sq_correction_manifest.json"
 
 RCUT = 9.0
 CSPLIT = 16.894
@@ -101,7 +103,7 @@ def chi_rms_block_sem(chi: np.ndarray, scale: float, block_size: int = 5) -> flo
 def file_record(path: Path) -> dict[str, object]:
     data = path.read_bytes()
     return {
-        "path": str(path.resolve().relative_to(PROJECT)),
+        "path": manifest_path(path, PROJECT),
         "bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
     }
@@ -293,7 +295,10 @@ def main():
     MANIFEST.write_text(
         json.dumps(
             dict(
-                path_basis="bundle_root",
+                path_basis=(
+                    "bundle_root for distributed inputs; "
+                    "$ESP_ERROR_BENCH_OUTPUT_DIR/redesigned_section5 for outputs"
+                ),
                 purpose="Main Figure 4 molecular charge-correlation correction",
                 generator=file_record(Path(__file__)),
                 utilities=[file_record(HERE / "fixed_ik_reference.py"), file_record(HERE / "sq_alias_tools.py")],

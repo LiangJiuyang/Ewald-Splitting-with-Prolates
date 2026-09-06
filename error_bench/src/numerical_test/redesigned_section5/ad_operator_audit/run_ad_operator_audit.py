@@ -18,6 +18,7 @@ import math
 import os
 import platform
 import subprocess
+import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,16 +26,21 @@ from pathlib import Path
 
 import numpy as np
 
-import ad_operator_reference as adref
-import fixed_ik_reference as ikref
-
-
 HERE = Path(__file__).resolve().parent
 REDESIGNED_ROOT = HERE.parent
 PROJECT = HERE.parents[3]
+if str(REDESIGNED_ROOT) not in sys.path:
+    sys.path.insert(0, str(REDESIGNED_ROOT))
+
+import ad_operator_reference as adref  # noqa: E402
+import fixed_ik_reference as ikref  # noqa: E402
+from generated_output import manifest_path, section_output_root  # noqa: E402
+
+
 RANDOM_ROOT = PROJECT / "numerical_examples" / "random_charges"
 DEFAULT_LMP = REDESIGNED_ROOT / "pppm_symmetric_scan" / "lmp.pppm_symmetric_scan"
 LMP = Path(os.environ.get("ESP_LAMMPS_BIN", DEFAULT_LMP)).expanduser().resolve()
+OUTDIR = section_output_root() / "ad_operator_audit"
 
 RCUT = 9.0
 CSPLIT = 12.024
@@ -45,11 +51,11 @@ MESH = 24
 ORDERS = (4, 5, 6, 7, 8)
 SHELLS = (1, 2, 4, 8, 16, 32, 64, 128)
 
-DETAIL_CSV = HERE / "ad_operator_audit_by_config.csv"
-SUMMARY_CSV = HERE / "ad_operator_audit_summary.csv"
-SELF_CSV = HERE / "ad_self_correction_probe.csv"
-SHELL_CSV = HERE / "ad_alias_convergence.csv"
-MANIFEST = HERE / "ad_operator_audit_manifest.json"
+DETAIL_CSV = OUTDIR / "ad_operator_audit_by_config.csv"
+SUMMARY_CSV = OUTDIR / "ad_operator_audit_summary.csv"
+SELF_CSV = OUTDIR / "ad_self_correction_probe.csv"
+SHELL_CSV = OUTDIR / "ad_alias_convergence.csv"
+MANIFEST = OUTDIR / "ad_operator_audit_manifest.json"
 
 
 def sha256(path: Path) -> str:
@@ -309,7 +315,7 @@ def measure_one(order: int, config_index: int, path_string: str, ab_values: tupl
         uncorrected_self_rms=float(np.sqrt(np.mean(np.sum(self_uncorrected**2, axis=1)))),
         residual_self_rms=float(np.sqrt(np.mean(np.sum(self_residual**2, axis=1)))),
         minimum_abs_deconvolution_product=operator.minimum_abs_deconvolution_product,
-        source_file=str(path),
+        source_file=manifest_path(path, PROJECT),
     )
 
 
@@ -324,6 +330,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     LMP = args.lmp.expanduser().resolve()
+    OUTDIR.mkdir(parents=True, exist_ok=True)
     started = time.time()
     if not LMP.is_file():
         raise FileNotFoundError(f"archived validation executable is missing: {LMP}")
@@ -565,7 +572,7 @@ def main() -> None:
                     for path in config_paths
                 ],
                 outputs=[
-                    dict(path=str(path.relative_to(PROJECT)), sha256=sha256(path))
+                    dict(path=manifest_path(path, PROJECT), sha256=sha256(path))
                     for path in output_files
                 ],
                 source_files=[

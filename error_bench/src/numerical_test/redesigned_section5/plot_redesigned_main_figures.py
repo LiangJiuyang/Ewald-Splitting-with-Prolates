@@ -4004,7 +4004,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
 
     theory_rows = read_rows("fig5_fixed_ik_theory_grid_source.csv")
     pppm_rows = read_path_rows(
-        HERE
+        OUTPUT_ROOT
         / "fig5_pppm_ik_ad_fixed_g_scan"
         / "fig5_pppm_ik_ad_fixed_g_summary.csv"
     )
@@ -4103,7 +4103,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
             if not resolved:
                 raise ValueError(f"Figure 5 has no resolved rows for {target:.0e}, P={order}")
             ax.plot(
-                [value(row, "actual_nx") for row in resolved],
+                [value(row, "actual_grid_points") for row in resolved],
                 [value(row, "predicted_total_relative_rms") for row in resolved],
                 color=color,
                 linewidth=1.25,
@@ -4113,7 +4113,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
             )
             errorbar(
                 ax,
-                [value(row, "actual_nx") for row in resolved],
+                [value(row, "actual_grid_points") for row in resolved],
                 [value(row, "validation_relative_rms") for row in resolved],
                 [value(row, "validation_relative_rms_balanced_block5_sem") for row in resolved],
                 color=color,
@@ -4178,7 +4178,7 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
         pppm = pppm_by_target[target]
         errorbar(
             ax,
-            [value(row, "actual_nx") for row in pppm],
+            [value(row, "actual_grid_points") for row in pppm],
             [value(row, "holdout_relative_rms") for row in pppm],
             [value(row, "holdout_balanced_block5_sem") for row in pppm],
             color=COLORS["black"],
@@ -4209,11 +4209,13 @@ def figure5_theoretical_fixed_ik() -> dict[str, object]:
                 }
             )
         ax.axhline(target, color=COLORS["gray"], linestyle=":", linewidth=0.9, zorder=1)
-        ax.set_xlim(min(ticks) - 1.2, max(ticks) + 2.4)
-        ax.set_xticks(ticks)
-        # The axis title carries the cubic-grid convention; plain M labels
-        # keep the dense near-band ticks readable at final double-column size.
-        ax.set_xticklabels([str(tick) for tick in ticks])
+        volume_ticks = [tick**3 for tick in ticks]
+        ax.set_xscale("log")
+        ax.set_xlim(min(volume_ticks) / 1.18, max(volume_ticks) * 1.18)
+        ax.set_xticks(volume_ticks)
+        ax.set_xticklabels([rf"${tick}^3$" for tick in ticks])
+        ax.xaxis.set_minor_locator(NullLocator())
+        ax.xaxis.set_minor_formatter(NullFormatter())
         ax.set_ylim(*ylim)
         ax.tick_params(axis="x", labelsize=7.1)
         ax.text(
@@ -4693,7 +4695,7 @@ def figure5_theory_and_stag_ad() -> dict[str, object]:
                     )
 
             ax.plot(
-                [value(row, "actual_nx") for row in resolved],
+                [value(row, "actual_grid_points") for row in resolved],
                 estimated,
                 color=color,
                 linewidth=1.25,
@@ -4703,7 +4705,7 @@ def figure5_theory_and_stag_ad() -> dict[str, object]:
             )
             errorbar(
                 ax,
-                [value(row, "actual_nx") for row in resolved],
+                [value(row, "actual_grid_points") for row in resolved],
                 measured,
                 measured_sem,
                 color=color,
@@ -4718,7 +4720,7 @@ def figure5_theory_and_stag_ad() -> dict[str, object]:
         pppm = pppm_by_operator_target[(method, target)]
         errorbar(
             ax,
-            [value(row, "actual_nx") for row in pppm],
+            [value(row, "actual_grid_points") for row in pppm],
             [value(row, "holdout_relative_rms") for row in pppm],
             [value(row, "holdout_balanced_block5_sem") for row in pppm],
             color=COLORS["black"],
@@ -4793,11 +4795,13 @@ def figure5_theory_and_stag_ad() -> dict[str, object]:
 
         csplit = value(per_target[0], "csplit")
         ax.axhline(target, color=COLORS["gray"], linestyle=":", linewidth=0.9, zorder=1)
-        ax.set_xlim(min(ticks) - 1.2, max(ticks) + 2.4)
-        ax.set_xticks(ticks)
-        # The axis title carries the cubic-grid convention; plain M labels
-        # keep the dense near-band ticks readable at final double-column size.
-        ax.set_xticklabels([str(tick) for tick in ticks])
+        volume_ticks = [tick**3 for tick in ticks]
+        ax.set_xscale("log")
+        ax.set_xlim(min(volume_ticks) / 1.18, max(volume_ticks) * 1.18)
+        ax.set_xticks(volume_ticks)
+        ax.set_xticklabels([rf"${tick}^3$" for tick in ticks])
+        ax.xaxis.set_minor_locator(NullLocator())
+        ax.xaxis.set_minor_formatter(NullFormatter())
         ax.set_ylim(*ylims_by_target[target])
         ax.tick_params(axis="x", labelsize=7.1)
         ax.text(

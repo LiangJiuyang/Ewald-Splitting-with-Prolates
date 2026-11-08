@@ -107,16 +107,19 @@ If LAMMPS-ESP is useful in your work, please star this repository and cite both 
 
 ### Preferred citation (BibTeX)
 ```bibtex
-@misc{liang2025arxiv,
-  title         = {Accelerating Fast Ewald Summation with Prolates for Molecular Dynamics Simulations},
+@article{liang2026esp,
+  title         = {Accelerating molecular dynamics simulations using fast {Ewald} summation with prolates},
   author        = {Jiuyang Liang and Libin Lu and Alex Barnett and Leslie Greengard and Shidong Jiang},
-  year          = {2025},
-  eprint        = {2505.09727},
-  archivePrefix = {arXiv},
-  primaryClass  = {math.NA},
-  url           = {https://arxiv.org/abs/2505.09727}
+  journal       = {Nature Communications},
+  volume        = {17},
+  pages         = {6681},
+  year          = {2026},
+  doi           = {10.1038/s41467-026-73232-8},
+  url           = {https://doi.org/10.1038/s41467-026-73232-8}
 }
 ```
+
+The earlier preprint is available on [arXiv:2505.09727](https://arxiv.org/abs/2505.09727); please cite the published article above.
 
 # Main developers
 
